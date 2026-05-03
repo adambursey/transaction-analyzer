@@ -1,0 +1,5 @@
+{
+  "name": "Transaction Analyzer",
+  "description": "A web app that analyzes and visualizes transactions from a Google Sheet.",
+  "requestFramePermissions": []
+}

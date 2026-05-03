@@ -316,15 +316,10 @@ export default function App() {
         method: "POST",
         headers: fetchHeaders,
         body: JSON.stringify({
-          rowIndex: editingTx._rowIndex,
+          id: editingTx.id,
           amount: signedAmount,
           category: editTxCategory,
           subcategory: editTxSubcategory,
-          columnIndices: {
-            amount: headers.indexOf(analysis.columnsIdentified.amount),
-            category: headers.indexOf(analysis.columnsIdentified.category),
-            subcategory: headers.indexOf(analysis.columnsIdentified.subcategory),
-          }
         }),
       });
 

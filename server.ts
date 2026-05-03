@@ -4,6 +4,7 @@ import cookieParser from "cookie-parser";
 import { google } from "googleapis";
 import path from "path";
 import dotenv from "dotenv";
+import { Firestore } from "@google-cloud/firestore";
 
 dotenv.config();
 
@@ -54,7 +55,6 @@ async function startServer() {
     const oauth2Client = createOAuth2Client(redirectUri);
 
     const scopes = [
-      "https://www.googleapis.com/auth/spreadsheets",
       "https://www.googleapis.com/auth/userinfo.profile",
       "https://www.googleapis.com/auth/userinfo.email",
     ];
@@ -114,9 +114,10 @@ async function startServer() {
       }
 
       // Store tokens in a secure cookie
+      const isProduction = process.env.NODE_ENV === "production";
       res.cookie("google_tokens", JSON.stringify(tokens), {
-        secure: true,
-        sameSite: "none",
+        secure: isProduction,
+        sameSite: isProduction ? "none" : "lax",
         httpOnly: true,
         maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
       });
@@ -159,9 +160,10 @@ async function startServer() {
   });
 
   app.post("/api/auth/logout", (req, res) => {
+    const isProduction = process.env.NODE_ENV === "production";
     res.clearCookie("google_tokens", {
-      secure: true,
-      sameSite: "none",
+      secure: isProduction,
+      sameSite: isProduction ? "none" : "lax",
       httpOnly: true,
     });
     res.json({ success: true });
@@ -196,6 +198,67 @@ async function startServer() {
     }
 
     try {
+      const firestore = new Firestore({ projectId: "tx-analyzer-1777844550" });
+      const transactionsCollection = firestore.collection("transactions");
+      const budgetsCollection = firestore.collection("budgets");
+
+      const transactionsSnapshot = await transactionsCollection.get();
+      const data = transactionsSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+
+      let headers: string[] = [];
+      if (data.length > 0) {
+        // Extract headers from the first document (ignoring the 'id' field we just added)
+        headers = Object.keys(data[0]).filter(k => k !== 'id');
+      }
+
+      const budgetSnapshot = await budgetsCollection.get();
+      const budgetData = budgetSnapshot.docs.map(doc => {
+        const docData = doc.data();
+        return {
+          id: doc.id, // we can include id just in case
+          "0": docData.Category,
+          "1": docData.Amount,
+        };
+      });
+
+      res.json({ data, headers, budgetData, budgetHeaders: [] });
+    } catch (error: any) {
+      console.error("Error fetching data from Firestore:", error);
+      res.status(500).json({ error: error.message || "Failed to fetch data" });
+    }
+  });
+
+  app.get("/api/migrate", async (req, res) => {
+    const authHeader = req.headers.authorization;
+    let tokensCookie = req.cookies.google_tokens;
+    
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      tokensCookie = decodeURIComponent(authHeader.split(" ")[1]);
+    }
+
+    if (!tokensCookie) {
+      res.status(401).json({ error: "Not authenticated. Please log in first." });
+      return;
+    }
+
+    const sheetUrl = process.env.SHEET_URL;
+    if (!sheetUrl) {
+      res.status(400).json({ error: "Missing SHEET_URL environment variable" });
+      return;
+    }
+
+    const match = sheetUrl.match(/\/d\/([a-zA-Z0-9-_]+)/);
+    const spreadsheetId = match ? match[1] : null;
+
+    if (!spreadsheetId) {
+      res.status(400).json({ error: "Invalid Google Sheet URL" });
+      return;
+    }
+
+    try {
       const tokens = JSON.parse(tokensCookie);
       const redirectUri = getRedirectUri(req);
       const oauth2Client = createOAuth2Client(redirectUri);
@@ -203,35 +266,21 @@ async function startServer() {
 
       const sheets = google.sheets({ version: "v4", auth: oauth2Client });
       
-      // First, get the spreadsheet metadata to find the sheet name
-      const spreadsheet = await sheets.spreadsheets.get({
-        spreadsheetId,
-      });
-
-      // Find the sheet name based on gid if provided in URL
+      const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId });
+      
       let sheetName = "";
       const gidMatch = sheetUrl.match(/gid=([0-9]+)/);
       if (gidMatch && spreadsheet.data.sheets) {
         const gid = parseInt(gidMatch[1], 10);
-        const sheet = spreadsheet.data.sheets.find(
-          (s) => s.properties?.sheetId === gid
-        );
+        const sheet = spreadsheet.data.sheets.find((s) => s.properties?.sheetId === gid);
         if (sheet && sheet.properties?.title) {
           sheetName = sheet.properties.title;
         }
       }
-
-      // If no gid or not found, use the first sheet
       if (!sheetName && spreadsheet.data.sheets && spreadsheet.data.sheets.length > 0) {
         sheetName = spreadsheet.data.sheets[0].properties?.title || "";
       }
 
-      if (!sheetName) {
-        res.status(400).json({ error: "Could not determine sheet name" });
-        return;
-      }
-
-      // Get the data from the main sheet
       const response = await sheets.spreadsheets.values.get({
         spreadsheetId,
         range: sheetName,
@@ -240,7 +289,6 @@ async function startServer() {
       const rows = response.data.values;
       let data: any[] = [];
       let headers: string[] = [];
-      
       if (rows && rows.length > 0) {
         headers = rows[0];
         data = rows.slice(1).map((row) => {
@@ -252,42 +300,62 @@ async function startServer() {
         });
       }
 
-      // Try to get data from "Budget" sheet
       let budgetData: any[] = [];
-      let budgetHeaders: string[] = [];
-      
       const budgetSheet = spreadsheet.data.sheets?.find(
         (s) => s.properties?.title?.toLowerCase() === "budget"
       );
 
       if (budgetSheet && budgetSheet.properties?.title) {
-        try {
-          const budgetResponse = await sheets.spreadsheets.values.get({
-            spreadsheetId,
-            range: budgetSheet.properties.title,
-          });
-          
-          const budgetRows = budgetResponse.data.values;
-          if (budgetRows && budgetRows.length > 0) {
-            // Include ALL rows, including the first one, as budget sheets often don't have headers
-            budgetData = budgetRows.map((row) => {
-              const obj: Record<string, any> = {};
-              row.forEach((cell, index) => {
-                obj[index] = cell !== undefined ? cell : null;
-              });
-              return obj;
+        const budgetResponse = await sheets.spreadsheets.values.get({
+          spreadsheetId,
+          range: budgetSheet.properties.title,
+        });
+        
+        const budgetRows = budgetResponse.data.values;
+        if (budgetRows && budgetRows.length > 0) {
+          budgetData = budgetRows.map((row) => {
+            const obj: Record<string, any> = {};
+            row.forEach((cell, index) => {
+              obj[index] = cell !== undefined ? cell : null;
             });
-          }
-        } catch (budgetErr) {
-          console.error("Error fetching budget sheet:", budgetErr);
-          // Don't fail the whole request if budget fails
+            return obj;
+          });
         }
       }
 
-      res.json({ data, headers, budgetData, budgetHeaders });
+      const firestore = new Firestore({ projectId: "tx-analyzer-1777844550" });
+      const transactionsCollection = firestore.collection("transactions");
+      const budgetsCollection = firestore.collection("budgets");
+
+      // Write transactions
+      let transactionsCount = 0;
+      for (const item of data) {
+        await transactionsCollection.add(item);
+        transactionsCount++;
+      }
+
+      // Write budgets
+      let budgetsCount = 0;
+      for (const item of budgetData) {
+        // budgetData objects have numeric string keys like "0": category, "1": amount
+        const category = item["0"];
+        const amount = item["1"];
+        if (category) {
+          await budgetsCollection.add({
+            Category: category,
+            Amount: amount,
+          });
+          budgetsCount++;
+        }
+      }
+
+      res.json({ 
+        success: true, 
+        message: `Successfully migrated ${transactionsCount} transactions and ${budgetsCount} budget items to Firestore.` 
+      });
     } catch (error: any) {
-      console.error("Error fetching sheet:", error);
-      res.status(500).json({ error: error.message || "Failed to fetch sheet data" });
+      console.error("Error migrating to Firestore:", error);
+      res.status(500).json({ error: error.message || "Failed to migrate data" });
     }
   });
 
@@ -310,76 +378,17 @@ async function startServer() {
       return;
     }
 
-    const sheetUrl = process.env.SHEET_URL;
-    if (!sheetUrl) {
-      res.status(400).json({ error: "Missing SHEET_URL environment variable" });
-      return;
-    }
-
-    const match = sheetUrl.match(/\/d\/([a-zA-Z0-9-_]+)/);
-    const spreadsheetId = match ? match[1] : null;
-
-    if (!spreadsheetId) {
-      res.status(400).json({ error: "Invalid Google Sheet URL" });
-      return;
-    }
-
     try {
-      const tokens = JSON.parse(tokensCookie);
-      const oauth2Client = createOAuth2Client(getRedirectUri(req));
-      oauth2Client.setCredentials(tokens);
+      const firestore = new Firestore({ projectId: "tx-analyzer-1777844550" });
+      const budgetsCollection = firestore.collection("budgets");
 
-      const sheets = google.sheets({ version: "v4", auth: oauth2Client });
+      const querySnapshot = await budgetsCollection.where("Category", "==", category).get();
       
-      // Find the Budget sheet
-      const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId });
-      const budgetSheet = spreadsheet.data.sheets?.find(
-        (s) => s.properties?.title?.toLowerCase() === "budget"
-      );
-
-      if (!budgetSheet || !budgetSheet.properties?.title) {
-        res.status(404).json({ error: "Budget sheet not found" });
-        return;
-      }
-
-      const sheetName = budgetSheet.properties.title;
-
-      // Get current budget data to find the row
-      const response = await sheets.spreadsheets.values.get({
-        spreadsheetId,
-        range: sheetName,
-      });
-
-      const rows = response.data.values || [];
-      let rowIndex = -1;
-
-      for (let i = 0; i < rows.length; i++) {
-        if (rows[i][0] && String(rows[i][0]).toLowerCase() === category.toLowerCase()) {
-          rowIndex = i;
-          break;
-        }
-      }
-
-      if (rowIndex !== -1) {
-        // Update existing row
-        await sheets.spreadsheets.values.update({
-          spreadsheetId,
-          range: `${sheetName}!B${rowIndex + 1}`,
-          valueInputOption: "USER_ENTERED",
-          requestBody: {
-            values: [[amount]],
-          },
-        });
+      if (querySnapshot.empty) {
+        await budgetsCollection.add({ Category: category, Amount: amount });
       } else {
-        // Append new row
-        await sheets.spreadsheets.values.append({
-          spreadsheetId,
-          range: `${sheetName}!A1`,
-          valueInputOption: "USER_ENTERED",
-          requestBody: {
-            values: [[category, amount]],
-          },
-        });
+        const docId = querySnapshot.docs[0].id;
+        await budgetsCollection.doc(docId).update({ Amount: amount });
       }
 
       res.json({ success: true });
@@ -402,99 +411,22 @@ async function startServer() {
       return;
     }
 
-    const { rowIndex, amount, category, subcategory, columnIndices } = req.body;
-    if (rowIndex === undefined || amount === undefined || !category || !columnIndices) {
+    const { id, amount, category, subcategory } = req.body;
+    if (!id || amount === undefined || !category) {
       res.status(400).json({ error: "Missing required fields" });
       return;
     }
 
-    const sheetUrl = process.env.SHEET_URL;
-    if (!sheetUrl) {
-      res.status(400).json({ error: "Missing SHEET_URL environment variable" });
-      return;
-    }
-
-    const match = sheetUrl.match(/\/d\/([a-zA-Z0-9-_]+)/);
-    const spreadsheetId = match ? match[1] : null;
-
-    if (!spreadsheetId) {
-      res.status(400).json({ error: "Invalid Google Sheet URL" });
-      return;
-    }
-
     try {
-      const tokens = JSON.parse(tokensCookie);
-      const oauth2Client = createOAuth2Client(getRedirectUri(req));
-      oauth2Client.setCredentials(tokens);
+      const firestore = new Firestore({ projectId: "tx-analyzer-1777844550" });
+      const transactionsCollection = firestore.collection("transactions");
 
-      const sheets = google.sheets({ version: "v4", auth: oauth2Client });
-      
-      // Get the spreadsheet metadata to find the sheet name
-      const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId });
-      
-      let sheetName = "";
-      const gidMatch = sheetUrl.match(/gid=([0-9]+)/);
-      if (gidMatch && spreadsheet.data.sheets) {
-        const gid = parseInt(gidMatch[1], 10);
-        const sheet = spreadsheet.data.sheets.find(
-          (s) => s.properties?.sheetId === gid
-        );
-        if (sheet && sheet.properties?.title) {
-          sheetName = sheet.properties.title;
-        }
-      }
-      if (!sheetName && spreadsheet.data.sheets && spreadsheet.data.sheets.length > 0) {
-        sheetName = spreadsheet.data.sheets[0].properties?.title || "";
+      const updates: Record<string, any> = { Amount: amount, Category: category };
+      if (subcategory !== undefined) {
+        updates.Subcategory = subcategory;
       }
 
-      if (!sheetName) {
-        res.status(400).json({ error: "Could not determine sheet name" });
-        return;
-      }
-
-      // Update cells
-      // rowIndex is 0-based from the data (excluding header)
-      // Spreadsheet row is rowIndex + 2
-      const spreadsheetRow = rowIndex + 2;
-      
-      const updates = [];
-      
-      // Amount
-      if (columnIndices.amount !== -1) {
-        const amountColLetter = indexToColumn(columnIndices.amount);
-        updates.push({
-          range: `${sheetName}!${amountColLetter}${spreadsheetRow}`,
-          values: [[amount]],
-        });
-      }
-      
-      // Category
-      if (columnIndices.category !== -1) {
-        const categoryColLetter = indexToColumn(columnIndices.category);
-        updates.push({
-          range: `${sheetName}!${categoryColLetter}${spreadsheetRow}`,
-          values: [[category]],
-        });
-      }
-      
-      // Subcategory
-      if (columnIndices.subcategory !== -1) {
-        const subcategoryColLetter = indexToColumn(columnIndices.subcategory);
-        updates.push({
-          range: `${sheetName}!${subcategoryColLetter}${spreadsheetRow}`,
-          values: [[subcategory]],
-        });
-      }
-
-      if (updates.length > 0) {
-        await sheets.spreadsheets.values.batchUpdate({
-          spreadsheetId,
-          requestBody: {
-            valueInputOption: "USER_ENTERED",
-            data: updates,
-          },
-        });
-      }
+      await transactionsCollection.doc(id).update(updates);
 
       res.json({ success: true });
     } catch (error: any) {

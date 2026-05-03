@@ -37,6 +37,7 @@ RUN npm install -g tsx typescript
 
 # Expose the port (Cloud Run sets the PORT env var, defaults to 8080 or 3000)
 ENV PORT=3000
+ENV NODE_ENV=production
 EXPOSE $PORT
 
 # Start the application

@@ -17,7 +17,7 @@ export default defineConfig(({mode}) => {
     },
     server: {
       hmr: process.env.DISABLE_HMR !== 'true',
-      allowedHosts: ["localhost", "transaction-analyzer-489644758279.us-central1.run.app"],
+      allowedHosts: true,
     },
   };
 });

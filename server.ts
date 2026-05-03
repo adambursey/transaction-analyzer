@@ -18,7 +18,7 @@ function indexToColumn(index: number): string {
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = Number(process.env.PORT || 3000);
 
   app.use(cookieParser());
   app.use(express.json());
@@ -56,6 +56,7 @@ async function startServer() {
     const scopes = [
       "https://www.googleapis.com/auth/spreadsheets",
       "https://www.googleapis.com/auth/userinfo.profile",
+      "https://www.googleapis.com/auth/userinfo.email",
     ];
 
     const url = oauth2Client.generateAuthUrl({
@@ -82,6 +83,35 @@ async function startServer() {
     try {
       const oauth2Client = createOAuth2Client(redirectUri);
       const { tokens } = await oauth2Client.getToken(code);
+
+      // Verify email against allowed list
+      oauth2Client.setCredentials(tokens);
+      const oauth2 = google.oauth2({
+        auth: oauth2Client,
+        version: "v2",
+      });
+      const userInfo = await oauth2.userinfo.get();
+      const userEmail = userInfo.data.email;
+      
+      if (process.env.ALLOWED_EMAILS) {
+        const allowedEmails = process.env.ALLOWED_EMAILS.split(',').map(e => e.trim().toLowerCase());
+        if (!userEmail || !allowedEmails.includes(userEmail.toLowerCase())) {
+          res.status(403).send(`
+            <html>
+              <body>
+                <h2>Access Denied</h2>
+                <p>Your email (${userEmail}) is not authorized to access this application.</p>
+                <script>
+                  if (window.opener) {
+                    window.opener.postMessage({ type: 'OAUTH_AUTH_ERROR', error: 'Access Denied' }, '*');
+                  }
+                </script>
+              </body>
+            </html>
+          `);
+          return;
+        }
+      }
 
       // Store tokens in a secure cookie
       res.cookie("google_tokens", JSON.stringify(tokens), {

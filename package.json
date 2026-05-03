@@ -30,7 +30,11 @@
     "vite": "^6.2.0"
   },
   "devDependencies": {
+    "@types/babel__core": "^7.20.5",
+    "@types/connect": "^3.4.38",
     "@types/cookie-parser": "^1.4.10",
+    "@types/d3-path": "^3.1.1",
+    "@types/d3-time": "^3.0.4",
     "@types/express": "^4.17.21",
     "@types/node": "^22.14.0",
     "autoprefixer": "^10.4.21",

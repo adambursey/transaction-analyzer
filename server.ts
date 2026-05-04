@@ -5,6 +5,8 @@ import { google } from "googleapis";
 import path from "path";
 import dotenv from "dotenv";
 import { Firestore } from "@google-cloud/firestore";
+import { GoogleGenAI } from "@google/genai";
+import { deduplicateTransactions, exactMatchTransactions, generateSignature } from "./src/utils/importLogic.js";
 
 dotenv.config();
 
@@ -167,6 +169,201 @@ async function startServer() {
       httpOnly: true,
     });
     res.json({ success: true });
+  });
+
+  app.post("/api/import", async (req, res) => {
+    const authHeader = req.headers.authorization;
+    let tokensCookie = req.cookies.google_tokens;
+    
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      tokensCookie = decodeURIComponent(authHeader.split(" ")[1]);
+    }
+
+    if (!tokensCookie) {
+      res.status(401).json({ error: "Not authenticated" });
+      return;
+    }
+
+    const { transactions, filename } = req.body;
+    if (!transactions || !Array.isArray(transactions)) {
+      res.status(400).json({ error: "Invalid payload" });
+      return;
+    }
+
+    try {
+      const firestore = new Firestore({ projectId: "tx-analyzer-1777844550" });
+      const transactionsCollection = firestore.collection("transactions");
+      const importsCollection = firestore.collection("imports");
+
+      // 1. Fetch existing transactions to build deduplication set and exact match dictionary
+      const snapshot = await transactionsCollection.get();
+      const existingSignatures = new Set<string>();
+      const knownMapping: Record<string, { Category: string; Subcategory: string }> = {};
+
+      snapshot.docs.forEach(doc => {
+        const data = doc.data();
+        existingSignatures.add(generateSignature(data));
+        if (data.Description && data.Category) {
+          knownMapping[data.Description] = { 
+            Category: data.Category, 
+            Subcategory: data.Subcategory || "" 
+          };
+        }
+      });
+
+      // 2. Deduplicate incoming
+      const uniqueIncoming = deduplicateTransactions(transactions, existingSignatures);
+
+      if (uniqueIncoming.length === 0) {
+        res.json({ success: true, message: "No new transactions to import. All were duplicates." });
+        return;
+      }
+
+      // 3. Exact matching
+      const { exactMatches, fuzzyMatches } = exactMatchTransactions(uniqueIncoming, knownMapping);
+
+      // 4. Fuzzy matching via Gemini
+      let finalFuzzyMatches = [...fuzzyMatches];
+      if (fuzzyMatches.length > 0 && process.env.GEMINI_API_KEY) {
+        try {
+          const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+          
+          // Get unique descriptions to fuzzy match
+          const uniqueFuzzyDescs = Array.from(new Set(fuzzyMatches.map(tx => tx.Description || ""))).filter(Boolean);
+          
+          if (uniqueFuzzyDescs.length > 0) {
+            // Provide the known mapping as examples
+            const examplesStr = JSON.stringify(knownMapping);
+            const prompt = `You are an expert financial categorizer.
+Here is a JSON dictionary of my historically categorized transactions (Description -> Category/Subcategory):
+${examplesStr}
+
+Please categorize the following new transaction descriptions based on my historical patterns. Return ONLY a valid JSON object where keys are the descriptions and values are objects with "Category" and "Subcategory" strings. Make your best educated guess for new merchants.
+New descriptions:
+${JSON.stringify(uniqueFuzzyDescs)}
+`;
+
+            const response = await ai.models.generateContent({
+              model: 'gemini-2.5-flash',
+              contents: prompt,
+            });
+
+            const text = response.text || "";
+            // Extract JSON from response (handling potential markdown code blocks)
+            const jsonMatch = text.match(/```json\n([\s\S]*?)\n```/) || text.match(/{[\s\S]*}/);
+            if (jsonMatch) {
+              const predictions = JSON.parse(jsonMatch[1] || jsonMatch[0]);
+              
+              // Apply predictions
+              finalFuzzyMatches = fuzzyMatches.map(tx => {
+                const desc = tx.Description || "";
+                const pred = predictions[desc];
+                if (pred) {
+                  return {
+                    ...tx,
+                    Category: pred.Category,
+                    Subcategory: pred.Subcategory,
+                    status: "pending_review"
+                  };
+                }
+                return { ...tx, status: "pending_review" };
+              });
+            } else {
+              finalFuzzyMatches = fuzzyMatches.map(tx => ({ ...tx, status: "pending_review" }));
+            }
+          }
+        } catch (geminiError) {
+          console.error("Gemini fuzzy matching failed:", geminiError);
+          // Fallback if Gemini fails
+          finalFuzzyMatches = fuzzyMatches.map(tx => ({ ...tx, status: "pending_review" }));
+        }
+      } else {
+        // No Gemini key, just mark as pending review
+        finalFuzzyMatches = fuzzyMatches.map(tx => ({ ...tx, status: "pending_review" }));
+      }
+
+      const allToInsert = [...exactMatches, ...finalFuzzyMatches];
+      const importId = `import_${Date.now()}`;
+
+      // Write import record
+      await importsCollection.doc(importId).set({
+        importId,
+        date: new Date().toISOString(),
+        filename: filename || "Unknown file",
+        count: allToInsert.length
+      });
+
+      // Write transactions in batches
+      const batchSize = 400; // Firestore limit is 500
+      for (let i = 0; i < allToInsert.length; i += batchSize) {
+        const batch = firestore.batch();
+        const chunk = allToInsert.slice(i, i + batchSize);
+        
+        chunk.forEach(tx => {
+          const docRef = transactionsCollection.doc();
+          batch.set(docRef, { ...tx, importId });
+        });
+        
+        await batch.commit();
+      }
+
+      res.json({ 
+        success: true, 
+        message: `Imported ${allToInsert.length} transactions. ${exactMatches.length} auto-categorized, ${finalFuzzyMatches.length} pending review.` 
+      });
+    } catch (error: any) {
+      console.error("Error processing import:", error);
+      res.status(500).json({ error: error.message || "Failed to process import" });
+    }
+  });
+
+  app.post("/api/import/rollback", async (req, res) => {
+    const authHeader = req.headers.authorization;
+    let tokensCookie = req.cookies.google_tokens;
+    if (authHeader && authHeader.startsWith("Bearer ")) tokensCookie = decodeURIComponent(authHeader.split(" ")[1]);
+    if (!tokensCookie) return res.status(401).json({ error: "Not authenticated" });
+
+    const { importId } = req.body;
+    if (!importId) return res.status(400).json({ error: "Missing importId" });
+
+    try {
+      const firestore = new Firestore({ projectId: "tx-analyzer-1777844550" });
+      const transactionsCollection = firestore.collection("transactions");
+      const importsCollection = firestore.collection("imports");
+
+      const snapshot = await transactionsCollection.where("importId", "==", importId).get();
+      
+      const batchSize = 400;
+      for (let i = 0; i < snapshot.docs.length; i += batchSize) {
+        const batch = firestore.batch();
+        const chunk = snapshot.docs.slice(i, i + batchSize);
+        chunk.forEach(doc => batch.delete(doc.ref));
+        await batch.commit();
+      }
+
+      await importsCollection.doc(importId).delete();
+
+      res.json({ success: true, deletedCount: snapshot.docs.length });
+    } catch (err: any) {
+      console.error("Rollback failed:", err);
+      res.status(500).json({ error: err.message || "Rollback failed" });
+    }
+  });
+
+  app.get("/api/imports", async (req, res) => {
+    const authHeader = req.headers.authorization;
+    let tokensCookie = req.cookies.google_tokens;
+    if (authHeader && authHeader.startsWith("Bearer ")) tokensCookie = decodeURIComponent(authHeader.split(" ")[1]);
+    if (!tokensCookie) return res.status(401).json({ error: "Not authenticated" });
+
+    try {
+      const firestore = new Firestore({ projectId: "tx-analyzer-1777844550" });
+      const snapshot = await firestore.collection("imports").orderBy("date", "desc").get();
+      const imports = snapshot.docs.map(doc => doc.data());
+      res.json({ imports });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
   });
 
   app.post("/api/sheet", async (req, res) => {
@@ -411,7 +608,7 @@ async function startServer() {
       return;
     }
 
-    const { id, amount, category, subcategory } = req.body;
+    const { id, amount, category, subcategory, status } = req.body;
     if (!id || amount === undefined || !category) {
       res.status(400).json({ error: "Missing required fields" });
       return;
@@ -424,6 +621,9 @@ async function startServer() {
       const updates: Record<string, any> = { Amount: amount, Category: category };
       if (subcategory !== undefined) {
         updates.Subcategory = subcategory;
+      }
+      if (status !== undefined) {
+        updates.status = status;
       }
 
       await transactionsCollection.doc(id).update(updates);

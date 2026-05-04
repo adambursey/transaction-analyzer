@@ -36,8 +36,12 @@ import {
   Search,
   ArrowLeft,
   X,
+  UploadCloud,
 } from "lucide-react";
 import { format, parseISO, isValid } from "date-fns";
+import { ImportModal } from "./components/ImportModal";
+import { ReviewQueue } from "./components/ReviewQueue";
+import { ImportHistory } from "./components/ImportHistory";
 
 const CATEGORY_COLORS = [
   "#3377FF",
@@ -116,6 +120,7 @@ export default function App() {
   const [editTxCategory, setEditTxCategory] = useState("");
   const [editTxSubcategory, setEditTxSubcategory] = useState("");
   const [isUpdatingTx, setIsUpdatingTx] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
 
   useEffect(() => {
     checkAuthStatus();
@@ -950,6 +955,15 @@ export default function App() {
             )}
           </div>
           <div className="flex items-center gap-4">
+            {isAuthenticated && (
+              <button
+                onClick={() => setIsImportModalOpen(true)}
+                className="flex items-center gap-2 text-sm font-medium bg-blue-50 text-blue-600 px-3 py-1.5 rounded-lg hover:bg-blue-100 transition-colors"
+              >
+                <UploadCloud className="w-4 h-4" />
+                <span className="hidden sm:inline">Import</span>
+              </button>
+            )}
             <button
               onClick={handleLogout}
               className="flex items-center gap-2 text-sm font-medium text-slate-500 hover:text-slate-900 transition-colors"
@@ -979,6 +993,38 @@ export default function App() {
         {/* Analysis Results */}
         {analysis && currentView === "dashboard" && (
           <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            {/* Import UI */}
+            <ReviewQueue 
+              transactions={analysis.allTransactions || []} 
+              onApprove={async (id, category, subcategory) => {
+                const tokens = localStorage.getItem("google_tokens");
+                const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+                if (tokens) headers['Authorization'] = `Bearer ${encodeURIComponent(tokens)}`;
+                
+                const tx = analysis.allTransactions.find((t: any) => t.id === id);
+                if (!tx) throw new Error("Transaction not found");
+
+                const res = await fetch("/api/transaction/update", {
+                  method: "POST",
+                  headers,
+                  body: JSON.stringify({
+                    id,
+                    amount: tx.Amount,
+                    category,
+                    subcategory,
+                    status: "reviewed"
+                  })
+                });
+                if (!res.ok) throw new Error("Update failed");
+                await fetchSheetData();
+              }} 
+            />
+            
+            <ImportHistory 
+              getTokens={() => localStorage.getItem("google_tokens")} 
+              onRollbackComplete={fetchSheetData} 
+            />
+
             {/* Filter Bar */}
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
               <div>
@@ -2159,6 +2205,17 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* Modals */}
+      <ImportModal 
+        isOpen={isImportModalOpen} 
+        onClose={() => setIsImportModalOpen(false)} 
+        onImportComplete={() => {
+          setIsImportModalOpen(false);
+          fetchSheetData();
+        }}
+        getTokens={() => localStorage.getItem("google_tokens")}
+      />
     </div>
   );
 }

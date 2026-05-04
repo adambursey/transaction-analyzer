@@ -28,6 +28,7 @@ RUN npm ci --omit=dev
 # Copy built assets and server file from builder
 COPY --from=builder /app/dist ./dist
 COPY server.ts ./
+COPY src/utils ./src/utils
 
 # We need tsx to run server.ts since it's TypeScript
 # Alternatively we could compile server.ts to JS in the builder stage,

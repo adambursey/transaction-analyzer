@@ -3,11 +3,10 @@ import { Clock, Trash2, Loader2, AlertTriangle } from 'lucide-react';
 import { format } from 'date-fns';
 
 interface ImportHistoryProps {
-  getTokens: () => string | null;
   onRollbackComplete: () => void;
 }
 
-export function ImportHistory({ getTokens, onRollbackComplete }: ImportHistoryProps) {
+export function ImportHistory({ onRollbackComplete }: ImportHistoryProps) {
   const [imports, setImports] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [rollingBackId, setRollingBackId] = useState<string | null>(null);
@@ -15,11 +14,7 @@ export function ImportHistory({ getTokens, onRollbackComplete }: ImportHistoryPr
   const fetchImports = async () => {
     setIsLoading(true);
     try {
-      const tokens = getTokens();
-      const headers: Record<string, string> = {};
-      if (tokens) headers['Authorization'] = `Bearer ${encodeURIComponent(tokens)}`;
-
-      const res = await fetch('/api/imports', { headers });
+      const res = await fetch('/api/imports');
       const data = await res.json();
       if (res.ok) {
         setImports(data.imports || []);
@@ -42,13 +37,9 @@ export function ImportHistory({ getTokens, onRollbackComplete }: ImportHistoryPr
 
     setRollingBackId(importId);
     try {
-      const tokens = getTokens();
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (tokens) headers['Authorization'] = `Bearer ${encodeURIComponent(tokens)}`;
-
       const res = await fetch('/api/import/rollback', {
         method: 'POST',
-        headers,
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ importId })
       });
       

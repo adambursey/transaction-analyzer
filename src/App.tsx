@@ -37,11 +37,16 @@ import {
   ArrowLeft,
   X,
   UploadCloud,
+  Loader2,
+  CheckCircle2,
+  AlertTriangle,
+  FolderTree,
 } from "lucide-react";
 import { format, parseISO, isValid } from "date-fns";
 import { ImportModal } from "./components/ImportModal";
 import { ReviewQueue } from "./components/ReviewQueue";
 import { ImportHistory } from "./components/ImportHistory";
+import { CategoriesView } from "./components/CategoriesView";
 
 const CATEGORY_COLORS = [
   "#3377FF",
@@ -97,7 +102,8 @@ export default function App() {
   const [showTableTotals, setShowTableTotals] = useState(false);
   const [budgetData, setBudgetData] = useState<any[]>([]);
   const [budgetHeaders, setBudgetHeaders] = useState<string[]>([]);
-  const [currentView, setCurrentView] = useState<"dashboard" | "transactions" | "budget">("dashboard");
+  const [currentView, setCurrentView] = useState<"dashboard" | "transactions" | "budget" | "categories">("dashboard");
+  const [taxonomy, setTaxonomy] = useState<Record<string, string[]>>({});
   const [txFilterCategory, setTxFilterCategory] = useState("");
   const [txFilterSubcategory, setTxFilterSubcategory] = useState("");
   const [txFilterType, setTxFilterType] = useState<"all" | "income" | "expense">("all");
@@ -121,6 +127,7 @@ export default function App() {
   const [editTxSubcategory, setEditTxSubcategory] = useState("");
   const [isUpdatingTx, setIsUpdatingTx] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [importStatus, setImportStatus] = useState<{ type: 'loading' | 'success' | 'error'; message: string } | null>(null);
 
   useEffect(() => {
     checkAuthStatus();
@@ -144,6 +151,7 @@ export default function App() {
   useEffect(() => {
     if (isAuthenticated) {
       fetchSheetData();
+      fetchTaxonomy();
     }
   }, [isAuthenticated]);
 
@@ -153,15 +161,21 @@ export default function App() {
     }
   }, [selectedYear, selectedMonth, data, headers, budgetData]);
 
+  const fetchTaxonomy = async () => {
+    try {
+      const res = await fetch("/api/taxonomy");
+      if (res.ok) {
+        const data = await res.json();
+        setTaxonomy(data.taxonomy || {});
+      }
+    } catch (err) {
+      console.error("Failed to fetch taxonomy:", err);
+    }
+  };
+
   const checkAuthStatus = async () => {
     try {
-      const tokens = localStorage.getItem("google_tokens");
-      const headers: Record<string, string> = {};
-      if (tokens) {
-        headers["Authorization"] = `Bearer ${encodeURIComponent(tokens)}`;
-      }
-
-      const res = await fetch("/api/auth/status", { headers });
+      const res = await fetch("/api/auth/status");
       const data = await res.json();
       
       if (!data.authenticated) {
@@ -214,17 +228,9 @@ export default function App() {
     setError(null);
 
     try {
-      const tokens = localStorage.getItem("google_tokens");
-      const headers: Record<string, string> = {
-        "Content-Type": "application/json",
-      };
-      if (tokens) {
-        headers["Authorization"] = `Bearer ${encodeURIComponent(tokens)}`;
-      }
-
       const res = await fetch("/api/sheet", {
         method: "POST",
-        headers,
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
       });
 
@@ -951,6 +957,17 @@ export default function App() {
                   <Wallet className="w-4 h-4" />
                   Budget
                 </button>
+                <button
+                  onClick={() => setCurrentView("categories")}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${
+                    currentView === "categories"
+                      ? "bg-blue-50 text-blue-600"
+                      : "text-slate-500 hover:text-slate-900 hover:bg-slate-50"
+                  }`}
+                >
+                  <FolderTree className="w-4 h-4" />
+                  Categories
+                </button>
               </nav>
             )}
           </div>
@@ -983,6 +1000,25 @@ export default function App() {
           </div>
         )}
 
+        {/* Import Status Banner */}
+        {importStatus && (
+          <div className={`p-4 rounded-xl flex items-center gap-3 animate-in fade-in slide-in-from-top-2 duration-300 ${
+            importStatus.type === 'loading' ? 'bg-blue-50 border border-blue-100 text-blue-700' :
+            importStatus.type === 'success' ? 'bg-green-50 border border-green-100 text-green-700' :
+            'bg-amber-50 border border-amber-100 text-amber-700'
+          }`}>
+            {importStatus.type === 'loading' && <Loader2 className="w-5 h-5 animate-spin shrink-0" />}
+            {importStatus.type === 'success' && <CheckCircle2 className="w-5 h-5 shrink-0" />}
+            {importStatus.type === 'error' && <AlertTriangle className="w-5 h-5 shrink-0" />}
+            <p className="text-sm font-medium flex-1">{importStatus.message}</p>
+            {importStatus.type !== 'loading' && (
+              <button onClick={() => setImportStatus(null)} className="p-1 hover:bg-black/5 rounded-lg transition-colors">
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+        )}
+
         {loading && !analysis && (
           <div className="flex flex-col items-center justify-center py-20 text-slate-500">
             <RefreshCw className="w-8 h-8 animate-spin mb-4 text-blue-600" />
@@ -990,23 +1026,19 @@ export default function App() {
           </div>
         )}
 
-        {/* Analysis Results */}
-        {analysis && currentView === "dashboard" && (
-          <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            {/* Import UI */}
+        {/* Review Queue and Import History - always visible regardless of filters */}
+        {isAuthenticated && currentView === "dashboard" && data.length > 0 && (
+          <>
             <ReviewQueue 
-              transactions={analysis.allTransactions || []} 
+              transactions={data} 
+              taxonomy={taxonomy}
               onApprove={async (id, category, subcategory) => {
-                const tokens = localStorage.getItem("google_tokens");
-                const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-                if (tokens) headers['Authorization'] = `Bearer ${encodeURIComponent(tokens)}`;
-                
-                const tx = analysis.allTransactions.find((t: any) => t.id === id);
+                const tx = data.find((t: any) => t.id === id);
                 if (!tx) throw new Error("Transaction not found");
 
                 const res = await fetch("/api/transaction/update", {
                   method: "POST",
-                  headers,
+                  headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({
                     id,
                     amount: tx.Amount,
@@ -1018,12 +1050,32 @@ export default function App() {
                 if (!res.ok) throw new Error("Update failed");
                 await fetchSheetData();
               }} 
+              onBulkApprove={async (updates) => {
+                const payload = updates.map(u => ({
+                  id: u.id,
+                  category: u.category,
+                  subcategory: u.subcategory,
+                  status: "reviewed"
+                }));
+                const res = await fetch("/api/transaction/bulk-update", {
+                  method: "POST",
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ updates: payload })
+                });
+                if (!res.ok) throw new Error("Bulk update failed");
+                await fetchSheetData();
+              }}
             />
             
             <ImportHistory 
-              getTokens={() => localStorage.getItem("google_tokens")} 
               onRollbackComplete={fetchSheetData} 
             />
+          </>
+        )}
+
+        {/* Analysis Results */}
+        {analysis && currentView === "dashboard" && (
+          <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
 
             {/* Filter Bar */}
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
@@ -1800,6 +1852,14 @@ export default function App() {
           </div>
         )}
 
+        {/* Categories View */}
+        {isAuthenticated && currentView === "categories" && (
+          <CategoriesView 
+            taxonomy={taxonomy} 
+            onUpdate={fetchTaxonomy} 
+          />
+        )}
+
         {analysis && currentView === "transactions" && (
           <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
             <div className="flex items-center justify-between">
@@ -2160,7 +2220,8 @@ export default function App() {
                   }}
                   className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
                 >
-                  {analysis.categories.map((cat: string) => (
+                  <option value="">Select Category</option>
+                  {Object.keys(taxonomy).sort().map((cat: string) => (
                     <option key={cat} value={cat}>{cat}</option>
                   ))}
                 </select>
@@ -2172,9 +2233,10 @@ export default function App() {
                   value={editTxSubcategory}
                   onChange={(e) => setEditTxSubcategory(e.target.value)}
                   className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                  disabled={!editTxCategory}
                 >
                   <option value="">None</option>
-                  {modalSubcategories.map((sub: string) => (
+                  {editTxCategory && taxonomy[editTxCategory]?.map((sub: string) => (
                     <option key={sub} value={sub}>{sub}</option>
                   ))}
                 </select>
@@ -2210,11 +2272,28 @@ export default function App() {
       <ImportModal 
         isOpen={isImportModalOpen} 
         onClose={() => setIsImportModalOpen(false)} 
-        onImportComplete={() => {
-          setIsImportModalOpen(false);
-          fetchSheetData();
+        onImportStarted={(txCount) => {
+          setImportStatus({ type: 'loading', message: `Importing: 0 / ${txCount} transactions processed…` });
         }}
-        getTokens={() => localStorage.getItem("google_tokens")}
+        onImportProgress={(processed, total) => {
+          setImportStatus({ type: 'loading', message: `Importing: ${processed} / ${total} transactions processed… Gemini is analyzing categories.` });
+        }}
+        onImportComplete={(result) => {
+          if (result.success) {
+            let msg = result.message;
+            if (result.geminiError) {
+              msg += ` ⚠️ ${result.geminiError}`;
+              setImportStatus({ type: 'error', message: msg });
+            } else {
+              setImportStatus({ type: 'success', message: msg });
+            }
+            fetchSheetData();
+            // Auto-dismiss after 10s
+            setTimeout(() => setImportStatus(null), 10000);
+          } else {
+            setImportStatus({ type: 'error', message: `Import failed: ${result.message}` });
+          }
+        }}
       />
     </div>
   );

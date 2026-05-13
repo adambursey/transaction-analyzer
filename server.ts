@@ -172,6 +172,7 @@ async function startServer() {
   });
 
   app.post("/api/import", async (req, res) => {
+    console.log(`\n[Server] POST /api/import received`);
     const authHeader = req.headers.authorization;
     let tokensCookie = req.cookies.google_tokens;
     
@@ -180,12 +181,16 @@ async function startServer() {
     }
 
     if (!tokensCookie) {
+      console.warn("[Server] POST /api/import: Not authenticated");
       res.status(401).json({ error: "Not authenticated" });
       return;
     }
 
     const { transactions, filename } = req.body;
+    console.log(`[Server] Import request for file: ${filename}, payload size: ${transactions?.length} transactions`);
+    
     if (!transactions || !Array.isArray(transactions)) {
+      console.error("[Server] Invalid payload received:", req.body);
       res.status(400).json({ error: "Invalid payload" });
       return;
     }
@@ -224,12 +229,18 @@ async function startServer() {
 
       // 4. Fuzzy matching via Gemini
       let finalFuzzyMatches = [...fuzzyMatches];
+      let geminiErrorMessage = "";
+      
+      console.log(`[Server] Pre-Gemini stats: ${exactMatches.length} exact matches, ${fuzzyMatches.length} fuzzy matches to process`);
+      
       if (fuzzyMatches.length > 0 && process.env.GEMINI_API_KEY) {
         try {
+          console.log("[Server] Calling Gemini for fuzzy matches...");
           const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
           
           // Get unique descriptions to fuzzy match
           const uniqueFuzzyDescs = Array.from(new Set(fuzzyMatches.map(tx => tx.Description || ""))).filter(Boolean);
+          console.log(`[Server] Found ${uniqueFuzzyDescs.length} unique descriptions to ask Gemini`);
           
           if (uniqueFuzzyDescs.length > 0) {
             // Provide the known mapping as examples
@@ -243,16 +254,21 @@ New descriptions:
 ${JSON.stringify(uniqueFuzzyDescs)}
 `;
 
+            console.log("[Server] Waiting for Gemini response...");
             const response = await ai.models.generateContent({
               model: 'gemini-2.5-flash',
               contents: prompt,
             });
 
             const text = response.text || "";
+            console.log(`[Server] Received Gemini response (length: ${text.length})`);
+            
             // Extract JSON from response (handling potential markdown code blocks)
             const jsonMatch = text.match(/```json\n([\s\S]*?)\n```/) || text.match(/{[\s\S]*}/);
             if (jsonMatch) {
-              const predictions = JSON.parse(jsonMatch[1] || jsonMatch[0]);
+              const parsedText = jsonMatch[1] || jsonMatch[0];
+              console.log("[Server] Successfully extracted JSON from Gemini response");
+              const predictions = JSON.parse(parsedText);
               
               // Apply predictions
               finalFuzzyMatches = fuzzyMatches.map(tx => {
@@ -272,13 +288,17 @@ ${JSON.stringify(uniqueFuzzyDescs)}
               finalFuzzyMatches = fuzzyMatches.map(tx => ({ ...tx, status: "pending_review" }));
             }
           }
-        } catch (geminiError) {
-          console.error("Gemini fuzzy matching failed:", geminiError);
+        } catch (geminiErr: any) {
+          console.error("Gemini fuzzy matching failed:", geminiErr);
+          geminiErrorMessage = geminiErr?.message || "Gemini categorization failed";
           // Fallback if Gemini fails
           finalFuzzyMatches = fuzzyMatches.map(tx => ({ ...tx, status: "pending_review" }));
         }
-      } else {
+      } else if (!process.env.GEMINI_API_KEY) {
+        geminiErrorMessage = "No Gemini API key configured — categories could not be auto-predicted.";
         // No Gemini key, just mark as pending review
+        finalFuzzyMatches = fuzzyMatches.map(tx => ({ ...tx, status: "pending_review" }));
+      } else {
         finalFuzzyMatches = fuzzyMatches.map(tx => ({ ...tx, status: "pending_review" }));
       }
 
@@ -307,12 +327,18 @@ ${JSON.stringify(uniqueFuzzyDescs)}
         await batch.commit();
       }
 
-      res.json({ 
+      const responsePayload: any = { 
         success: true, 
         message: `Imported ${allToInsert.length} transactions. ${exactMatches.length} auto-categorized, ${finalFuzzyMatches.length} pending review.` 
-      });
+      };
+      if (geminiErrorMessage) {
+        responsePayload.geminiError = `Gemini categorization was skipped: ${geminiErrorMessage}`;
+      }
+      
+      console.log(`[Server] /api/import complete. Returning success payload.`);
+      res.json(responsePayload);
     } catch (error: any) {
-      console.error("Error processing import:", error);
+      console.error("[Server] Error processing import:", error);
       res.status(500).json({ error: error.message || "Failed to process import" });
     }
   });
@@ -618,20 +644,156 @@ ${JSON.stringify(uniqueFuzzyDescs)}
       const firestore = new Firestore({ projectId: "tx-analyzer-1777844550" });
       const transactionsCollection = firestore.collection("transactions");
 
-      const updates: Record<string, any> = { Amount: amount, Category: category };
+      const updatesObj: Record<string, any> = { Amount: amount, Category: category };
       if (subcategory !== undefined) {
-        updates.Subcategory = subcategory;
+        updatesObj.Subcategory = subcategory;
       }
       if (status !== undefined) {
-        updates.status = status;
+        updatesObj.status = status;
       }
 
-      await transactionsCollection.doc(id).update(updates);
+      await transactionsCollection.doc(id).update(updatesObj);
 
       res.json({ success: true });
     } catch (error: any) {
       console.error("Error updating transaction:", error);
       res.status(500).json({ error: error.message || "Failed to update transaction" });
+    }
+  });
+
+  // Bulk update endpoint
+  app.post("/api/transaction/bulk-update", async (req, res) => {
+    const authHeader = req.headers.authorization;
+    let tokensCookie = req.cookies.google_tokens;
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      tokensCookie = decodeURIComponent(authHeader.split(" ")[1]);
+    }
+    if (!tokensCookie) {
+      res.status(401).json({ error: "Not authenticated" });
+      return;
+    }
+
+    const { updates } = req.body;
+    if (!Array.isArray(updates)) {
+      res.status(400).json({ error: "Missing updates array" });
+      return;
+    }
+
+    try {
+      const firestore = new Firestore({ projectId: "tx-analyzer-1777844550" });
+      const batchSize = 400;
+      for (let i = 0; i < updates.length; i += batchSize) {
+        const batch = firestore.batch();
+        const chunk = updates.slice(i, i + batchSize);
+        chunk.forEach((update: any) => {
+          const ref = firestore.collection("transactions").doc(update.id);
+          const data: any = {};
+          if (update.Category !== undefined) data.Category = update.Category;
+          if (update.Subcategory !== undefined) data.Subcategory = update.Subcategory;
+          if (update.status !== undefined) data.status = update.status;
+          batch.update(ref, data);
+        });
+        await batch.commit();
+      }
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error in bulk update:", error);
+      res.status(500).json({ error: error.message || "Failed to bulk update" });
+    }
+  });
+
+  // Taxonomy management endpoints
+  app.get("/api/taxonomy", async (req, res) => {
+    const authHeader = req.headers.authorization;
+    let tokensCookie = req.cookies.google_tokens;
+    if (authHeader && authHeader.startsWith("Bearer ")) tokensCookie = decodeURIComponent(authHeader.split(" ")[1]);
+    if (!tokensCookie) return res.status(401).json({ error: "Not authenticated" });
+
+    try {
+      const firestore = new Firestore({ projectId: "tx-analyzer-1777844550" });
+      const doc = await firestore.collection("taxonomy").doc("global").get();
+      if (!doc.exists) {
+        res.json({ taxonomy: {} });
+      } else {
+        res.json({ taxonomy: doc.data()?.mapping || {} });
+      }
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/taxonomy/init", async (req, res) => {
+    const authHeader = req.headers.authorization;
+    let tokensCookie = req.cookies.google_tokens;
+    if (authHeader && authHeader.startsWith("Bearer ")) tokensCookie = decodeURIComponent(authHeader.split(" ")[1]);
+    if (!tokensCookie) return res.status(401).json({ error: "Not authenticated" });
+
+    try {
+      const firestore = new Firestore({ projectId: "tx-analyzer-1777844550" });
+      const transactionsSnapshot = await firestore.collection("transactions").get();
+      
+      const taxonomy: Record<string, string[]> = {};
+      
+      transactionsSnapshot.docs.forEach(doc => {
+          const data = doc.data();
+          if (data.Category) {
+              const cat = data.Category;
+              const subcat = data.Subcategory;
+              
+              if (!taxonomy[cat]) {
+                  taxonomy[cat] = [];
+              }
+              if (subcat && !taxonomy[cat].includes(subcat)) {
+                  taxonomy[cat].push(subcat);
+              }
+          }
+      });
+      
+      // Sort the arrays for neatness
+      Object.keys(taxonomy).forEach(cat => {
+        taxonomy[cat].sort();
+      });
+
+      await firestore.collection("taxonomy").doc("global").set({ mapping: taxonomy });
+      res.json({ success: true, taxonomy });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/taxonomy/update", async (req, res) => {
+    const authHeader = req.headers.authorization;
+    let tokensCookie = req.cookies.google_tokens;
+    if (authHeader && authHeader.startsWith("Bearer ")) tokensCookie = decodeURIComponent(authHeader.split(" ")[1]);
+    if (!tokensCookie) return res.status(401).json({ error: "Not authenticated" });
+
+    try {
+      const { taxonomy } = req.body;
+      const firestore = new Firestore({ projectId: "tx-analyzer-1777844550" });
+      await firestore.collection("taxonomy").doc("global").set({ mapping: taxonomy });
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/taxonomy/check-usage", async (req, res) => {
+    const authHeader = req.headers.authorization;
+    let tokensCookie = req.cookies.google_tokens;
+    if (authHeader && authHeader.startsWith("Bearer ")) tokensCookie = decodeURIComponent(authHeader.split(" ")[1]);
+    if (!tokensCookie) return res.status(401).json({ error: "Not authenticated" });
+
+    try {
+      const { category, subcategory } = req.body;
+      const firestore = new Firestore({ projectId: "tx-analyzer-1777844550" });
+      let query = firestore.collection("transactions").where("Category", "==", category);
+      if (subcategory) {
+          query = query.where("Subcategory", "==", subcategory);
+      }
+      const snapshot = await query.limit(1).get();
+      res.json({ inUse: !snapshot.empty });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
     }
   });
 

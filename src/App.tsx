@@ -128,6 +128,7 @@ export default function App() {
   const [isUpdatingTx, setIsUpdatingTx] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [importStatus, setImportStatus] = useState<{ type: 'loading' | 'success' | 'error'; message: string } | null>(null);
+  const [importHistoryRefresh, setImportHistoryRefresh] = useState(0);
 
   useEffect(() => {
     checkAuthStatus();
@@ -1010,7 +1011,7 @@ export default function App() {
             {importStatus.type === 'loading' && <Loader2 className="w-5 h-5 animate-spin shrink-0" />}
             {importStatus.type === 'success' && <CheckCircle2 className="w-5 h-5 shrink-0" />}
             {importStatus.type === 'error' && <AlertTriangle className="w-5 h-5 shrink-0" />}
-            <p className="text-sm font-medium flex-1">{importStatus.message}</p>
+            <p className="text-sm font-medium flex-1 whitespace-pre-line">{importStatus.message}</p>
             {importStatus.type !== 'loading' && (
               <button onClick={() => setImportStatus(null)} className="p-1 hover:bg-black/5 rounded-lg transition-colors">
                 <X className="w-4 h-4" />
@@ -1068,7 +1069,8 @@ export default function App() {
             />
             
             <ImportHistory 
-              onRollbackComplete={fetchSheetData} 
+              onRollbackComplete={fetchSheetData}
+              refreshTrigger={importHistoryRefresh}
             />
           </>
         )}
@@ -2273,10 +2275,10 @@ export default function App() {
         isOpen={isImportModalOpen} 
         onClose={() => setIsImportModalOpen(false)} 
         onImportStarted={(txCount) => {
-          setImportStatus({ type: 'loading', message: `Importing: 0 / ${txCount} transactions processed…` });
+          setImportStatus({ type: 'loading', message: `Processing: 0\nImported: 0\nRemaining: ${txCount}` });
         }}
-        onImportProgress={(processed, total) => {
-          setImportStatus({ type: 'loading', message: `Importing: ${processed} / ${total} transactions processed… Gemini is analyzing categories.` });
+        onImportProgress={(batchStart, batchEnd, total) => {
+          setImportStatus({ type: 'loading', message: `Processing: ${batchStart}-${batchEnd}\nImported: ${batchStart - 1}\nRemaining: ${total - (batchStart - 1)}` });
         }}
         onImportComplete={(result) => {
           if (result.success) {
@@ -2288,6 +2290,7 @@ export default function App() {
               setImportStatus({ type: 'success', message: msg });
             }
             fetchSheetData();
+            setImportHistoryRefresh(prev => prev + 1);
             // Auto-dismiss after 10s
             setTimeout(() => setImportStatus(null), 10000);
           } else {

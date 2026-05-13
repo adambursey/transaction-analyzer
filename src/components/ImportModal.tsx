@@ -5,9 +5,9 @@ import { UploadCloud, X, Loader2 } from 'lucide-react';
 interface ImportModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onImportStarted?: (totalCount: number) => void;
+  onImportProgress?: (batchStart: number, batchEnd: number, total: number) => void;
   onImportComplete: (result: { success: boolean; message: string; geminiError?: string }) => void;
-  onImportStarted: (txCount: number) => void;
-  onImportProgress?: (processed: number, total: number) => void;
 }
 
 export function ImportModal({ isOpen, onClose, onImportComplete, onImportStarted, onImportProgress }: ImportModalProps) {
@@ -58,12 +58,17 @@ export function ImportModal({ isOpen, onClose, onImportComplete, onImportStarted
           let pendingReviewCount = 0;
           let hasGeminiError = false;
           let lastGeminiError = "";
+          const importId = `import_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
           console.log(`[ImportModal] Starting chunk import loop. Total chunks: ${Math.ceil(total/chunkSize)}`);
 
           for (let i = 0; i < total; i += chunkSize) {
             const chunk = transactions.slice(i, i + chunkSize);
             console.log(`[ImportModal] Sending chunk ${i/chunkSize + 1}: tx ${i} to ${i + chunk.length}`);
+            
+            if (onImportProgress) {
+              onImportProgress(i + 1, Math.min(i + chunkSize, total), total);
+            }
 
             try {
               const res = await fetch('/api/import', {
@@ -71,7 +76,8 @@ export function ImportModal({ isOpen, onClose, onImportComplete, onImportStarted
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                   filename: file.name,
-                  transactions: chunk
+                  transactions: chunk,
+                  importId
                 })
               });
 
@@ -100,8 +106,6 @@ export function ImportModal({ isOpen, onClose, onImportComplete, onImportStarted
               lastGeminiError = data.geminiError;
             }
 
-            if (onImportProgress) {
-              onImportProgress(Math.min(processed, total), total);
             }
           } catch (chunkErr: any) {
             console.error(`[ImportModal] Chunk failed:`, chunkErr);

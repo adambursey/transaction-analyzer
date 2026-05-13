@@ -4,9 +4,10 @@ import { format } from 'date-fns';
 
 interface ImportHistoryProps {
   onRollbackComplete: () => void;
+  refreshTrigger?: number;
 }
 
-export function ImportHistory({ onRollbackComplete }: ImportHistoryProps) {
+export function ImportHistory({ onRollbackComplete, refreshTrigger = 0 }: ImportHistoryProps) {
   const [imports, setImports] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [rollingBackId, setRollingBackId] = useState<string | null>(null);
@@ -28,7 +29,7 @@ export function ImportHistory({ onRollbackComplete }: ImportHistoryProps) {
 
   useEffect(() => {
     fetchImports();
-  }, []);
+  }, [refreshTrigger]);
 
   const handleRollback = async (importId: string) => {
     if (!window.confirm("Are you sure you want to rollback this import? This will delete all transactions associated with it.")) {

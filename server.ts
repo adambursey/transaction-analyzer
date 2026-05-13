@@ -186,7 +186,7 @@ async function startServer() {
       return;
     }
 
-    const { transactions, filename } = req.body;
+    const { transactions, filename, importId: clientImportId } = req.body;
     console.log(`[Server] Import request for file: ${filename}, payload size: ${transactions?.length} transactions`);
     
     if (!transactions || !Array.isArray(transactions)) {
@@ -302,16 +302,22 @@ ${JSON.stringify(uniqueFuzzyDescs)}
         finalFuzzyMatches = fuzzyMatches.map(tx => ({ ...tx, status: "pending_review" }));
       }
 
-      const allToInsert = [...exactMatches, ...finalFuzzyMatches];
-      const importId = `import_${Date.now()}`;
+      const importId = clientImportId || `import_${Date.now()}`;
 
       // Write import record
-      await importsCollection.doc(importId).set({
-        importId,
-        date: new Date().toISOString(),
-        filename: filename || "Unknown file",
-        count: allToInsert.length
-      });
+      const importRef = importsCollection.doc(importId);
+      const importDoc = await importRef.get();
+      if (importDoc.exists) {
+        const currentCount = importDoc.data()?.count || 0;
+        await importRef.update({ count: currentCount + allToInsert.length });
+      } else {
+        await importRef.set({
+          importId,
+          date: new Date().toISOString(),
+          filename: filename || "Unknown file",
+          count: allToInsert.length
+        });
+      }
 
       // Write transactions in batches
       const batchSize = 400; // Firestore limit is 500

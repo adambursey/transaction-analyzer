@@ -4,7 +4,7 @@ import cookieParser from "cookie-parser";
 import { google } from "googleapis";
 import path from "path";
 import dotenv from "dotenv";
-import { Firestore } from "@google-cloud/firestore";
+import { Firestore, FieldValue } from "@google-cloud/firestore";
 import { GoogleGenAI } from "@google/genai";
 import { deduplicateTransactions, exactMatchTransactions, generateSignature } from "./src/utils/importLogic.js";
 
@@ -302,22 +302,20 @@ ${JSON.stringify(uniqueFuzzyDescs)}
         finalFuzzyMatches = fuzzyMatches.map(tx => ({ ...tx, status: "pending_review" }));
       }
 
+      const allToInsert = [...exactMatches, ...finalFuzzyMatches];
       const importId = clientImportId || `import_${Date.now()}`;
 
       // Write import record
       const importRef = importsCollection.doc(importId);
-      const importDoc = await importRef.get();
-      if (importDoc.exists) {
-        const currentCount = importDoc.data()?.count || 0;
-        await importRef.update({ count: currentCount + allToInsert.length });
-      } else {
-        await importRef.set({
-          importId,
-          date: new Date().toISOString(),
-          filename: filename || "Unknown file",
-          count: allToInsert.length
-        });
-      }
+      
+      // We use set({ merge: true }) with FieldValue.increment to avoid race conditions 
+      // from multiple chunks updating the count concurrently.
+      await importRef.set({
+        importId,
+        date: new Date().toISOString(),
+        filename: filename || "Unknown file",
+        count: FieldValue.increment(allToInsert.length)
+      }, { merge: true });
 
       // Write transactions in batches
       const batchSize = 400; // Firestore limit is 500
@@ -432,16 +430,23 @@ ${JSON.stringify(uniqueFuzzyDescs)}
       const budgetsCollection = firestore.collection("budgets");
 
       const transactionsSnapshot = await transactionsCollection.get();
-      const data = transactionsSnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
+      const data = transactionsSnapshot.docs.map(doc => {
+        const raw = doc.data();
+        return {
+          id: doc.id,
+          Date: raw['Date'] || raw['Posting Date'] || raw['date'] || '',
+          Description: raw['Description'] || raw['description'] || '',
+          Amount: raw['Amount'] !== undefined ? raw['Amount'] : (raw['amount'] || 0),
+          Type: raw['Type'] || raw['type'] || '',
+          Balance: raw['Balance'] || raw['balance'] || '',
+          Category: raw['Category'] || raw['category'] || '',
+          Subcategory: raw['Subcategory'] || raw['subcategory'] || '',
+          status: raw['status'] || 'reviewed', // default to reviewed if missing
+          importId: raw['importId'] || ''
+        };
+      });
 
-      let headers: string[] = [];
-      if (data.length > 0) {
-        // Extract headers from the first document (ignoring the 'id' field we just added)
-        headers = Object.keys(data[0]).filter(k => k !== 'id');
-      }
+      let headers = ['Date', 'Description', 'Amount', 'Type', 'Balance', 'Category', 'Subcategory', 'status'];
 
       const budgetSnapshot = await budgetsCollection.get();
       const budgetData = budgetSnapshot.docs.map(doc => {
@@ -694,8 +699,8 @@ ${JSON.stringify(uniqueFuzzyDescs)}
         chunk.forEach((update: any) => {
           const ref = firestore.collection("transactions").doc(update.id);
           const data: any = {};
-          if (update.Category !== undefined) data.Category = update.Category;
-          if (update.Subcategory !== undefined) data.Subcategory = update.Subcategory;
+          if (update.category !== undefined) data.Category = update.category;
+          if (update.subcategory !== undefined) data.Subcategory = update.subcategory;
           if (update.status !== undefined) data.status = update.status;
           batch.update(ref, data);
         });

@@ -6,7 +6,7 @@ interface ImportModalProps {
   isOpen: boolean;
   onClose: () => void;
   onImportStarted?: (totalCount: number) => void;
-  onImportProgress?: (batchStart: number, batchEnd: number, total: number) => void;
+  onImportProgress?: (processed: number, total: number) => void;
   onImportComplete: (result: { success: boolean; message: string; geminiError?: string }) => void;
 }
 
@@ -60,17 +60,42 @@ export function ImportModal({ isOpen, onClose, onImportComplete, onImportStarted
           let lastGeminiError = "";
           const importId = `import_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
-          console.log(`[ImportModal] Starting chunk import loop. Total chunks: ${Math.ceil(total/chunkSize)}`);
+          console.log(`[ImportModal] Starting async chunk import loop. Total chunks: ${Math.ceil(total/chunkSize)}`);
 
+          const chunks = [];
           for (let i = 0; i < total; i += chunkSize) {
-            const chunk = transactions.slice(i, i + chunkSize);
-            console.log(`[ImportModal] Sending chunk ${i/chunkSize + 1}: tx ${i} to ${i + chunk.length}`);
-            
-            if (onImportProgress) {
-              onImportProgress(i + 1, Math.min(i + chunkSize, total), total);
-            }
+            chunks.push({ i, chunk: transactions.slice(i, i + chunkSize) });
+          }
+          
+          const maxConcurrency = 3;
+          let activeCount = 0;
+          let chunkIndex = 0;
 
-            try {
+          await new Promise<void>((resolve, reject) => {
+            const next = () => {
+              if (chunkIndex >= chunks.length && activeCount === 0) {
+                resolve();
+                return;
+              }
+              while (activeCount < maxConcurrency && chunkIndex < chunks.length) {
+                const current = chunks[chunkIndex++];
+                activeCount++;
+                
+                processChunk(current)
+                  .then(() => {
+                    activeCount--;
+                    next();
+                  })
+                  .catch((err) => {
+                    reject(err);
+                  });
+              }
+            };
+            
+            const processChunk = async ({ i, chunk }: any) => {
+              const chunkNum = Math.floor(i / chunkSize) + 1;
+              console.log(`[ImportModal] Sending chunk ${chunkNum}: tx ${i} to ${i + chunk.length}`);
+              
               const res = await fetch('/api/import', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -81,39 +106,40 @@ export function ImportModal({ isOpen, onClose, onImportComplete, onImportStarted
                 })
               });
 
-              console.log(`[ImportModal] Received response for chunk ${i/chunkSize + 1}. Status: ${res.status}`);
+              console.log(`[ImportModal] Received response for chunk ${chunkNum}. Status: ${res.status}`);
               const data = await res.json();
-              console.log(`[ImportModal] Chunk ${i/chunkSize + 1} data:`, data);
               
               if (!res.ok) {
-                console.error(`[ImportModal] HTTP error for chunk ${i/chunkSize + 1}:`, data);
+                console.error(`[ImportModal] HTTP error for chunk ${chunkNum}:`, data);
                 throw new Error(data.error || 'Failed to import chunk');
               }
 
               processed += chunk.length;
             
-            // Extract stats from the chunk
-            if (data.message) {
-              const exactMatch = data.message.match(/(\d+) auto-categorized/);
-              if (exactMatch) exactMatchesCount += parseInt(exactMatch[1], 10);
+              // Extract stats from the chunk
+              if (data.message) {
+                const exactMatch = data.message.match(/(\d+) auto-categorized/);
+                if (exactMatch) exactMatchesCount += parseInt(exactMatch[1], 10);
+                
+                const pendingMatch = data.message.match(/(\d+) pending review/);
+                if (pendingMatch) pendingReviewCount += parseInt(pendingMatch[1], 10);
+              }
               
-              const pendingMatch = data.message.match(/(\d+) pending review/);
-              if (pendingMatch) pendingReviewCount += parseInt(pendingMatch[1], 10);
-            }
+              if (data.geminiError) {
+                hasGeminiError = true;
+                lastGeminiError = data.geminiError;
+              }
+
+              if (onImportProgress) {
+                onImportProgress(processed, total);
+              }
+            };
             
-            if (data.geminiError) {
-              hasGeminiError = true;
-              lastGeminiError = data.geminiError;
-            }
+            // Kick off the initial workers
+            next();
+          });
 
-            }
-          } catch (chunkErr: any) {
-            console.error(`[ImportModal] Chunk failed:`, chunkErr);
-            throw chunkErr; // Rethrow to be caught by the outer try-catch
-          }
-        }
-
-        console.log(`[ImportModal] Finished all chunks. Final processed count: ${processed}. Exact: ${exactMatchesCount}, Pending: ${pendingReviewCount}`);
+          console.log(`[ImportModal] Finished all chunks. Final processed count: ${processed}. Exact: ${exactMatchesCount}, Pending: ${pendingReviewCount}`);
           const finalMessage = `Imported ${total} transactions. ${exactMatchesCount} auto-categorized, ${pendingReviewCount} pending review.`;
           
           onImportComplete({ 

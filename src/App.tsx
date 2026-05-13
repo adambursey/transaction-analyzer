@@ -362,7 +362,7 @@ export default function App() {
         return val && !isNaN(Number(val.replace(/[^0-9.-]+/g, "")));
       });
     const categoryCol =
-      cols.find((c) => /category|type|group/i.test(c)) || cols[1];
+      cols.find((c) => /category|group/i.test(c)) || cols[1];
     const subcategoryCol =
       cols.find((c) => /subcategory|sub-category|sub category/i.test(c));
     const descCol =
@@ -1986,7 +1986,7 @@ export default function App() {
                 <table className="w-full text-sm text-left border-separate border-spacing-0">
                   <thead className="text-xs text-slate-500 uppercase bg-slate-50 sticky top-0 z-20">
                     <tr>
-                      {headers.filter(h => !/year|month|notes/i.test(h)).map((header) => {
+                      {headers.filter(h => !/year|month|notes|type|balance|status|importid/i.test(h)).map((header) => {
                         const isAmount = header === analysis.columnsIdentified.amount;
                         const isCategory = header === analysis.columnsIdentified.category;
                         const isSubcategory = header === analysis.columnsIdentified.subcategory;
@@ -2026,7 +2026,7 @@ export default function App() {
                             setIsTxModalOpen(true);
                           }}
                         >
-                          {headers.filter(h => !/year|month|notes/i.test(h)).map((header) => {
+                          {headers.filter(h => !/year|month|notes|type|balance|status|importid/i.test(h)).map((header) => {
                             const val = tx[header];
                             const isAmount = header === analysis.columnsIdentified.amount;
                             const isCategory = header === analysis.columnsIdentified.category;
@@ -2275,10 +2275,10 @@ export default function App() {
         isOpen={isImportModalOpen} 
         onClose={() => setIsImportModalOpen(false)} 
         onImportStarted={(txCount) => {
-          setImportStatus({ type: 'loading', message: `Processing: 0\nImported: 0\nRemaining: ${txCount}` });
+          setImportStatus({ type: 'loading', message: `Processing: 3 concurrent batches\nImported: 0 / ${txCount}\nRemaining: ${txCount}` });
         }}
-        onImportProgress={(batchStart, batchEnd, total) => {
-          setImportStatus({ type: 'loading', message: `Processing: ${batchStart}-${batchEnd}\nImported: ${batchStart - 1}\nRemaining: ${total - (batchStart - 1)}` });
+        onImportProgress={(processed, total) => {
+          setImportStatus({ type: 'loading', message: `Processing: 3 concurrent batches\nImported: ${processed} / ${total}\nRemaining: ${total - processed}` });
         }}
         onImportComplete={(result) => {
           if (result.success) {

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Check, X, Edit3, Loader2, ChevronUp, ChevronDown, Filter, Trash2 } from 'lucide-react';
 
 interface ReviewQueueProps {
@@ -59,6 +59,11 @@ export function ReviewQueue({ transactions, taxonomy, onApprove, onBulkApprove }
     return result;
   }, [pendingTransactions, filterText, sortConfig]);
 
+  // Clear selections when filter changes
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [filterText]);
+
   if (pendingTransactions.length === 0) return null;
 
   const handleSort = (key: string) => {
@@ -111,15 +116,18 @@ export function ReviewQueue({ transactions, taxonomy, onApprove, onBulkApprove }
     if (selectedIds.size === 0) return;
     setIsBulkApproving(true);
     try {
-      const updates = Array.from(selectedIds).map(id => {
-        const tx = pendingTransactions.find(t => t.id === id);
-        return {
-          id,
+      const updates = Array.from(selectedIds)
+        .map(id => pendingTransactions.find(t => t.id === id))
+        .filter((tx): tx is any => tx !== undefined && !!tx.Category) // Prevent empty category approval
+        .map(tx => ({
+          id: tx.id,
           category: tx.Category,
           subcategory: tx.Subcategory
-        };
-      });
-      await onBulkApprove(updates);
+        }));
+
+      if (updates.length > 0) {
+        await onBulkApprove(updates);
+      }
       setSelectedIds(new Set());
     } catch (err) {
       console.error("Bulk approve failed:", err);
@@ -133,7 +141,7 @@ export function ReviewQueue({ transactions, taxonomy, onApprove, onBulkApprove }
     if (selectedIds.size === 0) return;
     setIsBulkApproving(true);
     try {
-      const updates = Array.from(selectedIds).map(id => ({
+      const updates = Array.from(selectedIds).map((id: string) => ({
         id,
         category: bulkEditCategory,
         subcategory: bulkEditSubcategory
@@ -171,8 +179,16 @@ export function ReviewQueue({ transactions, taxonomy, onApprove, onBulkApprove }
               placeholder="Filter transactions..." 
               value={filterText}
               onChange={e => setFilterText(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm focus:outline-none focus:border-blue-500"
+              className="w-full pl-9 pr-10 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm focus:outline-none focus:border-blue-500"
             />
+            {filterText && (
+              <button 
+                onClick={() => setFilterText("")}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
           </div>
         </div>
 
@@ -196,7 +212,36 @@ export function ReviewQueue({ transactions, taxonomy, onApprove, onBulkApprove }
               </div>
             ) : (
               <>
-                <button onClick={() => setIsBulkEditing(true)} className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-white text-sm rounded flex items-center gap-1">
+                <button 
+                  onClick={() => {
+                    // Calculate most common category/subcategory pair among selected
+                    const selectedTxs = Array.from(selectedIds)
+                      .map(id => pendingTransactions.find(t => t.id === id))
+                      .filter(tx => tx && tx.Category);
+                    
+                    let bestCat = "";
+                    let bestSubcat = "";
+                    
+                    if (selectedTxs.length > 0) {
+                      const counts: Record<string, number> = {};
+                      let maxCount = 0;
+                      selectedTxs.forEach(tx => {
+                        const key = `${tx.Category}||${tx.Subcategory || ""}`;
+                        counts[key] = (counts[key] || 0) + 1;
+                        if (counts[key] > maxCount) {
+                          maxCount = counts[key];
+                          bestCat = tx.Category;
+                          bestSubcat = tx.Subcategory || "";
+                        }
+                      });
+                    }
+                    
+                    setBulkEditCategory(bestCat);
+                    setBulkEditSubcategory(bestSubcat);
+                    setIsBulkEditing(true);
+                  }} 
+                  className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-white text-sm rounded flex items-center gap-1"
+                >
                   <Edit3 className="w-4 h-4" /> Bulk Edit
                 </button>
                 <button onClick={handleBulkApprove} disabled={isBulkApproving} className="px-3 py-1.5 bg-green-600 hover:bg-green-500 text-white text-sm rounded flex items-center gap-1">

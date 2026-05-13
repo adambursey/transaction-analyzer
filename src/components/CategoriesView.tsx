@@ -3,10 +3,12 @@ import { Plus, Edit2, Trash2, ChevronDown, ChevronRight, AlertTriangle, Loader2,
 
 interface CategoriesViewProps {
   taxonomy: Record<string, string[]>;
+  transactions: any[];
   onUpdate: () => void;
+  onCategorySelect?: (cat: string, subcat?: string) => void;
 }
 
-export function CategoriesView({ taxonomy, onUpdate }: CategoriesViewProps) {
+export function CategoriesView({ taxonomy, transactions, onUpdate, onCategorySelect }: CategoriesViewProps) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -207,9 +209,15 @@ export function CategoriesView({ taxonomy, onUpdate }: CategoriesViewProps) {
                         <button onClick={() => setEditingCategory(null)} className="text-slate-400 p-1"><X className="w-4 h-4" /></button>
                       </div>
                     ) : (
-                      <div className="flex-1 font-medium text-slate-900 flex items-center gap-2">
+                      <div 
+                        className={`flex-1 font-medium text-slate-900 flex items-center gap-2 ${onCategorySelect ? 'cursor-pointer hover:text-blue-600' : ''}`}
+                        onClick={() => onCategorySelect && onCategorySelect(cat)}
+                      >
                         {cat}
-                        <span className="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">{taxonomy[cat].length}</span>
+                        <span className="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full" title="Number of subcategories">{taxonomy[cat].length}</span>
+                        <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full" title="Number of transactions">
+                          {transactions.filter(t => t._category === cat).length} tx
+                        </span>
                       </div>
                     )}
 
@@ -228,6 +236,19 @@ export function CategoriesView({ taxonomy, onUpdate }: CategoriesViewProps) {
                   {isExpanded && (
                     <div className="bg-slate-50 pl-12 pr-4 py-3 border-t border-slate-100">
                       <ul className="space-y-1">
+                        {transactions.filter(t => t._category === cat && !t._subcategory).length > 0 && (
+                          <li className="flex items-center gap-2 py-1.5 px-2 hover:bg-slate-100 rounded group/sub">
+                            <span 
+                              className={`flex-1 text-sm text-slate-500 italic ${onCategorySelect ? 'cursor-pointer hover:text-blue-600' : ''}`}
+                              onClick={() => onCategorySelect && onCategorySelect(cat, "")}
+                            >
+                              No Subcategory
+                              <span className="text-xs bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded-full ml-2">
+                                {transactions.filter(t => t._category === cat && !t._subcategory).length}
+                              </span>
+                            </span>
+                          </li>
+                        )}
                         {taxonomy[cat].map(subcat => {
                           const isEditingSub = editingSubcategory?.cat === cat && editingSubcategory?.old === subcat;
                           return (
@@ -240,7 +261,15 @@ export function CategoriesView({ taxonomy, onUpdate }: CategoriesViewProps) {
                                 </div>
                               ) : (
                                 <>
-                                  <span className="flex-1 text-sm text-slate-600">{subcat}</span>
+                                  <span 
+                                    className={`flex-1 text-sm text-slate-600 ${onCategorySelect ? 'cursor-pointer hover:text-blue-600' : ''}`}
+                                    onClick={() => onCategorySelect && onCategorySelect(cat, subcat)}
+                                  >
+                                    {subcat}
+                                    <span className="text-xs bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded-full ml-2">
+                                      {transactions.filter(t => t._category === cat && t._subcategory === subcat).length}
+                                    </span>
+                                  </span>
                                   <div className="flex items-center gap-1 opacity-0 group-hover/sub:opacity-100 transition-opacity">
                                     <button onClick={() => setEditingSubcategory({ cat, old: subcat, new: subcat })} className="p-1 text-slate-400 hover:text-blue-600 rounded">
                                       <Edit2 className="w-3.5 h-3.5" />

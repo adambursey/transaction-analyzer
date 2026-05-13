@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Clock, Trash2, Loader2, AlertTriangle } from 'lucide-react';
+import { Clock, Trash2, Loader2, AlertTriangle, CheckCircle } from 'lucide-react';
 import { format } from 'date-fns';
 
 interface ImportHistoryProps {
@@ -56,6 +56,21 @@ export function ImportHistory({ onRollbackComplete, refreshTrigger = 0 }: Import
     }
   };
 
+  const handleMarkOk = async (importId: string) => {
+    try {
+      const res = await fetch("/api/import/ok", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ importId })
+      });
+      if (!res.ok) throw new Error("Failed to mark OK");
+      setImports(imports.filter(imp => imp.importId !== importId));
+    } catch (err) {
+      console.error(err);
+      alert("Failed to mark OK");
+    }
+  };
+
   if (isLoading) {
     return <div className="flex justify-center p-8"><Loader2 className="animate-spin text-blue-500" /></div>;
   }
@@ -83,19 +98,29 @@ export function ImportHistory({ onRollbackComplete, refreshTrigger = 0 }: Import
                   {format(new Date(imp.date), "MMM d, yyyy 'at' h:mm a")} • {imp.count} transactions
                 </p>
               </div>
-              <button
-                onClick={() => handleRollback(imp.importId)}
-                disabled={rollingBackId === imp.importId}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors disabled:opacity-50"
-                title="Rollback Import"
-              >
-                {rollingBackId === imp.importId ? (
-                  <Loader2 size={16} className="animate-spin" />
-                ) : (
-                  <Trash2 size={16} />
-                )}
-                <span className="text-sm font-medium">Rollback</span>
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => handleMarkOk(imp.importId)}
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition-colors"
+                  title="Mark as OK (hides from history)"
+                >
+                  <CheckCircle size={16} />
+                  <span className="text-sm font-medium">OK</span>
+                </button>
+                <button
+                  onClick={() => handleRollback(imp.importId)}
+                  disabled={rollingBackId === imp.importId}
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors disabled:opacity-50"
+                  title="Rollback Import"
+                >
+                  {rollingBackId === imp.importId ? (
+                    <Loader2 size={16} className="animate-spin" />
+                  ) : (
+                    <Trash2 size={16} />
+                  )}
+                  <span className="text-sm font-medium">Rollback</span>
+                </button>
+              </div>
             </div>
           ))}
         </div>

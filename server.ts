@@ -233,6 +233,10 @@ async function startServer() {
       
       console.log(`[Server] Pre-Gemini stats: ${exactMatches.length} exact matches, ${fuzzyMatches.length} fuzzy matches to process`);
       
+      // Fetch taxonomy for strict validation
+      const taxonomyDoc = await firestore.collection("taxonomy").doc("global").get();
+      const globalTaxonomy = taxonomyDoc.exists ? taxonomyDoc.data()?.mapping || {} : {};
+      
       if (fuzzyMatches.length > 0 && process.env.GEMINI_API_KEY) {
         try {
           console.log("[Server] Calling Gemini for fuzzy matches...");
@@ -275,10 +279,21 @@ ${JSON.stringify(uniqueFuzzyDescs)}
                 const desc = tx.Description || "";
                 const pred = predictions[desc];
                 if (pred) {
+                  let validCat = pred.Category;
+                  let validSubcat = pred.Subcategory;
+                  
+                  // Strict validation
+                  if (validCat && !globalTaxonomy[validCat]) {
+                    validCat = "";
+                    validSubcat = "";
+                  } else if (validCat && validSubcat && (!globalTaxonomy[validCat].includes(validSubcat))) {
+                    validSubcat = "";
+                  }
+
                   return {
                     ...tx,
-                    Category: pred.Category,
-                    Subcategory: pred.Subcategory,
+                    Category: validCat || "",
+                    Subcategory: validSubcat || "",
                     status: "pending_review"
                   };
                 }
@@ -380,6 +395,25 @@ ${JSON.stringify(uniqueFuzzyDescs)}
     }
   });
 
+  app.post("/api/import/ok", async (req, res) => {
+    const authHeader = req.headers.authorization;
+    let tokensCookie = req.cookies.google_tokens;
+    if (authHeader && authHeader.startsWith("Bearer ")) tokensCookie = decodeURIComponent(authHeader.split(" ")[1]);
+    if (!tokensCookie) return res.status(401).json({ error: "Not authenticated" });
+
+    const { importId } = req.body;
+    if (!importId) return res.status(400).json({ error: "Missing importId" });
+
+    try {
+      const firestore = new Firestore({ projectId: "tx-analyzer-1777844550" });
+      await firestore.collection("imports").doc(importId).update({ archived: true });
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error("Mark OK failed:", err);
+      res.status(500).json({ error: err.message || "Failed to mark import OK" });
+    }
+  });
+
   app.get("/api/imports", async (req, res) => {
     const authHeader = req.headers.authorization;
     let tokensCookie = req.cookies.google_tokens;
@@ -389,7 +423,7 @@ ${JSON.stringify(uniqueFuzzyDescs)}
     try {
       const firestore = new Firestore({ projectId: "tx-analyzer-1777844550" });
       const snapshot = await firestore.collection("imports").orderBy("date", "desc").get();
-      const imports = snapshot.docs.map(doc => doc.data());
+      const imports = snapshot.docs.map(doc => doc.data()).filter(imp => !imp.archived);
       res.json({ imports });
     } catch (err: any) {
       res.status(500).json({ error: err.message });

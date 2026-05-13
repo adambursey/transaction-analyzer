@@ -41,8 +41,10 @@ import {
   CheckCircle2,
   AlertTriangle,
   FolderTree,
+  Check,
+  Edit3,
 } from "lucide-react";
-import { format, parseISO, isValid } from "date-fns";
+import { format, parseISO, isValid, parse } from "date-fns";
 import { ImportModal } from "./components/ImportModal";
 import { ReviewQueue } from "./components/ReviewQueue";
 import { ImportHistory } from "./components/ImportHistory";
@@ -129,6 +131,17 @@ export default function App() {
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [importStatus, setImportStatus] = useState<{ type: 'loading' | 'success' | 'error'; message: string } | null>(null);
   const [importHistoryRefresh, setImportHistoryRefresh] = useState(0);
+
+  const [selectedTxIds, setSelectedTxIds] = useState<Set<string>>(new Set());
+  const [isBulkEditingTx, setIsBulkEditingTx] = useState(false);
+  const [bulkEditTxCategory, setBulkEditTxCategory] = useState("");
+  const [bulkEditTxSubcategory, setBulkEditTxSubcategory] = useState("");
+  const [isBulkUpdatingTx, setIsBulkUpdatingTx] = useState(false);
+
+  useEffect(() => {
+    setSelectedTxIds(new Set());
+    setIsBulkEditingTx(false);
+  }, [selectedYear, selectedMonth, txFilterCategory, txFilterSubcategory, txFilterType]);
 
   useEffect(() => {
     checkAuthStatus();
@@ -299,6 +312,33 @@ export default function App() {
       alert(err.message || "An error occurred while updating budget");
     } finally {
       setIsUpdatingBudget(false);
+    }
+  };
+
+  const handleBulkTxUpdate = async (updates: {id: string, category: string, subcategory: string}[]) => {
+    setIsBulkUpdatingTx(true);
+    try {
+      const payload = updates.map(u => ({
+        id: u.id,
+        category: u.category,
+        subcategory: u.subcategory
+      }));
+      const res = await fetch("/api/transaction/bulk-update", {
+        method: "POST",
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ updates: payload })
+      });
+      if (!res.ok) throw new Error("Bulk update failed");
+      await fetchSheetData();
+      setSelectedTxIds(new Set());
+      setIsBulkEditingTx(false);
+      setBulkEditTxCategory("");
+      setBulkEditTxSubcategory("");
+    } catch (err) {
+      console.error("Bulk tx update failed:", err);
+      alert("Failed to update transactions");
+    } finally {
+      setIsBulkUpdatingTx(false);
     }
   };
 
@@ -589,7 +629,9 @@ export default function App() {
 
     // Prepare full category table data
     const sortedMonths = Array.from(monthsSet).sort((a, b) => {
-      return new Date(a).getTime() - new Date(b).getTime();
+      const dateA = parse(a, "MMM yyyy", new Date());
+      const dateB = parse(b, "MMM yyyy", new Date());
+      return dateA.getTime() - dateB.getTime();
     });
 
     // Auto-select logic: If selectedMonth is not in the current data set, pick the best default
@@ -1112,7 +1154,7 @@ export default function App() {
                   >
                     <option value="All Months">All</option>
                     {analysis.sortedMonths.map(month => (
-                      <option key={month} value={month}>{month}</option>
+                      <option key={month} value={month}>{month.split(' ')[0]}</option>
                     ))}
                   </select>
                 </div>
@@ -1486,7 +1528,7 @@ export default function App() {
                   >
                     <option value="All Months">All</option>
                     {analysis.sortedMonths.map(month => (
-                      <option key={month} value={month}>{month}</option>
+                      <option key={month} value={month}>{month.split(' ')[0]}</option>
                     ))}
                   </select>
                 </div>
@@ -1858,7 +1900,15 @@ export default function App() {
         {isAuthenticated && currentView === "categories" && (
           <CategoriesView 
             taxonomy={taxonomy} 
+            transactions={analysis?.allTransactions || []}
             onUpdate={fetchTaxonomy} 
+            onCategorySelect={(cat, subcat) => {
+              setTxFilterCategory(cat);
+              setTxFilterSubcategory(subcat || "");
+              setSelectedYear("All");
+              setSelectedMonth("All Months");
+              setCurrentView("transactions");
+            }}
           />
         )}
 
@@ -1904,7 +1954,7 @@ export default function App() {
                   >
                     <option value="All Months">All</option>
                     {analysis.sortedMonths.map(month => (
-                      <option key={month} value={month}>{month}</option>
+                      <option key={month} value={month}>{month.split(' ')[0]}</option>
                     ))}
                   </select>
                 </div>
@@ -1980,12 +2030,131 @@ export default function App() {
               </div>
             </div>
 
+            {/* Bulk Edit Banner */}
+            {selectedTxIds.size > 0 && (
+              <div className="bg-slate-900 rounded-lg p-3 mb-4 flex items-center justify-between text-white shadow-md animate-in fade-in slide-in-from-top-2">
+                <span className="text-sm font-medium">{selectedTxIds.size} transactions selected</span>
+                {isBulkEditingTx ? (
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={bulkEditTxCategory}
+                      onChange={e => { setBulkEditTxCategory(e.target.value); setBulkEditTxSubcategory(""); }}
+                      className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-sm text-white"
+                    >
+                      <option value="">Category...</option>
+                      {Object.keys(taxonomy).sort().map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                    </select>
+                    <select
+                      value={bulkEditTxSubcategory}
+                      onChange={e => setBulkEditTxSubcategory(e.target.value)}
+                      disabled={!bulkEditTxCategory}
+                      className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-sm text-white disabled:opacity-50"
+                    >
+                      <option value="">Subcategory...</option>
+                      {bulkEditTxCategory && taxonomy[bulkEditTxCategory]?.map(sub => <option key={sub} value={sub}>{sub}</option>)}
+                    </select>
+                    <button 
+                      onClick={() => {
+                        const updates = Array.from(selectedTxIds)
+                          .map(id => analysis.allTransactions.find((t: any) => t.id === id))
+                          .filter(tx => tx !== undefined)
+                          .map(tx => ({
+                            id: tx.id,
+                            category: bulkEditTxCategory,
+                            subcategory: bulkEditTxSubcategory
+                          }));
+                        handleBulkTxUpdate(updates);
+                      }} 
+                      disabled={isBulkUpdatingTx} 
+                      className="px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-500 flex items-center gap-1"
+                    >
+                      {isBulkUpdatingTx ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />} Apply
+                    </button>
+                    <button onClick={() => setIsBulkEditingTx(false)} className="px-2 py-1 text-slate-400 hover:text-white text-sm">Cancel</button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <button 
+                      onClick={() => {
+                        const selectedTxs = Array.from(selectedTxIds)
+                          .map(id => analysis.allTransactions.find((t: any) => t.id === id))
+                          .filter(tx => tx && tx._category);
+                        
+                        let bestCat = "";
+                        let bestSubcat = "";
+                        
+                        if (selectedTxs.length > 0) {
+                          const counts: Record<string, number> = {};
+                          let maxCount = 0;
+                          selectedTxs.forEach(tx => {
+                            const key = `${tx._category}||${tx._subcategory || ""}`;
+                            counts[key] = (counts[key] || 0) + 1;
+                            if (counts[key] > maxCount) {
+                              maxCount = counts[key];
+                              bestCat = tx._category;
+                              bestSubcat = tx._subcategory || "";
+                            }
+                          });
+                        }
+                        
+                        setBulkEditTxCategory(bestCat);
+                        setBulkEditTxSubcategory(bestSubcat);
+                        setIsBulkEditingTx(true);
+                      }} 
+                      className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-white text-sm rounded flex items-center gap-1"
+                    >
+                      <Edit3 className="w-4 h-4" /> Bulk Edit Category
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Transaction Table */}
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
               <div className="overflow-x-auto max-h-[700px]">
                 <table className="w-full text-sm text-left border-separate border-spacing-0">
                   <thead className="text-xs text-slate-500 uppercase bg-slate-50 sticky top-0 z-20">
                     <tr>
+                      <th className="px-4 py-4 font-semibold border-b border-slate-100 bg-slate-50 w-10 text-center">
+                        <input 
+                          type="checkbox"
+                          checked={
+                            analysis.allTransactions.filter((tx: any) => {
+                              if (selectedMonth !== "All Months" && tx._monthKey !== selectedMonth) return false;
+                              if (txFilterCategory && tx._category !== txFilterCategory) return false;
+                              if (txFilterSubcategory && tx._subcategory !== txFilterSubcategory) return false;
+                              if (txFilterType === "income" && tx._isExpense) return false;
+                              if (txFilterType === "expense" && !tx._isExpense) return false;
+                              return true;
+                            }).length > 0 && 
+                            selectedTxIds.size === analysis.allTransactions.filter((tx: any) => {
+                              if (selectedMonth !== "All Months" && tx._monthKey !== selectedMonth) return false;
+                              if (txFilterCategory && tx._category !== txFilterCategory) return false;
+                              if (txFilterSubcategory && tx._subcategory !== txFilterSubcategory) return false;
+                              if (txFilterType === "income" && tx._isExpense) return false;
+                              if (txFilterType === "expense" && !tx._isExpense) return false;
+                              return true;
+                            }).length
+                          }
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              const filtered = analysis.allTransactions.filter((tx: any) => {
+                                if (selectedMonth !== "All Months" && tx._monthKey !== selectedMonth) return false;
+                                if (txFilterCategory && tx._category !== txFilterCategory) return false;
+                                if (txFilterSubcategory && tx._subcategory !== txFilterSubcategory) return false;
+                                if (txFilterType === "income" && tx._isExpense) return false;
+                                if (txFilterType === "expense" && !tx._isExpense) return false;
+                                return true;
+                              });
+                              setSelectedTxIds(new Set(filtered.map((t: any) => t.id)));
+                            } else {
+                              setSelectedTxIds(new Set());
+                            }
+                          }}
+                          className="rounded border-slate-300 bg-white"
+                        />
+                      </th>
                       {headers.filter(h => !/year|month|notes|type|balance|status|importid/i.test(h)).map((header) => {
                         const isAmount = header === analysis.columnsIdentified.amount;
                         const isCategory = header === analysis.columnsIdentified.category;
@@ -2017,15 +2186,21 @@ export default function App() {
                       .map((tx: any, idx: number) => (
                         <tr 
                           key={idx} 
-                          className="hover:bg-slate-50 transition-colors cursor-pointer group"
-                          onClick={() => {
-                            setEditingTx(tx);
-                            setEditTxAmount(tx._parsedAmount.toFixed(2));
-                            setEditTxCategory(tx._category);
-                            setEditTxSubcategory(tx._subcategory);
-                            setIsTxModalOpen(true);
-                          }}
+                          className={`hover:bg-slate-50 transition-colors group ${selectedTxIds.has(tx.id) ? 'bg-blue-50/50' : ''}`}
                         >
+                          <td className="px-4 py-4 border-b border-slate-100 text-center" onClick={(e) => e.stopPropagation()}>
+                            <input 
+                              type="checkbox"
+                              checked={selectedTxIds.has(tx.id)}
+                              onChange={(e) => {
+                                const next = new Set(selectedTxIds);
+                                if (next.has(tx.id)) next.delete(tx.id);
+                                else next.add(tx.id);
+                                setSelectedTxIds(next);
+                              }}
+                              className="rounded border-slate-300 bg-white"
+                            />
+                          </td>
                           {headers.filter(h => !/year|month|notes|type|balance|status|importid/i.test(h)).map((header) => {
                             const val = tx[header];
                             const isAmount = header === analysis.columnsIdentified.amount;
@@ -2044,17 +2219,24 @@ export default function App() {
                             if (isDescription) cellClass = 'break-words min-w-[200px]';
 
                             return (
-                              <td 
-                                key={header} 
-                                className={`px-6 py-4 border-b border-slate-100 ${cellClass} ${(isCategory || isSubcategory) ? 'hover:underline cursor-pointer font-medium' : ''}`}
-                                onClick={(e) => {
-                                  if (isCategory || isSubcategory) {
-                                    e.stopPropagation();
-                                    if (isCategory) setTxFilterCategory(String(val));
-                                    if (isSubcategory) setTxFilterSubcategory(String(val));
-                                  }
-                                }}
-                              >
+                                <td 
+                                  key={header} 
+                                  className={`px-6 py-4 border-b border-slate-100 ${cellClass} ${(isCategory || isSubcategory) ? 'hover:underline cursor-pointer font-medium' : 'cursor-pointer'}`}
+                                  onClick={(e) => {
+                                    if (isCategory || isSubcategory) {
+                                      e.stopPropagation();
+                                      if (isCategory) setTxFilterCategory(String(val));
+                                      if (isSubcategory) setTxFilterSubcategory(String(val));
+                                    } else {
+                                      // Default row click action
+                                      setEditingTx(tx);
+                                      setEditTxAmount(tx._parsedAmount.toFixed(2));
+                                      setEditTxCategory(tx._category);
+                                      setEditTxSubcategory(tx._subcategory);
+                                      setIsTxModalOpen(true);
+                                    }
+                                  }}
+                                >
                                 {isAmount ? (
                                   <span className={tx._isExpense ? 'text-slate-900' : 'text-emerald-600 font-bold'}>
                                     ${tx._parsedAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}

@@ -16,6 +16,9 @@ import {
   deduplicateTransactions,
   exactMatchTransactions,
   generateSignature,
+  stringSimilarity,
+  POTENTIAL_DUPLICATE_THRESHOLD,
+  isCustomDuplicateValid,
 } from './src/utils/importLogic.js';
 
 dotenv.config();
@@ -302,9 +305,25 @@ export async function createApp() {
         }
       }
 
+      const existingDateAmountMap = new Map<string, { id: string; description: string }>();
+
       snapshot.docs.forEach((doc) => {
         const data = doc.data();
-        existingSignatures.add(generateSignature(data));
+        const sig = generateSignature(data);
+        existingSignatures.add(sig);
+
+        // Map Date+Amount to document ID and description for potential duplicate checking
+        const parts = sig.split('|');
+        if (parts.length >= 3) {
+          const dateAmountKey = `${parts[0]}|${parts[2]}`;
+          // If there are multiple identical date+amount txs, this just stores the last one.
+          // That's acceptable for a "potential duplicate" flag anchor.
+          existingDateAmountMap.set(dateAmountKey, {
+            id: doc.id,
+            description: data.Description || '',
+          });
+        }
+
         if (
           !useSavedMapping &&
           data.Description &&
@@ -331,10 +350,47 @@ export async function createApp() {
         return;
       }
 
-      // 3. Exact matching
-      const { exactMatches, fuzzyMatches } = exactMatchTransactions(uniqueIncoming, knownMapping);
+      // 3. Identify potential duplicates (same date + amount, but different description)
+      const potentialDuplicates: any[] = [];
+      const trueNewIncoming: any[] = [];
 
-      // 4. Fuzzy matching via Gemini
+      for (const tx of uniqueIncoming) {
+        const sig = generateSignature(tx);
+        const parts = sig.split('|');
+        if (parts.length >= 3) {
+          const dateAmountKey = `${parts[0]}|${parts[2]}`;
+          const existingMatch = existingDateAmountMap.get(dateAmountKey);
+
+          let isPotentialDupe = false;
+          if (existingMatch) {
+            const desc1 = String(tx.Description || '');
+            const desc2 = String(existingMatch.description || '');
+
+            if (!isCustomDuplicateValid(desc1, desc2)) {
+              isPotentialDupe = false;
+            } else if (stringSimilarity(desc1, desc2) >= POTENTIAL_DUPLICATE_THRESHOLD) {
+              isPotentialDupe = true;
+            }
+          }
+
+          if (isPotentialDupe && existingMatch) {
+            potentialDuplicates.push({
+              ...tx,
+              status: 'potential_duplicate',
+              duplicateOfId: existingMatch.id,
+            });
+          } else {
+            trueNewIncoming.push(tx);
+          }
+        } else {
+          trueNewIncoming.push(tx);
+        }
+      }
+
+      // 4. Exact matching
+      const { exactMatches, fuzzyMatches } = exactMatchTransactions(trueNewIncoming, knownMapping);
+
+      // 5. Fuzzy matching via Gemini
       let finalFuzzyMatches = [...fuzzyMatches];
       let geminiErrorMessage = '';
 
@@ -435,7 +491,7 @@ ${JSON.stringify(uniqueFuzzyDescs)}
         finalFuzzyMatches = fuzzyMatches.map((tx) => ({ ...tx, status: 'pending_review' }));
       }
 
-      const allToInsert = [...exactMatches, ...finalFuzzyMatches];
+      const allToInsert = [...exactMatches, ...finalFuzzyMatches, ...potentialDuplicates];
       const importId = clientImportId || `import_${Date.now()}`;
 
       // Write import record
@@ -619,10 +675,17 @@ ${JSON.stringify(uniqueFuzzyDescs)}
           } else if (dateVal && dateVal._seconds) {
             dateVal = new Date(dateVal._seconds * 1000).toISOString();
           }
+          let effectiveDateVal = raw['EffectiveDate'] || '';
+          if (effectiveDateVal && typeof effectiveDateVal.toDate === 'function') {
+            effectiveDateVal = effectiveDateVal.toDate().toISOString();
+          } else if (effectiveDateVal && effectiveDateVal._seconds) {
+            effectiveDateVal = new Date(effectiveDateVal._seconds * 1000).toISOString();
+          }
 
           return {
             id: doc.id,
             Date: dateVal,
+            EffectiveDate: effectiveDateVal,
             Description: raw['Description'] || raw['description'] || '',
             Amount: raw['Amount'] !== undefined ? raw['Amount'] : raw['amount'] || 0,
             Type: raw['Type'] || raw['type'] || '',
@@ -631,6 +694,7 @@ ${JSON.stringify(uniqueFuzzyDescs)}
             Subcategory: raw['Subcategory'] || raw['subcategory'] || '',
             status: raw['status'] || 'reviewed', // default to reviewed if missing
             importId: raw['importId'] || '',
+            duplicateOfId: raw['duplicateOfId'] || undefined,
           };
         })
         .filter((tx) => tx.status !== 'archived');
@@ -863,15 +927,7 @@ ${JSON.stringify(uniqueFuzzyDescs)}
       if (date !== undefined) {
         const d = parseStrictDate(date);
         const newDateVal = d ? Timestamp.fromDate(d) : null;
-        updatesObj.Date = newDateVal;
-
-        // Regenerate the signature so it doesn't accidentally trigger duplicate checks using the old date
-        const docSnap = await transactionsCollection.doc(id).get();
-        if (docSnap.exists) {
-          const data = docSnap.data();
-          const newSignature = generateSignature({ ...data, Date: newDateVal });
-          updatesObj.signature = newSignature;
-        }
+        updatesObj.EffectiveDate = newDateVal;
       }
 
       await transactionsCollection.doc(id).update(updatesObj);
@@ -1441,6 +1497,167 @@ ${JSON.stringify(uniqueDescs)}
       res.json({ success: true, deletedCount });
     } catch (err: any) {
       console.error('Deduplication error:', err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/admin/scan-potential-duplicates', async (req, res) => {
+    const authHeader = req.headers.authorization;
+    let tokensCookie = req.cookies.google_tokens;
+    if (authHeader && authHeader.startsWith('Bearer '))
+      tokensCookie = decodeURIComponent(authHeader.split(' ')[1]);
+    if (!tokensCookie) return res.status(401).json({ error: 'Not authenticated' });
+
+    try {
+      const firestore = new Firestore({ projectId: 'tx-analyzer-1777844550' });
+      const snapshot = await firestore.collection('transactions').get();
+
+      // Group by Date + Amount
+      const groups = new Map<string, Array<{ id: string; ref: any; data: any }>>();
+
+      snapshot.docs.forEach((doc) => {
+        const data = doc.data();
+        if (data.status === 'archived' || data.status === 'potential_duplicate') return;
+
+        const sig = generateSignature(data);
+        const parts = sig.split('|');
+        if (parts.length >= 3) {
+          const dateAmountKey = `${parts[0]}|${parts[2]}`;
+          if (!groups.has(dateAmountKey)) groups.set(dateAmountKey, []);
+          groups.get(dateAmountKey)!.push({ id: doc.id, ref: doc.ref, data });
+        }
+      });
+
+      let flaggedCount = 0;
+      const batchSize = 400;
+      let batch = firestore.batch();
+      let opCount = 0;
+
+      const commitBatch = async () => {
+        if (opCount > 0) {
+          await batch.commit();
+          batch = firestore.batch();
+          opCount = 0;
+        }
+      };
+
+      for (const [key, docs] of groups.entries()) {
+        if (docs.length > 1) {
+          // Pick the "best" one to be the original (categorized > uncategorized)
+          docs.sort((a, b) => {
+            const aCat = a.data.Category && a.data.Category !== 'Uncategorized' ? 1 : 0;
+            const bCat = b.data.Category && b.data.Category !== 'Uncategorized' ? 1 : 0;
+            return bCat - aCat;
+          });
+
+          const original = docs[0];
+          const originalDesc = String(original.data.Description || '');
+
+          for (let i = 1; i < docs.length; i++) {
+            const dupeDesc = String(docs[i].data.Description || '');
+
+            // If descriptions are exactly the same, they should have been caught by standard deduplication.
+            // If they are not exactly the same, apply our custom checks
+            if (originalDesc.toLowerCase().trim() !== dupeDesc.toLowerCase().trim()) {
+              let isPotentialDupe = false;
+              if (!isCustomDuplicateValid(originalDesc, dupeDesc)) {
+                isPotentialDupe = false;
+              } else if (
+                stringSimilarity(originalDesc, dupeDesc) >= POTENTIAL_DUPLICATE_THRESHOLD
+              ) {
+                isPotentialDupe = true;
+              }
+
+              if (isPotentialDupe) {
+                batch.update(docs[i].ref, {
+                  status: 'potential_duplicate',
+                  duplicateOfId: original.id,
+                });
+                opCount++;
+                flaggedCount++;
+
+                if (opCount >= batchSize) {
+                  await commitBatch();
+                }
+              }
+            }
+          }
+        }
+      }
+
+      await commitBatch();
+
+      res.json({ success: true, flaggedCount });
+    } catch (err: any) {
+      console.error('Scan potential duplicates error:', err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/admin/resolve-duplicate', async (req, res) => {
+    try {
+      const authHeader = req.headers.authorization;
+      let tokensCookie = req.cookies.google_tokens;
+      if (authHeader && authHeader.startsWith('Bearer ')) {
+        tokensCookie = decodeURIComponent(authHeader.split(' ')[1]);
+      }
+      if (!tokensCookie) {
+        res.status(401).json({ error: 'Not authenticated' });
+        return;
+      }
+
+      const { newId, oldId, action } = req.body;
+      if (!newId || !oldId || !action) {
+        res.status(400).json({ error: 'Missing required parameters' });
+        return;
+      }
+
+      const firestore = new Firestore({ projectId: 'tx-analyzer-1777844550' });
+      const txCollection = firestore.collection('transactions');
+
+      const newTxSnap = await txCollection.doc(newId).get();
+      const oldTxSnap = await txCollection.doc(oldId).get();
+
+      if (!newTxSnap.exists) {
+        res.status(404).json({ error: 'New transaction not found' });
+        return;
+      }
+
+      const batch = firestore.batch();
+
+      if (action === 'keep_original') {
+        // Delete the incoming "potential_duplicate"
+        batch.delete(txCollection.doc(newId));
+      } else if (action === 'replace_original') {
+        if (!oldTxSnap.exists) {
+          res.status(404).json({ error: 'Original transaction not found' });
+          return;
+        }
+        // Update old transaction with new description/signature, keep its category
+        const newData = newTxSnap.data()!;
+        const oldData = oldTxSnap.data()!;
+
+        batch.update(txCollection.doc(oldId), {
+          Description: newData.Description,
+          signature: generateSignature({ ...oldData, Description: newData.Description }),
+        });
+        // Delete the new transaction
+        batch.delete(txCollection.doc(newId));
+      } else if (action === 'keep_both') {
+        // Officially promote the new transaction
+        batch.update(txCollection.doc(newId), {
+          status: 'pending_review',
+          duplicateOfId: FieldValue.delete(),
+        });
+      } else {
+        res.status(400).json({ error: 'Invalid action' });
+        return;
+      }
+
+      await batch.commit();
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error('Resolve duplicate error:', err);
       res.status(500).json({ error: err.message });
     }
   });

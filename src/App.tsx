@@ -447,7 +447,7 @@ export default function App() {
     // First pass: extract all available years and parse dates
     const yearsSet = new Set<string>();
     const preParsedData = rawData.map((row, index) => {
-      const dateStr = row[dateCol];
+      const dateStr = row.EffectiveDate || row[dateCol];
       let year = 'Unknown';
       if (dateStr) {
         const parsedDate = new Date(dateStr);
@@ -456,7 +456,7 @@ export default function App() {
           yearsSet.add(year);
         }
       }
-      return { ...row, _year: year, _rowIndex: index };
+      return { ...row, _year: year, _effectiveDateStr: dateStr, _rowIndex: index };
     });
 
     const sortedYears = Array.from(yearsSet).sort((a, b) => b.localeCompare(a));
@@ -475,7 +475,7 @@ export default function App() {
 
       const category = String(row[categoryCol] || 'Uncategorized');
       const subcategory = String(subcategoryCol ? row[subcategoryCol] || '' : '');
-      const dateStr = row[dateCol];
+      const dateStr = row._effectiveDateStr;
       if (dateStr) {
         const parsedDate = new Date(dateStr);
         if (isValid(parsedDate)) {
@@ -577,6 +577,7 @@ export default function App() {
           _parsedAmount: amount,
           _category: row[categoryCol] || 'Uncategorized',
           _subcategory: subcategoryCol ? row[subcategoryCol] || '' : '',
+          _effectiveDateStr: row._effectiveDateStr,
         };
       })
       .filter((tx): tx is any => tx !== null);
@@ -597,7 +598,7 @@ export default function App() {
 
         amount = Math.abs(amount);
 
-        const dateStr = row[dateCol];
+        const dateStr = row._effectiveDateStr;
         let date = new Date();
         let monthKey = 'Unknown';
 
@@ -913,6 +914,22 @@ export default function App() {
       }
     }
 
+    let filteredBalanceHistory = balanceHistory;
+    if (selectedYear !== 'All' || selectedMonth !== 'All Months') {
+      filteredBalanceHistory = balanceHistory.filter((item) => {
+        const itemDate = new Date(item.date);
+        if (isNaN(itemDate.getTime())) return false;
+
+        if (selectedYear !== 'All' && itemDate.getFullYear().toString() !== selectedYear) {
+          return false;
+        }
+        if (selectedMonth !== 'All Months' && format(itemDate, 'MMM yyyy') !== selectedMonth) {
+          return false;
+        }
+        return true;
+      });
+    }
+
     setAnalysis({
       totalIncome: displayIncome,
       totalExpense: displayExpense,
@@ -929,7 +946,7 @@ export default function App() {
       incomeAnalysis,
       periodMonths,
       currentBalance,
-      balanceHistory,
+      balanceHistory: filteredBalanceHistory,
       columnsIdentified: {
         date: dateCol,
         amount: amountCol,
@@ -1513,13 +1530,19 @@ export default function App() {
                           minTickGap={30}
                         />
                         <YAxis
-                          tickFormatter={(val) => `$${val}`}
+                          tickFormatter={(val) => `$${val.toLocaleString()}`}
                           tick={{ fill: '#64748b', fontSize: 12 }}
                           axisLine={false}
                           tickLine={false}
                         />
                         <Tooltip
-                          formatter={(value: number) => [`$${value.toFixed(2)}`, 'Balance']}
+                          formatter={(value: number) => [
+                            `$${value.toLocaleString(undefined, {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })}`,
+                            'Balance',
+                          ]}
                           labelFormatter={(label) => new Date(label).toLocaleDateString()}
                           contentStyle={{
                             borderRadius: '8px',

@@ -57,7 +57,10 @@ export function ReviewQueue({
           (tx.Description || '').toLowerCase().includes(lower) ||
           (tx.Category || '').toLowerCase().includes(lower) ||
           (tx.Subcategory || '').toLowerCase().includes(lower) ||
-          Math.abs(tx.Amount).toString().includes(lower)
+          (tx._parsedAmount !== undefined
+            ? tx._parsedAmount.toString()
+            : Math.abs(tx.Amount).toString()
+          ).includes(lower)
       );
     }
 
@@ -67,8 +70,8 @@ export function ReviewQueue({
         let valB = b[sortConfig.key];
 
         if (sortConfig.key === 'Amount') {
-          valA = Math.abs(valA);
-          valB = Math.abs(valB);
+          valA = a._parsedAmount !== undefined ? a._parsedAmount : Math.abs(valA);
+          valB = b._parsedAmount !== undefined ? b._parsedAmount : Math.abs(valB);
         }
 
         if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
@@ -390,9 +393,20 @@ export function ReviewQueue({
                   <td className="p-3 text-slate-300 whitespace-nowrap">{tx.Date}</td>
                   <td className="p-3 text-slate-200">{tx.Description}</td>
                   <td
-                    className={`p-3 font-medium ${tx.Amount < 0 ? 'text-red-400' : 'text-green-400'}`}
+                    className={`p-3 font-medium ${
+                      tx._isExpense !== undefined
+                        ? tx._isExpense
+                          ? 'text-red-400'
+                          : 'text-green-400'
+                        : tx.Amount < 0
+                          ? 'text-red-400'
+                          : 'text-green-400'
+                    }`}
                   >
-                    ${Math.abs(tx.Amount).toFixed(2)}
+                    $
+                    {tx._parsedAmount !== undefined
+                      ? tx._parsedAmount.toFixed(2)
+                      : Math.abs(tx.Amount).toFixed(2)}
                   </td>
 
                   {isEditing ? (

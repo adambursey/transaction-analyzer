@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Loader2, RefreshCw, ArchiveRestore, Archive, Upload } from 'lucide-react';
 import { format } from 'date-fns';
 import Papa from 'papaparse';
+import { stringSimilarity } from '../utils/importLogic';
 
 /**
  * AdminView Component.
@@ -48,6 +49,51 @@ export function AdminView({
     (t) => !t._category || t._category === 'Uncategorized'
   );
   const uncategorizedCount = uncategorizedTxs.length;
+
+  const [resolvedDupeIds, setResolvedDupeIds] = useState<Set<string>>(new Set());
+
+  const potentialDuplicates = transactions
+    .filter((t) => t.status === 'potential_duplicate' && !resolvedDupeIds.has(t.id))
+    .map((dupe) => {
+      const original = transactions.find((t) => t.id === dupe.duplicateOfId);
+      const similarity = original
+        ? stringSimilarity(dupe.Description || '', original.Description || '')
+        : 0;
+      return { dupe, original, similarity };
+    })
+    .filter((item) => item.original) // Ensure original exists
+    .sort((a, b) => b.similarity - a.similarity);
+
+  const [isResolvingDupe, setIsResolvingDupe] = useState<string | null>(null);
+
+  const handleResolveDuplicate = async (
+    newId: string,
+    oldId: string,
+    action: 'keep_original' | 'replace_original' | 'keep_both'
+  ) => {
+    setIsResolvingDupe(newId);
+    try {
+      const res = await fetch('/api/admin/resolve-duplicate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ newId, oldId, action }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to resolve duplicate');
+
+      // Optimistically hide the resolved duplicate from the queue
+      setResolvedDupeIds(new Set(resolvedDupeIds).add(newId));
+
+      // We purposefully do NOT call onDataChanged() immediately because we don't want
+      // the background data fetch to cause the global loading spinner and interrupt
+      // the user while they are flying through the queue.
+      // The background data will naturally be synced on next view switch or manual refresh.
+    } catch (err: any) {
+      alert('Error: ' + err.message);
+    } finally {
+      setIsResolvingDupe(null);
+    }
+  };
 
   const fetchData = async () => {
     setLoading(true);
@@ -259,6 +305,29 @@ export function AdminView({
     }
   };
 
+  const [isScanningDupes, setIsScanningDupes] = useState(false);
+  const handleScanPotentialDuplicates = async () => {
+    setIsScanningDupes(true);
+    try {
+      const res = await fetch('/api/admin/scan-potential-duplicates', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to scan');
+
+      if (data.flaggedCount > 0) {
+        alert(`Found ${data.flaggedCount} potential duplicates! They are now in the Review Queue.`);
+      } else {
+        alert('No potential duplicates found in the existing database.');
+      }
+      onDataChanged?.();
+      fetchData();
+    } catch (err: any) {
+      console.error(err);
+      alert('Error: ' + err.message);
+    } finally {
+      setIsScanningDupes(false);
+    }
+  };
+
   const handleBackfill = async () => {
     if (!backfillFile) return;
     setIsBackfilling(true);
@@ -393,6 +462,28 @@ export function AdminView({
                 <Archive className="w-4 h-4" />
               )}
               {isDeduplicating ? 'Archiving...' : 'Archive Duplicates'}
+            </button>
+          </div>
+
+          <div className="flex items-center justify-between p-4 bg-slate-50 border border-slate-100 rounded-xl">
+            <div className="flex-1 mr-8">
+              <h4 className="font-semibold text-slate-700">Scan for Potential Duplicates</h4>
+              <p className="text-sm text-slate-500 mt-1">
+                Scans existing active transactions for date and amount collisions (with differing
+                descriptions). Flags them for your review in the queue above.
+              </p>
+            </div>
+            <button
+              onClick={handleScanPotentialDuplicates}
+              disabled={isScanningDupes}
+              className="shrink-0 flex items-center gap-2 px-4 py-2 bg-orange-100 text-orange-800 font-semibold rounded-lg hover:bg-orange-200 disabled:opacity-50 transition-colors"
+            >
+              {isScanningDupes ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <RefreshCw className="w-4 h-4" />
+              )}
+              {isScanningDupes ? 'Scanning...' : 'Scan Database'}
             </button>
           </div>
 
@@ -561,6 +652,117 @@ export function AdminView({
             )}
           </div>
         </div>
+
+        {/* Potential Duplicates Review Queue */}
+        {potentialDuplicates.length > 0 && (
+          <div className="bg-orange-50 rounded-2xl border border-orange-200 p-6 overflow-hidden">
+            <div className="flex items-start justify-between mb-6">
+              <div>
+                <h2 className="text-lg font-bold text-orange-900 flex items-center gap-2">
+                  <RefreshCw className="w-5 h-5 text-orange-600" />
+                  Review Potential Duplicates ({potentialDuplicates.length})
+                </h2>
+                <p className="text-orange-700 text-sm mt-1 max-w-2xl">
+                  The following incoming transactions matched the exact Date and Amount of an
+                  existing transaction, but had a different Description. Please review each pair and
+                  determine how to resolve the conflict.
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              {potentialDuplicates.map(({ dupe, original, similarity }) => {
+                const simPercent = Math.round(similarity * 100);
+                return (
+                  <div
+                    key={dupe.id}
+                    className="bg-white border border-orange-200 rounded-lg p-4 shadow-sm relative overflow-hidden"
+                  >
+                    {/* Similarity Badge */}
+                    <div
+                      className={`absolute top-0 right-0 px-3 py-1 text-xs font-bold rounded-bl-lg ${
+                        simPercent > 80
+                          ? 'bg-emerald-100 text-emerald-800'
+                          : simPercent > 50
+                            ? 'bg-amber-100 text-amber-800'
+                            : 'bg-rose-100 text-rose-800'
+                      }`}
+                    >
+                      {simPercent}% Match
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-6 relative mt-4">
+                      <div className="absolute left-1/2 top-0 bottom-0 w-px bg-orange-100 -translate-x-1/2"></div>
+
+                      {/* Left Side: Original */}
+                      <div className="pr-2">
+                        <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
+                          Existing Record
+                        </div>
+                        <div className="text-sm font-medium text-slate-900 break-words">
+                          {original.Description}
+                        </div>
+                        <div className="text-sm text-slate-500 mt-1">
+                          {original._effectiveDateStr || original.Date} • ${original.Amount}
+                        </div>
+                        <div className="mt-2 inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-slate-100 text-xs font-medium text-slate-600">
+                          {original._category || 'Uncategorized'}
+                          {original._subcategory && ` • ${original._subcategory}`}
+                        </div>
+                      </div>
+
+                      {/* Right Side: Incoming */}
+                      <div className="pl-2">
+                        <div className="text-xs font-semibold text-blue-500 uppercase tracking-wider mb-2">
+                          New Incoming Record
+                        </div>
+                        <div className="text-sm font-medium text-slate-900 break-words">
+                          {dupe.Description}
+                        </div>
+                        <div className="text-sm text-slate-500 mt-1">
+                          {dupe.Date} • ${dupe.Amount}
+                        </div>
+
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          <button
+                            onClick={() =>
+                              handleResolveDuplicate(dupe.id, original.id, 'keep_original')
+                            }
+                            disabled={isResolvingDupe === dupe.id}
+                            className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-medium rounded-md transition-colors"
+                            title="Delete the new record and keep the existing one exactly as is."
+                          >
+                            Ignore New
+                          </button>
+                          <button
+                            onClick={() =>
+                              handleResolveDuplicate(dupe.id, original.id, 'replace_original')
+                            }
+                            disabled={isResolvingDupe === dupe.id}
+                            className="px-3 py-1.5 bg-orange-100 hover:bg-orange-200 text-orange-800 text-sm font-medium rounded-md transition-colors"
+                            title="Delete the new record, but update the existing record's description to match this new one."
+                          >
+                            Merge (Update Desc)
+                          </button>
+                          <button
+                            onClick={() =>
+                              handleResolveDuplicate(dupe.id, original.id, 'keep_both')
+                            }
+                            disabled={isResolvingDupe === dupe.id}
+                            className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-sm font-medium rounded-md transition-colors"
+                            title="These are two different transactions. Keep both in the database."
+                          >
+                            Keep Both
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* All Imports Log */}
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col h-[600px]">

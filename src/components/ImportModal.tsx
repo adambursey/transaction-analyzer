@@ -9,6 +9,7 @@ interface ImportModalProps {
   onImportStarted?: (totalCount: number) => void;
   onImportProgress?: (processed: number, total: number) => void;
   onImportComplete: (result: { success: boolean; message: string; geminiError?: string }) => void;
+  totalTransactionsCount?: number;
 }
 
 /**
@@ -29,10 +30,39 @@ export function ImportModal({
   onImportComplete,
   onImportStarted,
   onImportProgress,
+  totalTransactionsCount = 0,
 }: ImportModalProps) {
   const [file, setFile] = useState<File | null>(null);
   const [isImporting, setIsImporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const [useSavedMapping, setUseSavedMapping] = useState(false);
+  const [savedMappingStatus, setSavedMappingStatus] = useState<{
+    exists: boolean;
+    count: number;
+    date: string | null;
+  }>({ exists: false, count: 0, date: null });
+
+  React.useEffect(() => {
+    if (isOpen) {
+      fetch('/api/admin/saved-mapping-status')
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.exists) {
+            setSavedMappingStatus({
+              exists: data.exists,
+              count: data.transactionCount,
+              date: data.savedAt,
+            });
+            setUseSavedMapping(true); // Default to true if it exists
+          } else {
+            setSavedMappingStatus({ exists: false, count: 0, date: null });
+            setUseSavedMapping(false);
+          }
+        })
+        .catch((err) => console.error('Failed to fetch saved mapping status', err));
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -59,7 +89,9 @@ export function ImportModal({
             Description: row['Description'] || '',
             Amount: parseFloat(row['Amount']) || 0,
             Type: row['Type'] || '',
-            Balance: row['Balance'] || '',
+            Balance: row['Balance']
+              ? parseFloat(row['Balance'].toString().replace(/[^0-9.-]+/g, ''))
+              : undefined,
           }));
 
           // Run local deduplication to ensure the file itself has no duplicates
@@ -144,6 +176,7 @@ export function ImportModal({
                   filename: file.name,
                   transactions: chunk,
                   importId,
+                  useSavedMapping: totalTransactionsCount < 100 ? useSavedMapping : false,
                 }),
               });
 
@@ -248,6 +281,32 @@ export function ImportModal({
           {error && (
             <div className="text-red-400 text-sm bg-red-400/10 p-3 rounded-lg border border-red-400/20">
               {error}
+            </div>
+          )}
+
+          {totalTransactionsCount < 100 && savedMappingStatus.exists && (
+            <div className="bg-blue-900/30 border border-blue-500/30 rounded-xl p-4 flex items-start gap-3 mt-4">
+              <input
+                type="checkbox"
+                id="useSavedMapping"
+                checked={useSavedMapping}
+                onChange={(e) => setUseSavedMapping(e.target.checked)}
+                className="mt-1 rounded border-slate-600 bg-slate-800 text-blue-500"
+              />
+              <label
+                htmlFor="useSavedMapping"
+                className="text-sm text-slate-300 cursor-pointer flex-1"
+              >
+                <span className="text-white font-medium block">
+                  Use saved classification dictionary
+                </span>
+                Use the taxonomy model saved on{' '}
+                {savedMappingStatus.date
+                  ? new Date(savedMappingStatus.date).toLocaleDateString()
+                  : 'Unknown'}{' '}
+                ({savedMappingStatus.count} categorized transactions) instead of rebuilding it from
+                the current database.
+              </label>
             </div>
           )}
 

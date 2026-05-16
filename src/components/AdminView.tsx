@@ -33,6 +33,12 @@ export function AdminView({
 
   const [duplicateCount, setDuplicateCount] = useState(0);
   const [isDeduplicating, setIsDeduplicating] = useState(false);
+  const [isSavingMapping, setIsSavingMapping] = useState(false);
+  const [savedMappingStatus, setSavedMappingStatus] = useState<{
+    exists: boolean;
+    count: number;
+    date: string | null;
+  }>({ exists: false, count: 0, date: null });
 
   const uncategorizedTxs = transactions.filter(
     (t) => !t._category || t._category === 'Uncategorized'
@@ -42,22 +48,49 @@ export function AdminView({
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [txRes, importsRes, dupRes] = await Promise.all([
+      const [txRes, importsRes, dupRes, mappingRes] = await Promise.all([
         fetch('/api/admin/archived-transactions'),
         fetch('/api/admin/all-imports'),
         fetch('/api/admin/duplicate-stats'),
+        fetch('/api/admin/saved-mapping-status'),
       ]);
       const txData = await txRes.json();
       const importsData = await importsRes.json();
       const dupData = await dupRes.json();
+      const mappingData = await mappingRes.json();
 
       setArchivedTxs(txData.transactions || []);
       setAllImports(importsData.imports || []);
       setDuplicateCount(dupData.count || 0);
+      if (mappingData.exists) {
+        setSavedMappingStatus({
+          exists: mappingData.exists,
+          count: mappingData.transactionCount,
+          date: mappingData.savedAt,
+        });
+      } else {
+        setSavedMappingStatus({ exists: false, count: 0, date: null });
+      }
     } catch (err) {
       console.error('Error fetching admin data:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSaveMapping = async () => {
+    setIsSavingMapping(true);
+    try {
+      const res = await fetch('/api/admin/save-mapping', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to save mapping');
+      alert(`Success! Saved dictionary with ${data.count} mapping rules.`);
+      await fetchData();
+    } catch (err: any) {
+      console.error(err);
+      alert('Error: ' + err.message);
+    } finally {
+      setIsSavingMapping(false);
     }
   };
 
@@ -309,6 +342,36 @@ export function AdminView({
                 <Archive className="w-4 h-4" />
               )}
               {isDeduplicating ? 'Archiving...' : 'Archive Duplicates'}
+            </button>
+          </div>
+
+          <div className="flex items-center justify-between p-4 bg-slate-50 border border-slate-100 rounded-xl">
+            <div className="flex-1 mr-8">
+              <h4 className="font-semibold text-slate-700">Save Classification Dictionary</h4>
+              <p className="text-sm text-slate-500 mt-1">
+                Save the current relationship between descriptions and categories/subcategories.
+                {savedMappingStatus.exists && (
+                  <span className="block mt-2 text-emerald-600 font-medium">
+                    Current dictionary saved on{' '}
+                    {savedMappingStatus.date
+                      ? new Date(savedMappingStatus.date).toLocaleDateString()
+                      : 'Unknown'}{' '}
+                    ({savedMappingStatus.count} transactions used).
+                  </span>
+                )}
+              </p>
+            </div>
+            <button
+              onClick={handleSaveMapping}
+              disabled={isSavingMapping}
+              className="shrink-0 flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white font-semibold rounded-lg hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+            >
+              {isSavingMapping ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <ArchiveRestore className="w-4 h-4" />
+              )}
+              {isSavingMapping ? 'Saving...' : 'Save Dictionary'}
             </button>
           </div>
         </div>

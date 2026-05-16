@@ -1,0 +1,255 @@
+/**
+ * @jest-environment node
+ */
+import request from 'supertest';
+import { createApp } from '../server';
+
+// --- MOCKING ---
+
+// Mock Firestore
+const mockDbCollection = jest.fn();
+const mockDbBatch = jest.fn();
+const mockDbDoc = jest.fn();
+
+jest.mock('@google-cloud/firestore', () => {
+  return {
+    Firestore: jest.fn().mockImplementation(() => {
+      return {
+        collection: mockDbCollection,
+        batch: mockDbBatch,
+        doc: mockDbDoc,
+      };
+    }),
+    FieldValue: {
+      serverTimestamp: jest.fn(() => 'MOCK_TIMESTAMP'),
+      increment: jest.fn((val) => val),
+    },
+    Timestamp: {
+      fromDate: jest.fn((date) => ({ toDate: () => date })),
+      now: jest.fn(() => ({ toDate: () => new Date() })),
+    },
+  };
+});
+
+// Mock Gemini AI
+const mockGenerateContent = jest.fn();
+jest.mock('@google/genai', () => {
+  return {
+    GoogleGenAI: jest.fn().mockImplementation(() => {
+      return {
+        models: {
+          generateContent: mockGenerateContent,
+        },
+      };
+    }),
+  };
+});
+
+// Avoid writing actual cookies during tests via express session/cookie-parser mocking if needed
+// Or just let cookie-parser do its thing (it doesn't persist).
+
+// We'll also mock the fs logic since /api/auth/google reads/writes google_tokens.json
+jest.mock('fs', () => {
+  const actualFs = jest.requireActual('fs');
+  return {
+    ...actualFs,
+    existsSync: jest.fn(() => true),
+    readFileSync: jest.fn(() => JSON.stringify({ refresh_token: 'mock_token' })),
+    writeFileSync: jest.fn(),
+  };
+});
+
+jest.mock('googleapis', () => {
+  return {
+    google: {
+      auth: {
+        OAuth2: jest.fn().mockImplementation(() => ({
+          setCredentials: jest.fn(),
+          generateAuthUrl: jest.fn(() => 'http://mock-auth-url'),
+          getToken: jest.fn().mockResolvedValue({ tokens: { refresh_token: 'mock_token' } }),
+        })),
+      },
+      oauth2: jest.fn().mockImplementation(() => ({
+        userinfo: {
+          get: jest.fn().mockResolvedValue({ data: { email: 'test@example.com' } }),
+        },
+      })),
+    },
+  };
+});
+
+// Setup express app before tests
+let app: any;
+
+beforeAll(async () => {
+  app = await createApp();
+});
+
+beforeEach(() => {
+  jest.clearAllMocks();
+  // Default fallback mock to prevent "is not a function" errors
+  mockDbCollection.mockImplementation((name) => {
+    return {
+      doc: jest.fn().mockReturnValue({
+        get: jest.fn().mockResolvedValue({ exists: false }),
+        set: jest.fn(),
+        update: jest.fn(),
+        delete: jest.fn(),
+      }),
+      where: jest.fn().mockReturnThis(),
+      get: jest.fn().mockResolvedValue({ docs: [] }),
+    };
+  });
+});
+
+describe('Backend API Endpoints (Hermetic)', () => {
+  describe('GET /api/taxonomy', () => {
+    it('should return taxonomy from Firestore', async () => {
+      mockDbCollection.mockImplementationOnce((name) => {
+        if (name === 'taxonomy') {
+          return {
+            doc: jest.fn().mockReturnValue({
+              get: jest.fn().mockResolvedValue({
+                exists: true,
+                data: () => ({ mapping: { Income: ['Salary'], Expense: ['Food'] } }),
+              }),
+            }),
+          };
+        }
+        // Fallback for other collections that might be queried
+        return {
+          doc: jest.fn().mockReturnValue({
+            get: jest.fn().mockResolvedValue({ exists: false }),
+          }),
+          where: jest.fn().mockReturnThis(),
+          get: jest.fn().mockResolvedValue({ docs: [] }),
+        };
+      });
+
+      const response = await request(app)
+        .get('/api/taxonomy')
+        .set('Cookie', ['google_tokens={"refresh_token":"mock"}']);
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ taxonomy: { Income: ['Salary'], Expense: ['Food'] } });
+    });
+
+    it('should return empty object if taxonomy does not exist', async () => {
+      const mockGet = jest.fn().mockResolvedValue({ exists: false });
+      mockDbCollection.mockReturnValue({
+        doc: jest.fn().mockReturnValue({ get: mockGet }),
+      });
+
+      const response = await request(app)
+        .get('/api/taxonomy')
+        .set('Cookie', ['google_tokens={"refresh_token":"mock"}']);
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ taxonomy: {} });
+    });
+  });
+
+  describe('POST /api/import', () => {
+    it('should successfully import transactions, checking duplicates', async () => {
+      // Mock /api/taxonomy
+      const mockTaxonomyGet = jest.fn().mockResolvedValue({
+        exists: true,
+        data: () => ({ Income: ['Salary'] }),
+      });
+
+      // Mock existing transactions query
+      const mockTransactionsGet = jest.fn().mockResolvedValue({
+        docs: [], // No existing transactions
+      });
+
+      // Mock the collection and batch behavior
+      mockDbCollection.mockImplementation((name) => {
+        if (name === 'metadata') {
+          return { doc: jest.fn().mockReturnValue({ get: mockTaxonomyGet }) };
+        }
+        if (name === 'transactions') {
+          return {
+            get: mockTransactionsGet,
+            doc: jest.fn().mockReturnValue({ id: 'mock-doc-id' }),
+          };
+        }
+        if (name === 'imports') {
+          return { doc: jest.fn().mockReturnValue({ set: jest.fn() }) };
+        }
+        if (name === 'system') {
+          return {
+            doc: jest.fn().mockReturnValue({
+              get: jest.fn().mockResolvedValue({ exists: false }),
+            }),
+          };
+        }
+        return {
+          doc: jest.fn().mockReturnValue({
+            get: jest.fn().mockResolvedValue({ exists: false }),
+          }),
+        };
+      });
+
+      const mockBatchSet = jest.fn();
+      const mockBatchCommit = jest.fn().mockResolvedValue([]);
+      mockDbBatch.mockReturnValue({
+        set: mockBatchSet,
+        commit: mockBatchCommit,
+      });
+
+      // We need to bypass the google auth check since auth check fails in supertest unless we mock cookies
+      // In server.ts, req.cookies.admin_authenticated is checked for the frontend statically, but the API routes don't strictly require it! Let's see...
+      // Wait, server.ts has `app.use(cookieParser())` but no global middleware blocking /api. Wait, let me double check server.ts.
+
+      const payload = {
+        filename: 'test.csv',
+        importId: 'import_123',
+        transactions: [{ Date: '2026-05-01', Description: 'Test TX', Amount: 100, Balance: 250.5 }],
+      };
+
+      const response = await request(app)
+        .post('/api/import')
+        .set('Cookie', ['google_tokens={"refresh_token":"mock"}'])
+        .send(payload);
+
+      expect(response.status).toBe(200);
+      expect(response.body.message).toContain('Imported 1 transactions');
+      expect(mockBatchSet).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ Balance: 250.5 })
+      );
+      expect(mockBatchCommit).toHaveBeenCalled();
+    });
+  });
+
+  describe('POST /api/admin/deduplicate', () => {
+    it('should deduplicate transactions', async () => {
+      const mockDoc1 = { id: 'doc1', data: () => ({ _signature: 'sig1', Amount: 10 }) };
+      const mockDoc2 = { id: 'doc2', data: () => ({ _signature: 'sig1', Amount: 10 }) }; // Duplicate
+      const mockGet = jest.fn().mockResolvedValue({
+        docs: [mockDoc1, mockDoc2],
+      });
+
+      mockDbCollection.mockReturnValue({
+        where: jest.fn().mockReturnThis(),
+        get: mockGet,
+        doc: jest.fn(),
+      });
+
+      const mockBatchUpdate = jest.fn();
+      const mockBatchCommit = jest.fn().mockResolvedValue([]);
+      mockDbBatch.mockReturnValue({
+        update: mockBatchUpdate,
+        commit: mockBatchCommit,
+      });
+
+      const response = await request(app)
+        .post('/api/admin/deduplicate')
+        .set('Cookie', ['google_tokens={"refresh_token":"mock"}']);
+
+      expect(response.status).toBe(200);
+      expect(response.body.deletedCount).toBe(1);
+      expect(mockBatchUpdate).toHaveBeenCalledTimes(1);
+      expect(mockBatchCommit).toHaveBeenCalled();
+    });
+  });
+});

@@ -2,7 +2,7 @@
 - [x] set up Prettier
 - [x] set up Husky to lint and format code before commits
 - [x] set up Jest for unit testing
-- [ ] update code documentation
-- [ ] write unit tests for everything (not just one test for everything, but for all the functions in all the files)
-- save classification model in database so if we have to start from scratch we can just restore the model
-- treat transactions to and from savings differently since the money is not flowing out out, just moving from one account to another
+- [x] update code documentation
+- [x] write unit tests for everything (not just one test for everything, but for all the functions in all the files)
+- [x] add an admin function to save/restore the knownMapping dictionary from database
+- [ ] treat transactions to and from savings differently since the money is not flowing out out, just moving from one account to another

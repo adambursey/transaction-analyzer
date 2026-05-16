@@ -92,7 +92,12 @@ function indexToColumn(index: number): string {
  * Initializes and starts the Express server.
  * Sets up middleware, defines API routes, and handles Vite SSR/static file serving.
  */
-async function startServer() {
+/**
+ * Creates and configures the Express application.
+ * Separated from startServer to allow for easy testing with Supertest without binding to a port.
+ * @returns The configured Express application.
+ */
+export async function createApp() {
   const app = express();
   const PORT = Number(process.env.PORT || 3000);
 
@@ -261,7 +266,7 @@ async function startServer() {
       return;
     }
 
-    const { transactions, filename, importId: clientImportId } = req.body;
+    const { transactions, filename, importId: clientImportId, useSavedMapping } = req.body;
     console.log(
       `[Server] Import request for file: ${filename}, payload size: ${transactions?.length} transactions`
     );
@@ -288,12 +293,24 @@ async function startServer() {
       // 1. Fetch existing transactions to build deduplication set and exact match dictionary
       const snapshot = await transactionsCollection.get();
       const existingSignatures = new Set<string>();
-      const knownMapping: Record<string, { Category: string; Subcategory: string }> = {};
+      let knownMapping: Record<string, { Category: string; Subcategory: string }> = {};
+
+      if (useSavedMapping) {
+        const savedDoc = await firestore.collection('admin').doc('saved_mapping').get();
+        if (savedDoc.exists) {
+          knownMapping = savedDoc.data()?.mapping || {};
+        }
+      }
 
       snapshot.docs.forEach((doc) => {
         const data = doc.data();
         existingSignatures.add(generateSignature(data));
-        if (data.Description && data.Category) {
+        if (
+          !useSavedMapping &&
+          data.Description &&
+          data.Category &&
+          data.Category !== 'Uncategorized'
+        ) {
           knownMapping[data.Description] = {
             Category: data.Category,
             Subcategory: data.Subcategory || '',
@@ -1005,6 +1022,71 @@ ${JSON.stringify(uniqueFuzzyDescs)}
       res.status(500).json({ error: error.message });
     }
   });
+
+  app.post('/api/admin/save-mapping', async (req, res) => {
+    const authHeader = req.headers.authorization;
+    let tokensCookie = req.cookies.google_tokens;
+    if (authHeader && authHeader.startsWith('Bearer '))
+      tokensCookie = decodeURIComponent(authHeader.split(' ')[1]);
+    if (!tokensCookie) return res.status(401).json({ error: 'Not authenticated' });
+
+    try {
+      const firestore = new Firestore({ projectId: 'tx-analyzer-1777844550' });
+      const transactionsCollection = firestore.collection('transactions');
+      const snapshot = await transactionsCollection.get();
+      const knownMapping: Record<string, { Category: string; Subcategory: string }> = {};
+
+      snapshot.docs.forEach((doc) => {
+        const data = doc.data();
+        if (data.Description && data.Category && data.Category !== 'Uncategorized') {
+          knownMapping[data.Description] = {
+            Category: data.Category,
+            Subcategory: data.Subcategory || '',
+          };
+        }
+      });
+
+      const adminCollection = firestore.collection('admin');
+      await adminCollection.doc('saved_mapping').set({
+        mapping: knownMapping,
+        transactionCount: snapshot.size,
+        savedAt: FieldValue.serverTimestamp(),
+      });
+
+      res.json({ success: true, count: Object.keys(knownMapping).length });
+    } catch (error: any) {
+      console.error('Error saving mapping:', error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get('/api/admin/saved-mapping-status', async (req, res) => {
+    const authHeader = req.headers.authorization;
+    let tokensCookie = req.cookies.google_tokens;
+    if (authHeader && authHeader.startsWith('Bearer '))
+      tokensCookie = decodeURIComponent(authHeader.split(' ')[1]);
+    if (!tokensCookie) return res.status(401).json({ error: 'Not authenticated' });
+
+    try {
+      const firestore = new Firestore({ projectId: 'tx-analyzer-1777844550' });
+      const doc = await firestore.collection('admin').doc('saved_mapping').get();
+
+      if (!doc.exists) {
+        return res.json({ exists: false });
+      }
+
+      const data = doc.data();
+      res.json({
+        exists: true,
+        transactionCount: data?.transactionCount || 0,
+        savedAt: data?.savedAt?.toDate ? data.savedAt.toDate().toISOString() : null,
+      });
+    } catch (error: any) {
+      console.error('Error getting mapping status:', error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   app.post('/api/admin/reclassify', async (req, res) => {
     const authHeader = req.headers.authorization;
     let tokensCookie = req.cookies.google_tokens;
@@ -1444,13 +1526,13 @@ ${JSON.stringify(uniqueDescs)}
   });
 
   // Vite middleware for development
-  if (process.env.NODE_ENV !== 'production') {
+  if (process.env.NODE_ENV !== 'production' && process.env.NODE_ENV !== 'test') {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
     });
     app.use(vite.middlewares);
-  } else {
+  } else if (process.env.NODE_ENV === 'production') {
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
     app.get('*', (req, res) => {
@@ -1458,9 +1540,18 @@ ${JSON.stringify(uniqueDescs)}
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-  });
+  return app;
 }
 
-startServer();
+if (process.env.NODE_ENV !== 'test') {
+  createApp()
+    .then((app) => {
+      const PORT = Number(process.env.PORT || 3000);
+      app.listen(PORT, '0.0.0.0', () => {
+        console.log(`Server running on http://localhost:${PORT}`);
+      });
+    })
+    .catch((err) => {
+      console.error('Failed to start server:', err);
+    });
+}

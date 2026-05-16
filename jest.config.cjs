@@ -15,6 +15,8 @@ module.exports = {
     '^@/(.*)$': '<rootDir>/src/$1',
     // Handle CSS imports (mock them out)
     '\\.(css|less|scss|sass)$': 'identity-obj-proxy',
+    // Map .js imports back to .ts for Jest
+    '^(\\.{1,2}/.*)\\.js$': '$1',
   },
   setupFilesAfterEnv: ['<rootDir>/jest.setup.ts'],
 };

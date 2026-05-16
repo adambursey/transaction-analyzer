@@ -145,6 +145,7 @@ export default function App() {
   const [editTxDate, setEditTxDate] = useState('');
   const [editTxCategory, setEditTxCategory] = useState('');
   const [editTxSubcategory, setEditTxSubcategory] = useState('');
+  const [editTxBalance, setEditTxBalance] = useState('');
   const [isUpdatingTx, setIsUpdatingTx] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [importStatus, setImportStatus] = useState<{
@@ -400,6 +401,7 @@ export default function App() {
           amount: signedAmount,
           category: editTxCategory,
           subcategory: editTxSubcategory,
+          Balance: editTxBalance ? parseFloat(editTxBalance.replace(/[^0-9.-]+/g, '')) : undefined,
         }),
       });
 
@@ -2784,8 +2786,11 @@ export default function App() {
                                         } else {
                                           setEditTxDate('');
                                         }
-                                        setEditTxCategory(tx._category);
-                                        setEditTxSubcategory(tx._subcategory);
+                                        setEditTxCategory(tx._category || 'Uncategorized');
+                                        setEditTxSubcategory(tx._subcategory || 'Uncategorized');
+                                        setEditTxBalance(
+                                          tx.Balance != null ? String(tx.Balance) : ''
+                                        );
                                         setIsTxModalOpen(true);
                                       }
                                     }}
@@ -3013,6 +3018,31 @@ export default function App() {
               </div>
 
               <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">Balance</label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-mono">
+                    $
+                  </span>
+                  <input
+                    type="text"
+                    id="edit-tx-balance"
+                    aria-label="Balance"
+                    value={editTxBalance}
+                    onChange={(e) => setEditTxBalance(e.target.value)}
+                    onBlur={(e) => {
+                      if (!e.target.value) return;
+                      const val = parseFloat(e.target.value.replace(/[^0-9.-]+/g, ''));
+                      if (!isNaN(val)) {
+                        setEditTxBalance(val.toFixed(2));
+                      }
+                    }}
+                    className="w-full pl-8 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all font-mono"
+                    placeholder="Optional"
+                  />
+                </div>
+              </div>
+
+              <div>
                 <label className="block text-sm font-semibold text-slate-700 mb-2">Category</label>
                 <select
                   value={editTxCategory}
@@ -3098,6 +3128,7 @@ export default function App() {
       <ImportModal
         isOpen={isImportModalOpen}
         onClose={() => setIsImportModalOpen(false)}
+        totalTransactionsCount={analysis?.allTransactionsUnfiltered.length || 0}
         onImportStarted={(txCount) => {
           setImportStatus({
             type: 'loading',

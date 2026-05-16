@@ -1,4 +1,6 @@
-
 - set up ESLint/TSLint
 - set up Prettier
 - set up Husky to lint and format code before commits
+- set up Jest for unit testing
+- save classification model in database so if we have to start from scratch we can just restore the model
+- treat transactions to and from savings differently since the money is not flowing out out, just moving from one account to another

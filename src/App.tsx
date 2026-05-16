@@ -1106,13 +1106,13 @@ export default function App() {
         )}
 
         {/* Review Queue and Import History - always visible regardless of filters */}
-        {isAuthenticated && currentView === "dashboard" && data.length > 0 && (
+        {isAuthenticated && currentView === "dashboard" && (
           <>
             <ReviewQueue 
-              transactions={data} 
+              transactions={analysis?.allTransactionsUnfiltered || []} 
               taxonomy={taxonomy}
               onApprove={async (id, category, subcategory) => {
-                const tx = data.find((t: any) => t.id === id);
+                const tx = (analysis?.allTransactionsUnfiltered || []).find((t: any) => t.id === id);
                 if (!tx) throw new Error("Transaction not found");
 
                 const res = await fetch("/api/transaction/update", {
@@ -2391,7 +2391,12 @@ export default function App() {
           </div>
         )}
         
-        {currentView === "admin" && <AdminView onDataChanged={fetchSheetData} />}
+        {currentView === "admin" && (
+          <AdminView 
+            onDataChanged={fetchSheetData} 
+            transactions={analysis?.allTransactionsUnfiltered || []} 
+          />
+        )}
       </main>
       {/* Budget Modal */}
       {isBudgetModalOpen && editingBudget && (

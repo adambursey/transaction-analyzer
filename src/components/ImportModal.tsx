@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import Papa from 'papaparse';
-import { UploadCloud, X, Loader2 } from 'lucide-react';
+import { Upload, FileSpreadsheet, AlertCircle, X, Loader2, UploadCloud } from 'lucide-react';
+import { generateSignature } from '../utils/importLogic';
 
 interface ImportModalProps {
   isOpen: boolean;
@@ -43,7 +44,22 @@ export function ImportModal({ isOpen, onClose, onImportComplete, onImportStarted
             Balance: row['Balance'] || ''
           }));
 
-          const total = transactions.length;
+          // Run local deduplication to ensure the file itself has no duplicates
+          const seen = new Set<string>();
+          const uniqueTransactions = transactions.filter((tx: any) => {
+            const sig = generateSignature(tx);
+            if (!seen.has(sig)) {
+              seen.add(sig);
+              return true;
+            }
+            return false;
+          });
+
+          const total = uniqueTransactions.length;
+          const skippedLocal = transactions.length - uniqueTransactions.length;
+          if (skippedLocal > 0) {
+            console.log(`[ImportModal] Removed ${skippedLocal} intra-file duplicates locally.`);
+          }
 
           // Close modal immediately and show status banner
           setFile(null);
@@ -56,7 +72,7 @@ export function ImportModal({ isOpen, onClose, onImportComplete, onImportStarted
           let processed = 0;
           let exactMatchesCount = 0;
           let pendingReviewCount = 0;
-          let skippedCountTotal = 0;
+          let skippedCountTotal = skippedLocal;
           let hasGeminiError = false;
           let lastGeminiError = "";
           const importId = `import_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
@@ -65,7 +81,7 @@ export function ImportModal({ isOpen, onClose, onImportComplete, onImportStarted
 
           const chunks = [];
           for (let i = 0; i < total; i += chunkSize) {
-            chunks.push({ i, chunk: transactions.slice(i, i + chunkSize) });
+            chunks.push({ i, chunk: uniqueTransactions.slice(i, i + chunkSize) });
           }
           
           const maxConcurrency = 3;

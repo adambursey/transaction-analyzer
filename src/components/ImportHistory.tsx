@@ -31,8 +31,12 @@ export function ImportHistory({ onRollbackComplete, refreshTrigger = 0 }: Import
     fetchImports();
   }, [refreshTrigger]);
 
-  const handleRollback = async (importId: string) => {
-    if (!window.confirm("Are you sure you want to rollback this import? This will delete all transactions associated with it.")) {
+  const handleRollback = async (importId: string, isReclassification: boolean = false) => {
+    const msg = isReclassification 
+      ? "Are you sure you want to rollback this AI reclassification? This will revert all associated transactions back to 'Uncategorized'."
+      : "Are you sure you want to rollback this import? This will permanently delete all transactions associated with it.";
+      
+    if (!window.confirm(msg)) {
       return;
     }
 
@@ -108,7 +112,7 @@ export function ImportHistory({ onRollbackComplete, refreshTrigger = 0 }: Import
                   <span className="text-sm font-medium">OK</span>
                 </button>
                 <button
-                  onClick={() => handleRollback(imp.importId)}
+                  onClick={() => handleRollback(imp.importId, imp.reclassification)}
                   disabled={rollingBackId === imp.importId}
                   className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors disabled:opacity-50"
                   title="Rollback Import"

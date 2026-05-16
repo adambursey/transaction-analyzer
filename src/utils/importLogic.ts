@@ -27,7 +27,10 @@ export function generateSignature(transaction: any): string {
     }
   }
 
-  const desc = transaction.Description || "";
+  const desc = String(transaction.Description || "")
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toLowerCase();
   let parsedAmount = 0;
   if (typeof transaction.Amount === 'number') {
     parsedAmount = transaction.Amount;
@@ -42,7 +45,11 @@ export function generateSignature(transaction: any): string {
 export function deduplicateTransactions(incoming: any[], existingSignatures: Set<string>): any[] {
   return incoming.filter(tx => {
     const signature = generateSignature(tx);
-    return !existingSignatures.has(signature);
+    if (!existingSignatures.has(signature)) {
+      existingSignatures.add(signature);
+      return true;
+    }
+    return false;
   });
 }
 

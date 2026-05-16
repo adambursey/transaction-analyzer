@@ -2,24 +2,36 @@ import React, { useState, useEffect } from "react";
 import { Loader2, RefreshCw, ArchiveRestore, Archive } from "lucide-react";
 import { format } from "date-fns";
 
-export function AdminView({ onDataChanged }: { onDataChanged?: () => void }) {
+export function AdminView({ onDataChanged, transactions = [] }: { onDataChanged?: () => void, transactions?: any[] }) {
   const [loading, setLoading] = useState(true);
   const [archivedTxs, setArchivedTxs] = useState<any[]>([]);
   const [allImports, setAllImports] = useState<any[]>([]);
   const [selectedTxIds, setSelectedTxIds] = useState<Set<string>>(new Set());
   const [isUpdating, setIsUpdating] = useState(false);
+  const [isReclassifying, setIsReclassifying] = useState(false);
+  const [reclassifyProgress, setReclassifyProgress] = useState<{ processed: number; total: number } | null>(null);
+
+  const [duplicateCount, setDuplicateCount] = useState(0);
+  const [isDeduplicating, setIsDeduplicating] = useState(false);
+
+  const uncategorizedTxs = transactions.filter(t => !t._category || t._category === "Uncategorized");
+  const uncategorizedCount = uncategorizedTxs.length;
 
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [txRes, importsRes] = await Promise.all([
+      const [txRes, importsRes, dupRes] = await Promise.all([
         fetch("/api/admin/archived-transactions"),
-        fetch("/api/admin/all-imports")
+        fetch("/api/admin/all-imports"),
+        fetch("/api/admin/duplicate-stats")
       ]);
       const txData = await txRes.json();
       const importsData = await importsRes.json();
+      const dupData = await dupRes.json();
+      
       setArchivedTxs(txData.transactions || []);
       setAllImports(importsData.imports || []);
+      setDuplicateCount(dupData.count || 0);
     } catch (err) {
       console.error("Error fetching admin data:", err);
     } finally {
@@ -73,6 +85,106 @@ export function AdminView({ onDataChanged }: { onDataChanged?: () => void }) {
     }
   };
 
+  const handleReclassify = async () => {
+    if (uncategorizedCount === 0) {
+      alert("No uncategorized transactions to reclassify.");
+      return;
+    }
+    
+    setIsReclassifying(true);
+    setReclassifyProgress({ processed: 0, total: uncategorizedCount });
+    
+    const chunkSize = 50;
+    const maxConcurrency = 3;
+    const importId = `reclassify_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    
+    // Extract just the IDs — the server will look up the actual documents
+    const allIds = uncategorizedTxs.map((t: any) => t.id).filter(Boolean);
+    const chunks = [];
+    for (let i = 0; i < allIds.length; i += chunkSize) {
+      chunks.push(allIds.slice(i, i + chunkSize));
+    }
+    
+    let processed = 0;
+    let chunkIndex = 0;
+    let activeCount = 0;
+    let hasGeminiError = false;
+    let lastGeminiError = "";
+    
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const next = () => {
+          if (chunkIndex >= chunks.length && activeCount === 0) {
+            resolve();
+            return;
+          }
+          while (activeCount < maxConcurrency && chunkIndex < chunks.length) {
+            const currentChunk = chunks[chunkIndex++];
+            activeCount++;
+            
+            processChunk(currentChunk)
+              .then(() => {
+                activeCount--;
+                next();
+              })
+              .catch((err) => reject(err));
+          }
+        };
+        
+        const processChunk = async (idsChunk: string[]) => {
+          const res = await fetch("/api/admin/reclassify", { 
+            method: "POST",
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids: idsChunk, importId })
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || "Failed to reclassify chunk");
+          
+          if (data.geminiError) {
+            hasGeminiError = true;
+            lastGeminiError = data.geminiError;
+          }
+          
+          processed += idsChunk.length;
+          setReclassifyProgress({ processed, total: uncategorizedCount });
+        };
+        
+        next();
+      });
+      
+      alert(`Success! Reclassified ${uncategorizedCount} transactions. They are now in the Review Queue.${hasGeminiError ? `\n\nNote: Gemini returned an error on some chunks: ${lastGeminiError}` : ""}`);
+      onDataChanged?.();
+      fetchData();
+    } catch (err: any) {
+      console.error(err);
+      alert("Error: " + err.message);
+    } finally {
+      setIsReclassifying(false);
+      setReclassifyProgress(null);
+    }
+  };
+
+  const handleDeduplicate = async () => {
+    if (duplicateCount === 0) return;
+    if (!confirm(`Are you sure you want to move ${duplicateCount} duplicate transactions to the Archive? You can easily restore them later if needed.`)) return;
+
+    setIsDeduplicating(true);
+    try {
+      const res = await fetch("/api/admin/deduplicate", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to deduplicate");
+      
+      alert(`Success! Moved ${data.deletedCount} duplicate transactions to the Archive.`);
+      onDataChanged?.();
+      fetchData();
+    } catch (err: any) {
+      console.error(err);
+      alert("Error: " + err.message);
+    } finally {
+      setIsDeduplicating(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[400px] gap-4">
@@ -92,6 +204,61 @@ export function AdminView({ onDataChanged }: { onDataChanged?: () => void }) {
         >
           <RefreshCw className="w-4 h-4" /> Refresh Data
         </button>
+      </div>
+
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 mb-8">
+        <h3 className="font-bold text-slate-800 mb-4 text-lg">Maintenance Actions</h3>
+        <div className="space-y-4">
+          <div className="flex items-center justify-between p-4 bg-slate-50 border border-slate-100 rounded-xl">
+            <div className="flex-1 mr-8">
+              <h4 className="font-semibold text-slate-700">Reclassify Uncategorized Transactions</h4>
+              <p className="text-sm text-slate-500 mt-1">
+                Found <strong className="text-slate-700">{uncategorizedCount}</strong> transactions currently missing a category. 
+                Running this will use AI to automatically classify them based on your history and place them in the Review Queue.
+              </p>
+              {reclassifyProgress && (
+                <div className="mt-3">
+                  <div className="flex justify-between text-xs text-slate-500 mb-1">
+                    <span>Classifying...</span>
+                    <span>{reclassifyProgress.processed} / {reclassifyProgress.total}</span>
+                  </div>
+                  <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
+                    <div 
+                      className="bg-blue-600 h-2 transition-all duration-300" 
+                      style={{ width: `${Math.round((reclassifyProgress.processed / reclassifyProgress.total) * 100)}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+            <button
+              onClick={handleReclassify}
+              disabled={isReclassifying || uncategorizedCount === 0}
+              className="shrink-0 flex items-center gap-2 px-4 py-2 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+            >
+              {isReclassifying ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+              {isReclassifying ? "Classifying..." : "Run AI Classification"}
+            </button>
+          </div>
+
+          <div className="flex items-center justify-between p-4 bg-slate-50 border border-slate-100 rounded-xl">
+            <div className="flex-1 mr-8">
+              <h4 className="font-semibold text-slate-700">Deduplicate Database</h4>
+              <p className="text-sm text-slate-500 mt-1">
+                Found <strong className="text-orange-600">{duplicateCount}</strong> duplicate transactions in your database. 
+                Running this will move redundant copies to the Archive below while preserving your categorized ones.
+              </p>
+            </div>
+            <button
+              onClick={handleDeduplicate}
+              disabled={isDeduplicating || duplicateCount === 0}
+              className="shrink-0 flex items-center gap-2 px-4 py-2 bg-orange-500 text-white font-semibold rounded-lg hover:bg-orange-600 disabled:opacity-50 transition-colors"
+            >
+              {isDeduplicating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Archive className="w-4 h-4" />}
+              {isDeduplicating ? "Archiving..." : "Archive Duplicates"}
+            </button>
+          </div>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
@@ -162,7 +329,7 @@ export function AdminView({ onDataChanged }: { onDataChanged?: () => void }) {
                         {tx.Description}
                       </td>
                       <td className="px-4 py-3 text-right font-mono text-slate-900">
-                        ${Number(tx.Amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        ${Number(typeof tx.Amount === 'string' ? tx.Amount.replace(/[^0-9.-]+/g, "") : tx.Amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                       </td>
                     </tr>
                   ))}

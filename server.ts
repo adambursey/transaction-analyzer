@@ -430,19 +430,34 @@ ${JSON.stringify(uniqueFuzzyDescs)}
       const transactionsCollection = firestore.collection("transactions");
       const importsCollection = firestore.collection("imports");
 
+      const importDoc = await importsCollection.doc(importId).get();
+      const isReclassification = importDoc.exists && importDoc.data()?.reclassification === true;
+
       const snapshot = await transactionsCollection.where("importId", "==", importId).get();
       
       const batchSize = 400;
       for (let i = 0; i < snapshot.docs.length; i += batchSize) {
         const batch = firestore.batch();
         const chunk = snapshot.docs.slice(i, i + batchSize);
-        chunk.forEach(doc => batch.delete(doc.ref));
+        chunk.forEach(doc => {
+          if (isReclassification) {
+            // If it's a reclassification, revert them back to Uncategorized
+            batch.update(doc.ref, {
+              Category: "Uncategorized",
+              Subcategory: "",
+              status: "reviewed"
+            });
+          } else {
+            // Normal imports are deleted
+            batch.delete(doc.ref);
+          }
+        });
         await batch.commit();
       }
 
       await importsCollection.doc(importId).delete();
 
-      res.json({ success: true, deletedCount: snapshot.docs.length });
+      res.json({ success: true, deletedCount: isReclassification ? 0 : snapshot.docs.length, revertedCount: isReclassification ? snapshot.docs.length : 0 });
     } catch (err: any) {
       console.error("Rollback failed:", err);
       res.status(500).json({ error: err.message || "Rollback failed" });
@@ -915,6 +930,162 @@ ${JSON.stringify(uniqueFuzzyDescs)}
       res.status(500).json({ error: error.message });
     }
   });
+  app.post("/api/admin/reclassify", async (req, res) => {
+    const authHeader = req.headers.authorization;
+    let tokensCookie = req.cookies.google_tokens;
+    if (authHeader && authHeader.startsWith("Bearer ")) tokensCookie = decodeURIComponent(authHeader.split(" ")[1]);
+    if (!tokensCookie) return res.status(401).json({ error: "Not authenticated" });
+
+    const { ids, importId } = req.body;
+    if (!ids || !Array.isArray(ids) || ids.length === 0 || !importId) {
+      return res.status(400).json({ error: "Invalid payload: requires ids array and importId" });
+    }
+
+    try {
+      const firestore = new Firestore({ projectId: "tx-analyzer-1777844550" });
+      const transactionsCollection = firestore.collection("transactions");
+      const importsCollection = firestore.collection("imports");
+
+      // 1. Fetch ALL transactions to build known mapping from categorized ones
+      const snapshot = await transactionsCollection.get();
+      const knownMapping: Record<string, { Category: string; Subcategory: string }> = {};
+      const targetDocs: { id: string; Description: string }[] = [];
+      const idsSet = new Set(ids);
+
+      snapshot.docs.forEach(doc => {
+        const data = doc.data();
+        if (data.status !== "archived") {
+          if (data.Category && data.Category !== "Uncategorized" && data.Description) {
+            knownMapping[data.Description] = {
+              Category: data.Category,
+              Subcategory: data.Subcategory || ""
+            };
+          }
+          // Collect target docs from the requested IDs
+          if (idsSet.has(doc.id)) {
+            targetDocs.push({ id: doc.id, Description: data.Description || "" });
+          }
+        }
+      });
+
+      console.log(`[Server] Processing reclassify chunk: ${ids.length} IDs requested, ${targetDocs.length} found in DB`);
+
+      if (targetDocs.length === 0) {
+        return res.json({ success: true, message: "No matching transactions found.", count: 0 });
+      }
+
+      // 2. Fetch taxonomy for strict validation
+      const taxonomyDoc = await firestore.collection("taxonomy").doc("global").get();
+      const globalTaxonomy = taxonomyDoc.exists ? taxonomyDoc.data()?.mapping || {} : {};
+
+      let geminiErrorMessage = "";
+      type ReclassifiedDoc = { id: string; Description: string; Category?: string; Subcategory?: string; status: string };
+      let finalTransactions: ReclassifiedDoc[] = targetDocs.map(d => ({ ...d, status: "pending_review" }));
+
+      if (process.env.GEMINI_API_KEY) {
+        try {
+          console.log("[Server] Calling Gemini for reclassification...");
+          const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+          
+          const uniqueDescs = Array.from(new Set(targetDocs.map(tx => tx.Description))).filter(Boolean);
+          console.log(`[Server] Found ${uniqueDescs.length} unique descriptions to ask Gemini`);
+          
+          if (uniqueDescs.length > 0) {
+            const examplesStr = JSON.stringify(knownMapping);
+            const prompt = `You are an expert financial categorizer.
+Here is a JSON dictionary of my historically categorized transactions (Description -> Category/Subcategory):
+${examplesStr}
+
+Please categorize the following new transaction descriptions based on my historical patterns. Return ONLY a valid JSON object where keys are the descriptions and values are objects with "Category" and "Subcategory" strings. Make your best educated guess for new merchants.
+New descriptions:
+${JSON.stringify(uniqueDescs)}
+`;
+
+            const response = await ai.models.generateContent({
+              model: 'gemini-2.5-flash',
+              contents: prompt,
+            });
+
+            const text = response.text || "";
+            const jsonMatch = text.match(/```json\n([\s\S]*?)\n```/) || text.match(/{[\s\S]*}/);
+            
+            if (jsonMatch) {
+              const parsedText = jsonMatch[1] || jsonMatch[0];
+              const predictions = JSON.parse(parsedText);
+              
+              finalTransactions = targetDocs.map(tx => {
+                const pred = predictions[tx.Description];
+                if (pred) {
+                  let validCat = pred.Category;
+                  let validSubcat = pred.Subcategory;
+                  
+                  if (validCat && !globalTaxonomy[validCat]) {
+                    validCat = "";
+                    validSubcat = "";
+                  } else if (validCat && validSubcat && (!globalTaxonomy[validCat].includes(validSubcat))) {
+                    validSubcat = "";
+                  }
+
+                  return {
+                    ...tx,
+                    Category: validCat || "",
+                    Subcategory: validSubcat || "",
+                    status: "pending_review"
+                  };
+                }
+                return { ...tx, status: "pending_review" };
+              });
+            }
+          }
+        } catch (geminiErr: any) {
+          console.error("Gemini reclassification failed:", geminiErr);
+          return res.status(500).json({ error: "Gemini AI Error: " + (geminiErr?.message || "Categorization failed") });
+        }
+      } else {
+        return res.status(400).json({ error: "No Gemini API key configured." });
+      }
+
+      const batch = firestore.batch();
+
+      finalTransactions.forEach(tx => {
+        const docRef = transactionsCollection.doc(tx.id);
+        const updateData: any = {
+          status: tx.status,
+          importId: importId
+        };
+        if (tx.Category && tx.Category !== "Uncategorized") {
+          updateData.Category = tx.Category;
+          updateData.Subcategory = tx.Subcategory || "";
+        }
+        batch.update(docRef, updateData);
+      });
+
+      // Update import record atomically
+      const importRef = importsCollection.doc(importId);
+      batch.set(importRef, {
+        importId,
+        date: new Date().toISOString(),
+        transactionCount: FieldValue.increment(finalTransactions.length),
+        duplicateCount: 0,
+        archived: false,
+        reclassification: true
+      }, { merge: true });
+
+      await batch.commit();
+
+      res.json({ 
+        success: true, 
+        message: "Reclassification complete.", 
+        count: finalTransactions.length,
+        geminiError: geminiErrorMessage 
+      });
+
+    } catch (error: any) {
+      console.error("[Server] Reclassify Error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   app.get("/api/admin/archived-transactions", async (req, res) => {
     const authHeader = req.headers.authorization;
     let tokensCookie = req.cookies.google_tokens;
@@ -980,6 +1151,105 @@ ${JSON.stringify(uniqueFuzzyDescs)}
 
       res.json({ success: true });
     } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/admin/duplicate-stats", async (req, res) => {
+    const authHeader = req.headers.authorization;
+    let tokensCookie = req.cookies.google_tokens;
+    if (authHeader && authHeader.startsWith("Bearer ")) tokensCookie = decodeURIComponent(authHeader.split(" ")[1]);
+    if (!tokensCookie) return res.status(401).json({ error: "Not authenticated" });
+
+    try {
+      const firestore = new Firestore({ projectId: "tx-analyzer-1777844550" });
+      const snapshot = await firestore.collection("transactions").get();
+      
+      const sigMap = new Map<string, number>();
+      let duplicateCount = 0;
+      
+      snapshot.docs.forEach(doc => {
+        const data = doc.data();
+        if (data.status === "archived") return;
+        const sig = generateSignature(data);
+        const count = sigMap.get(sig) || 0;
+        if (count > 0) duplicateCount++;
+        sigMap.set(sig, count + 1);
+      });
+      
+      res.json({ count: duplicateCount });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/admin/deduplicate", async (req, res) => {
+    const authHeader = req.headers.authorization;
+    let tokensCookie = req.cookies.google_tokens;
+    if (authHeader && authHeader.startsWith("Bearer ")) tokensCookie = decodeURIComponent(authHeader.split(" ")[1]);
+    if (!tokensCookie) return res.status(401).json({ error: "Not authenticated" });
+
+    try {
+      const firestore = new Firestore({ projectId: "tx-analyzer-1777844550" });
+      const snapshot = await firestore.collection("transactions").get();
+      
+      const groups = new Map<string, Array<{ id: string, ref: any, data: any }>>();
+      
+      snapshot.docs.forEach(doc => {
+        const data = doc.data();
+        if (data.status === "archived") return;
+        const sig = generateSignature(data);
+        if (!groups.has(sig)) groups.set(sig, []);
+        groups.get(sig)!.push({ id: doc.id, ref: doc.ref, data });
+      });
+
+      let deletedCount = 0;
+      const batchSize = 400;
+      let batch = firestore.batch();
+      let opCount = 0;
+
+      const commitBatch = async () => {
+        if (opCount > 0) {
+          await batch.commit();
+          batch = firestore.batch();
+          opCount = 0;
+        }
+      };
+
+      for (const [sig, docs] of groups.entries()) {
+        if (docs.length > 1) {
+          // Sort docs to prioritize keeping the "best" one.
+          // Best = Has Category (not Uncategorized), then status = reviewed, then anything else.
+          docs.sort((a, b) => {
+            const aCat = a.data.Category && a.data.Category !== "Uncategorized" ? 1 : 0;
+            const bCat = b.data.Category && b.data.Category !== "Uncategorized" ? 1 : 0;
+            if (aCat !== bCat) return bCat - aCat; // categorized first
+            
+            const aRev = a.data.status === "reviewed" ? 1 : 0;
+            const bRev = b.data.status === "reviewed" ? 1 : 0;
+            if (aRev !== bRev) return bRev - aRev; // reviewed first
+            
+            return 0; // tie
+          });
+
+          // Keep the first one, archive the rest
+          for (let i = 1; i < docs.length; i++) {
+            batch.update(docs[i].ref, { status: 'archived' });
+            opCount++;
+            deletedCount++;
+            
+            if (opCount >= batchSize) {
+              await commitBatch();
+            }
+          }
+        }
+      }
+
+      await commitBatch();
+
+      res.json({ success: true, deletedCount });
+    } catch (err: any) {
+      console.error("Deduplication error:", err);
       res.status(500).json({ error: err.message });
     }
   });

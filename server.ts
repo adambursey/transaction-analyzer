@@ -1,18 +1,36 @@
-import express from "express";
-import { createServer as createViteServer } from "vite";
-import cookieParser from "cookie-parser";
-import { google } from "googleapis";
-import path from "path";
-import dotenv from "dotenv";
-import { Firestore, FieldValue, Timestamp } from "@google-cloud/firestore";
-import { GoogleGenAI } from "@google/genai";
-import { deduplicateTransactions, exactMatchTransactions, generateSignature } from "./src/utils/importLogic.js";
+/**
+ * @file server.ts
+ * @description Main Express server application that handles API routing, Google OAuth2 authentication,
+ * and Firestore database interactions. Serves the Vite frontend in development and static files in production.
+ */
+
+import express from 'express';
+import { createServer as createViteServer } from 'vite';
+import cookieParser from 'cookie-parser';
+import { google } from 'googleapis';
+import path from 'path';
+import dotenv from 'dotenv';
+import { Firestore, FieldValue, Timestamp } from '@google-cloud/firestore';
+import { GoogleGenAI } from '@google/genai';
+import {
+  deduplicateTransactions,
+  exactMatchTransactions,
+  generateSignature,
+} from './src/utils/importLogic.js';
 
 dotenv.config();
 
+/**
+ * Parses various date formats into a strict Date object set to noon (12:00:00) to avoid timezone issues.
+ * Supports native Dates, Firestore Timestamps, and common string formats (YYYY-MM-DD, MM/DD/YYYY).
+ *
+ * @param dateStr - The raw date value to parse.
+ * @returns A parsed Date object set to noon, or null if parsing fails.
+ */
 function parseStrictDate(dateStr: any): Date | null {
   if (!dateStr) return null;
-  if (dateStr instanceof Date) return new Date(dateStr.getFullYear(), dateStr.getMonth(), dateStr.getDate(), 12, 0, 0, 0);
+  if (dateStr instanceof Date)
+    return new Date(dateStr.getFullYear(), dateStr.getMonth(), dateStr.getDate(), 12, 0, 0, 0);
   if (typeof dateStr.toDate === 'function') {
     const d = dateStr.toDate();
     return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12, 0, 0, 0);
@@ -29,14 +47,16 @@ function parseStrictDate(dateStr: any): Date | null {
     return new Date(parseInt(y), parseInt(m) - 1, parseInt(d), 12, 0, 0, 0);
   }
   // If it's a MM/DD/YYYY string
-  const parts = str.split(/[\/\-]/);
+  const parts = str.split(/[/-]/);
   if (parts.length === 3) {
     let year, month, day;
-    if (parts[0].length === 4) { // YYYY/MM/DD
+    if (parts[0].length === 4) {
+      // YYYY/MM/DD
       year = parseInt(parts[0]);
       month = parseInt(parts[1]) - 1;
       day = parseInt(parts[2]);
-    } else { // MM/DD/YYYY
+    } else {
+      // MM/DD/YYYY
       month = parseInt(parts[0]) - 1;
       day = parseInt(parts[1]);
       year = parseInt(parts[2]);
@@ -45,7 +65,7 @@ function parseStrictDate(dateStr: any): Date | null {
     const d = new Date(year, month, day, 12, 0, 0, 0);
     if (!isNaN(d.getTime())) return d;
   }
-  
+
   const fallback = new Date(str);
   if (!isNaN(fallback.getTime())) {
     return new Date(fallback.getFullYear(), fallback.getMonth(), fallback.getDate(), 12, 0, 0, 0);
@@ -53,8 +73,14 @@ function parseStrictDate(dateStr: any): Date | null {
   return null;
 }
 
+/**
+ * Converts a zero-based index to an Excel-style column letter (e.g., 0 -> A, 25 -> Z, 26 -> AA).
+ *
+ * @param index - The zero-based column index.
+ * @returns The corresponding column letter.
+ */
 function indexToColumn(index: number): string {
-  let column = "";
+  let column = '';
   while (index >= 0) {
     column = String.fromCharCode((index % 26) + 65) + column;
     index = Math.floor(index / 26) - 1;
@@ -62,6 +88,10 @@ function indexToColumn(index: number): string {
   return column;
 }
 
+/**
+ * Initializes and starts the Express server.
+ * Sets up middleware, defines API routes, and handles Vite SSR/static file serving.
+ */
 async function startServer() {
   const app = express();
   const PORT = Number(process.env.PORT || 3000);
@@ -70,8 +100,8 @@ async function startServer() {
   app.use(express.json());
 
   // API routes FIRST
-  app.get("/api/health", (req, res) => {
-    res.json({ status: "ok" });
+  app.get('/api/health', (req, res) => {
+    res.json({ status: 'ok' });
   });
 
   const getRedirectUri = (req: express.Request) => {
@@ -80,7 +110,7 @@ async function startServer() {
     if (appUrl) {
       return `${appUrl}/auth/callback`;
     }
-    return `${req.protocol}://${req.get("host")}/auth/callback`;
+    return `${req.protocol}://${req.get('host')}/auth/callback`;
   };
 
   const createOAuth2Client = (redirectUri: string) => {
@@ -91,37 +121,37 @@ async function startServer() {
     );
   };
 
-  app.get("/api/auth/url", (req, res) => {
+  app.get('/api/auth/url', (req, res) => {
     const redirectUri = req.query.redirectUri as string;
     if (!redirectUri) {
-      res.status(400).json({ error: "Missing redirectUri" });
+      res.status(400).json({ error: 'Missing redirectUri' });
       return;
     }
     const oauth2Client = createOAuth2Client(redirectUri);
 
     const scopes = [
-      "https://www.googleapis.com/auth/userinfo.profile",
-      "https://www.googleapis.com/auth/userinfo.email",
+      'https://www.googleapis.com/auth/userinfo.profile',
+      'https://www.googleapis.com/auth/userinfo.email',
     ];
 
     const url = oauth2Client.generateAuthUrl({
-      access_type: "offline",
+      access_type: 'offline',
       scope: scopes,
-      prompt: "consent",
+      prompt: 'consent',
       state: encodeURIComponent(redirectUri),
     });
 
     res.json({ url });
   });
 
-  app.get(["/auth/callback", "/auth/callback/"], async (req, res) => {
+  app.get(['/auth/callback', '/auth/callback/'], async (req, res) => {
     const { code, state } = req.query;
-    if (!code || typeof code !== "string") {
-      res.status(400).send("Missing code");
+    if (!code || typeof code !== 'string') {
+      res.status(400).send('Missing code');
       return;
     }
-    
-    // We need the redirectUri to exchange the code. 
+
+    // We need the redirectUri to exchange the code.
     // We can pass it via the state parameter.
     const redirectUri = state ? decodeURIComponent(state as string) : getRedirectUri(req);
 
@@ -129,17 +159,19 @@ async function startServer() {
       const oauth2Client = createOAuth2Client(redirectUri);
       const { tokens } = await oauth2Client.getToken(code);
 
-      // Verify email against allowed list
+      // Verify email against allowed list from environment variables
       oauth2Client.setCredentials(tokens);
       const oauth2 = google.oauth2({
         auth: oauth2Client,
-        version: "v2",
+        version: 'v2',
       });
       const userInfo = await oauth2.userinfo.get();
       const userEmail = userInfo.data.email;
-      
+
       if (process.env.ALLOWED_EMAILS) {
-        const allowedEmails = process.env.ALLOWED_EMAILS.split(',').map(e => e.trim().toLowerCase());
+        const allowedEmails = process.env.ALLOWED_EMAILS.split(',').map((e) =>
+          e.trim().toLowerCase()
+        );
         if (!userEmail || !allowedEmails.includes(userEmail.toLowerCase())) {
           res.status(403).send(`
             <html>
@@ -159,10 +191,10 @@ async function startServer() {
       }
 
       // Store tokens in a secure cookie
-      const isProduction = process.env.NODE_ENV === "production";
-      res.cookie("google_tokens", JSON.stringify(tokens), {
+      const isProduction = process.env.NODE_ENV === 'production';
+      res.cookie('google_tokens', JSON.stringify(tokens), {
         secure: isProduction,
-        sameSite: isProduction ? "none" : "lax",
+        sameSite: isProduction ? 'none' : 'lax',
         httpOnly: true,
         maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
       });
@@ -184,17 +216,17 @@ async function startServer() {
         </html>
       `);
     } catch (error) {
-      console.error("Error exchanging code for tokens:", error);
-      res.status(500).send("Authentication failed");
+      console.error('Error exchanging code for tokens:', error);
+      res.status(500).send('Authentication failed');
     }
   });
 
-  app.get("/api/auth/status", (req, res) => {
+  app.get('/api/auth/status', (req, res) => {
     const authHeader = req.headers.authorization;
     let tokensCookie = req.cookies.google_tokens;
-    
-    if (authHeader && authHeader.startsWith("Bearer ")) {
-      tokensCookie = decodeURIComponent(authHeader.split(" ")[1]);
+
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      tokensCookie = decodeURIComponent(authHeader.split(' ')[1]);
     }
 
     if (tokensCookie) {
@@ -204,50 +236,52 @@ async function startServer() {
     }
   });
 
-  app.post("/api/auth/logout", (req, res) => {
-    const isProduction = process.env.NODE_ENV === "production";
-    res.clearCookie("google_tokens", {
+  app.post('/api/auth/logout', (req, res) => {
+    const isProduction = process.env.NODE_ENV === 'production';
+    res.clearCookie('google_tokens', {
       secure: isProduction,
-      sameSite: isProduction ? "none" : "lax",
+      sameSite: isProduction ? 'none' : 'lax',
       httpOnly: true,
     });
     res.json({ success: true });
   });
 
-  app.post("/api/import", async (req, res) => {
+  app.post('/api/import', async (req, res) => {
     console.log(`\n[Server] POST /api/import received`);
     const authHeader = req.headers.authorization;
     let tokensCookie = req.cookies.google_tokens;
-    
-    if (authHeader && authHeader.startsWith("Bearer ")) {
-      tokensCookie = decodeURIComponent(authHeader.split(" ")[1]);
+
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      tokensCookie = decodeURIComponent(authHeader.split(' ')[1]);
     }
 
     if (!tokensCookie) {
-      console.warn("[Server] POST /api/import: Not authenticated");
-      res.status(401).json({ error: "Not authenticated" });
+      console.warn('[Server] POST /api/import: Not authenticated');
+      res.status(401).json({ error: 'Not authenticated' });
       return;
     }
 
     const { transactions, filename, importId: clientImportId } = req.body;
-    console.log(`[Server] Import request for file: ${filename}, payload size: ${transactions?.length} transactions`);
-    
+    console.log(
+      `[Server] Import request for file: ${filename}, payload size: ${transactions?.length} transactions`
+    );
+
     if (!transactions || !Array.isArray(transactions)) {
-      console.error("[Server] Invalid payload received:", req.body);
-      res.status(400).json({ error: "Invalid payload" });
+      console.error('[Server] Invalid payload received:', req.body);
+      res.status(400).json({ error: 'Invalid payload' });
       return;
     }
 
     try {
-      const firestore = new Firestore({ projectId: "tx-analyzer-1777844550" });
-      const transactionsCollection = firestore.collection("transactions");
-      const importsCollection = firestore.collection("imports");
+      const firestore = new Firestore({ projectId: 'tx-analyzer-1777844550' });
+      const transactionsCollection = firestore.collection('transactions');
+      const importsCollection = firestore.collection('imports');
 
       const parsedTransactions = transactions.map((tx: any) => {
         const d = parseStrictDate(tx.Date);
         return {
           ...tx,
-          Date: d ? Timestamp.fromDate(d) : null
+          Date: d ? Timestamp.fromDate(d) : null,
         };
       });
 
@@ -256,22 +290,27 @@ async function startServer() {
       const existingSignatures = new Set<string>();
       const knownMapping: Record<string, { Category: string; Subcategory: string }> = {};
 
-      snapshot.docs.forEach(doc => {
+      snapshot.docs.forEach((doc) => {
         const data = doc.data();
         existingSignatures.add(generateSignature(data));
         if (data.Description && data.Category) {
-          knownMapping[data.Description] = { 
-            Category: data.Category, 
-            Subcategory: data.Subcategory || "" 
+          knownMapping[data.Description] = {
+            Category: data.Category,
+            Subcategory: data.Subcategory || '',
           };
         }
       });
 
-      // 2. Deduplicate incoming
+      // 2. Deduplicate incoming transactions by comparing generated signatures against the database
       const uniqueIncoming = deduplicateTransactions(parsedTransactions, existingSignatures);
 
       if (uniqueIncoming.length === 0) {
-        res.json({ success: true, message: "No new transactions to import. All were duplicates.", importedCount: 0, skippedCount: parsedTransactions.length });
+        res.json({
+          success: true,
+          message: 'No new transactions to import. All were duplicates.',
+          importedCount: 0,
+          skippedCount: parsedTransactions.length,
+        });
         return;
       }
 
@@ -280,23 +319,29 @@ async function startServer() {
 
       // 4. Fuzzy matching via Gemini
       let finalFuzzyMatches = [...fuzzyMatches];
-      let geminiErrorMessage = "";
-      
-      console.log(`[Server] Pre-Gemini stats: ${exactMatches.length} exact matches, ${fuzzyMatches.length} fuzzy matches to process`);
-      
+      let geminiErrorMessage = '';
+
+      console.log(
+        `[Server] Pre-Gemini stats: ${exactMatches.length} exact matches, ${fuzzyMatches.length} fuzzy matches to process`
+      );
+
       // Fetch taxonomy for strict validation
-      const taxonomyDoc = await firestore.collection("taxonomy").doc("global").get();
+      const taxonomyDoc = await firestore.collection('taxonomy').doc('global').get();
       const globalTaxonomy = taxonomyDoc.exists ? taxonomyDoc.data()?.mapping || {} : {};
-      
+
       if (fuzzyMatches.length > 0 && process.env.GEMINI_API_KEY) {
         try {
-          console.log("[Server] Calling Gemini for fuzzy matches...");
+          console.log('[Server] Calling Gemini for fuzzy matches...');
           const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-          
+
           // Get unique descriptions to fuzzy match
-          const uniqueFuzzyDescs = Array.from(new Set(fuzzyMatches.map(tx => tx.Description || ""))).filter(Boolean);
-          console.log(`[Server] Found ${uniqueFuzzyDescs.length} unique descriptions to ask Gemini`);
-          
+          const uniqueFuzzyDescs = Array.from(
+            new Set(fuzzyMatches.map((tx) => tx.Description || ''))
+          ).filter(Boolean);
+          console.log(
+            `[Server] Found ${uniqueFuzzyDescs.length} unique descriptions to ask Gemini`
+          );
+
           if (uniqueFuzzyDescs.length > 0) {
             // Provide the known mapping as examples
             const examplesStr = JSON.stringify(knownMapping);
@@ -309,63 +354,68 @@ New descriptions:
 ${JSON.stringify(uniqueFuzzyDescs)}
 `;
 
-            console.log("[Server] Waiting for Gemini response...");
+            console.log('[Server] Waiting for Gemini response...');
             const response = await ai.models.generateContent({
               model: 'gemini-2.5-flash',
               contents: prompt,
             });
 
-            const text = response.text || "";
+            const text = response.text || '';
             console.log(`[Server] Received Gemini response (length: ${text.length})`);
-            
+
             // Extract JSON from response (handling potential markdown code blocks)
             const jsonMatch = text.match(/```json\n([\s\S]*?)\n```/) || text.match(/{[\s\S]*}/);
             if (jsonMatch) {
               const parsedText = jsonMatch[1] || jsonMatch[0];
-              console.log("[Server] Successfully extracted JSON from Gemini response");
+              console.log('[Server] Successfully extracted JSON from Gemini response');
               const predictions = JSON.parse(parsedText);
-              
+
               // Apply predictions
-              finalFuzzyMatches = fuzzyMatches.map(tx => {
-                const desc = tx.Description || "";
+              finalFuzzyMatches = fuzzyMatches.map((tx) => {
+                const desc = tx.Description || '';
                 const pred = predictions[desc];
                 if (pred) {
                   let validCat = pred.Category;
                   let validSubcat = pred.Subcategory;
-                  
+
                   // Strict validation
                   if (validCat && !globalTaxonomy[validCat]) {
-                    validCat = "";
-                    validSubcat = "";
-                  } else if (validCat && validSubcat && (!globalTaxonomy[validCat].includes(validSubcat))) {
-                    validSubcat = "";
+                    validCat = '';
+                    validSubcat = '';
+                  } else if (
+                    validCat &&
+                    validSubcat &&
+                    !globalTaxonomy[validCat].includes(validSubcat)
+                  ) {
+                    validSubcat = '';
                   }
 
                   return {
                     ...tx,
-                    Category: validCat || "",
-                    Subcategory: validSubcat || "",
-                    status: "pending_review"
+                    Category: validCat || '',
+                    Subcategory: validSubcat || '',
+                    status: 'pending_review',
                   };
                 }
-                return { ...tx, status: "pending_review" };
+                return { ...tx, status: 'pending_review' };
               });
             } else {
-              finalFuzzyMatches = fuzzyMatches.map(tx => ({ ...tx, status: "pending_review" }));
+              finalFuzzyMatches = fuzzyMatches.map((tx) => ({ ...tx, status: 'pending_review' }));
             }
           }
         } catch (geminiErr: any) {
-          console.error("Gemini fuzzy matching failed:", geminiErr);
-          geminiErrorMessage = geminiErr?.message || "Gemini categorization failed";
+          console.error('Gemini fuzzy matching failed:', geminiErr);
+          geminiErrorMessage = geminiErr?.message || 'Gemini categorization failed';
           // Fallback if Gemini fails
-          finalFuzzyMatches = fuzzyMatches.map(tx => ({ ...tx, status: "pending_review" }));
+          finalFuzzyMatches = fuzzyMatches.map((tx) => ({ ...tx, status: 'pending_review' }));
         }
       } else if (!process.env.GEMINI_API_KEY) {
-        geminiErrorMessage = "No Gemini API key configured — categories could not be auto-predicted.";
+        geminiErrorMessage =
+          'No Gemini API key configured — categories could not be auto-predicted.';
         // No Gemini key, just mark as pending review
-        finalFuzzyMatches = fuzzyMatches.map(tx => ({ ...tx, status: "pending_review" }));
+        finalFuzzyMatches = fuzzyMatches.map((tx) => ({ ...tx, status: 'pending_review' }));
       } else {
-        finalFuzzyMatches = fuzzyMatches.map(tx => ({ ...tx, status: "pending_review" }));
+        finalFuzzyMatches = fuzzyMatches.map((tx) => ({ ...tx, status: 'pending_review' }));
       }
 
       const allToInsert = [...exactMatches, ...finalFuzzyMatches];
@@ -373,79 +423,83 @@ ${JSON.stringify(uniqueFuzzyDescs)}
 
       // Write import record
       const importRef = importsCollection.doc(importId);
-      
-      // We use set({ merge: true }) with FieldValue.increment to avoid race conditions 
+
+      // We use set({ merge: true }) with FieldValue.increment to avoid race conditions
       // from multiple chunks updating the count concurrently.
-      await importRef.set({
-        importId,
-        date: new Date().toISOString(),
-        filename: filename || "Unknown file",
-        count: FieldValue.increment(allToInsert.length)
-      }, { merge: true });
+      await importRef.set(
+        {
+          importId,
+          date: new Date().toISOString(),
+          filename: filename || 'Unknown file',
+          count: FieldValue.increment(allToInsert.length),
+        },
+        { merge: true }
+      );
 
       // Write transactions in batches
       const batchSize = 400; // Firestore limit is 500
       for (let i = 0; i < allToInsert.length; i += batchSize) {
         const batch = firestore.batch();
         const chunk = allToInsert.slice(i, i + batchSize);
-        
-        chunk.forEach(tx => {
+
+        chunk.forEach((tx) => {
           const docRef = transactionsCollection.doc();
           batch.set(docRef, { ...tx, importId });
         });
-        
+
         await batch.commit();
       }
 
       const skippedCount = parsedTransactions.length - uniqueIncoming.length;
-      const responsePayload: any = { 
-        success: true, 
+      const responsePayload: any = {
+        success: true,
         message: `Imported ${allToInsert.length} transactions. ${exactMatches.length} auto-categorized, ${finalFuzzyMatches.length} pending review. Skipped ${skippedCount} duplicates.`,
         importedCount: allToInsert.length,
-        skippedCount: skippedCount
+        skippedCount: skippedCount,
       };
       if (geminiErrorMessage) {
         responsePayload.geminiError = `Gemini categorization was skipped: ${geminiErrorMessage}`;
       }
-      
+
       console.log(`[Server] /api/import complete. Returning success payload.`);
       res.json(responsePayload);
     } catch (error: any) {
-      console.error("[Server] Error processing import:", error);
-      res.status(500).json({ error: error.message || "Failed to process import" });
+      console.error('[Server] Error processing import:', error);
+      res.status(500).json({ error: error.message || 'Failed to process import' });
     }
   });
 
-  app.post("/api/import/rollback", async (req, res) => {
+  app.post('/api/import/rollback', async (req, res) => {
     const authHeader = req.headers.authorization;
     let tokensCookie = req.cookies.google_tokens;
-    if (authHeader && authHeader.startsWith("Bearer ")) tokensCookie = decodeURIComponent(authHeader.split(" ")[1]);
-    if (!tokensCookie) return res.status(401).json({ error: "Not authenticated" });
+    if (authHeader && authHeader.startsWith('Bearer '))
+      tokensCookie = decodeURIComponent(authHeader.split(' ')[1]);
+    if (!tokensCookie) return res.status(401).json({ error: 'Not authenticated' });
 
     const { importId } = req.body;
-    if (!importId) return res.status(400).json({ error: "Missing importId" });
+    if (!importId) return res.status(400).json({ error: 'Missing importId' });
 
     try {
-      const firestore = new Firestore({ projectId: "tx-analyzer-1777844550" });
-      const transactionsCollection = firestore.collection("transactions");
-      const importsCollection = firestore.collection("imports");
+      const firestore = new Firestore({ projectId: 'tx-analyzer-1777844550' });
+      const transactionsCollection = firestore.collection('transactions');
+      const importsCollection = firestore.collection('imports');
 
       const importDoc = await importsCollection.doc(importId).get();
       const isReclassification = importDoc.exists && importDoc.data()?.reclassification === true;
 
-      const snapshot = await transactionsCollection.where("importId", "==", importId).get();
-      
+      const snapshot = await transactionsCollection.where('importId', '==', importId).get();
+
       const batchSize = 400;
       for (let i = 0; i < snapshot.docs.length; i += batchSize) {
         const batch = firestore.batch();
         const chunk = snapshot.docs.slice(i, i + batchSize);
-        chunk.forEach(doc => {
+        chunk.forEach((doc) => {
           if (isReclassification) {
             // If it's a reclassification, revert them back to Uncategorized
             batch.update(doc.ref, {
-              Category: "Uncategorized",
-              Subcategory: "",
-              status: "reviewed"
+              Category: 'Uncategorized',
+              Subcategory: '',
+              status: 'reviewed',
             });
           } else {
             // Normal imports are deleted
@@ -457,64 +511,70 @@ ${JSON.stringify(uniqueFuzzyDescs)}
 
       await importsCollection.doc(importId).delete();
 
-      res.json({ success: true, deletedCount: isReclassification ? 0 : snapshot.docs.length, revertedCount: isReclassification ? snapshot.docs.length : 0 });
+      res.json({
+        success: true,
+        deletedCount: isReclassification ? 0 : snapshot.docs.length,
+        revertedCount: isReclassification ? snapshot.docs.length : 0,
+      });
     } catch (err: any) {
-      console.error("Rollback failed:", err);
-      res.status(500).json({ error: err.message || "Rollback failed" });
+      console.error('Rollback failed:', err);
+      res.status(500).json({ error: err.message || 'Rollback failed' });
     }
   });
 
-  app.post("/api/import/ok", async (req, res) => {
+  app.post('/api/import/ok', async (req, res) => {
     const authHeader = req.headers.authorization;
     let tokensCookie = req.cookies.google_tokens;
-    if (authHeader && authHeader.startsWith("Bearer ")) tokensCookie = decodeURIComponent(authHeader.split(" ")[1]);
-    if (!tokensCookie) return res.status(401).json({ error: "Not authenticated" });
+    if (authHeader && authHeader.startsWith('Bearer '))
+      tokensCookie = decodeURIComponent(authHeader.split(' ')[1]);
+    if (!tokensCookie) return res.status(401).json({ error: 'Not authenticated' });
 
     const { importId } = req.body;
-    if (!importId) return res.status(400).json({ error: "Missing importId" });
+    if (!importId) return res.status(400).json({ error: 'Missing importId' });
 
     try {
-      const firestore = new Firestore({ projectId: "tx-analyzer-1777844550" });
-      await firestore.collection("imports").doc(importId).update({ archived: true });
+      const firestore = new Firestore({ projectId: 'tx-analyzer-1777844550' });
+      await firestore.collection('imports').doc(importId).update({ archived: true });
       res.json({ success: true });
     } catch (err: any) {
-      console.error("Mark OK failed:", err);
-      res.status(500).json({ error: err.message || "Failed to mark import OK" });
+      console.error('Mark OK failed:', err);
+      res.status(500).json({ error: err.message || 'Failed to mark import OK' });
     }
   });
 
-  app.get("/api/imports", async (req, res) => {
+  app.get('/api/imports', async (req, res) => {
     const authHeader = req.headers.authorization;
     let tokensCookie = req.cookies.google_tokens;
-    if (authHeader && authHeader.startsWith("Bearer ")) tokensCookie = decodeURIComponent(authHeader.split(" ")[1]);
-    if (!tokensCookie) return res.status(401).json({ error: "Not authenticated" });
+    if (authHeader && authHeader.startsWith('Bearer '))
+      tokensCookie = decodeURIComponent(authHeader.split(' ')[1]);
+    if (!tokensCookie) return res.status(401).json({ error: 'Not authenticated' });
 
     try {
-      const firestore = new Firestore({ projectId: "tx-analyzer-1777844550" });
-      const snapshot = await firestore.collection("imports").orderBy("date", "desc").get();
-      const imports = snapshot.docs.map(doc => doc.data()).filter(imp => !imp.archived);
+      const firestore = new Firestore({ projectId: 'tx-analyzer-1777844550' });
+      const snapshot = await firestore.collection('imports').orderBy('date', 'desc').get();
+      const imports = snapshot.docs.map((doc) => doc.data()).filter((imp) => !imp.archived);
       res.json({ imports });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
   });
 
-  app.post("/api/sheet", async (req, res) => {
+  app.post('/api/sheet', async (req, res) => {
     const authHeader = req.headers.authorization;
     let tokensCookie = req.cookies.google_tokens;
-    
-    if (authHeader && authHeader.startsWith("Bearer ")) {
-      tokensCookie = decodeURIComponent(authHeader.split(" ")[1]);
+
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      tokensCookie = decodeURIComponent(authHeader.split(' ')[1]);
     }
 
     if (!tokensCookie) {
-      res.status(401).json({ error: "Not authenticated" });
+      res.status(401).json({ error: 'Not authenticated' });
       return;
     }
 
     const sheetUrl = process.env.SHEET_URL || req.body.sheetUrl;
     if (!sheetUrl) {
-      res.status(400).json({ error: "Missing SHEET_URL environment variable" });
+      res.status(400).json({ error: 'Missing SHEET_URL environment variable' });
       return;
     }
 
@@ -523,74 +583,85 @@ ${JSON.stringify(uniqueFuzzyDescs)}
     const spreadsheetId = match ? match[1] : null;
 
     if (!spreadsheetId) {
-      res.status(400).json({ error: "Invalid Google Sheet URL" });
+      res.status(400).json({ error: 'Invalid Google Sheet URL' });
       return;
     }
 
     try {
-      const firestore = new Firestore({ projectId: "tx-analyzer-1777844550" });
-      const transactionsCollection = firestore.collection("transactions");
-      const budgetsCollection = firestore.collection("budgets");
+      const firestore = new Firestore({ projectId: 'tx-analyzer-1777844550' });
+      const transactionsCollection = firestore.collection('transactions');
+      const budgetsCollection = firestore.collection('budgets');
 
       const transactionsSnapshot = await transactionsCollection.get();
-      const data = transactionsSnapshot.docs.map(doc => {
-        const raw = doc.data();
+      const data = transactionsSnapshot.docs
+        .map((doc) => {
+          const raw = doc.data();
           let dateVal = raw['Date'] || raw['Posting Date'] || raw['date'] || '';
           if (dateVal && typeof dateVal.toDate === 'function') {
             dateVal = dateVal.toDate().toISOString();
           } else if (dateVal && dateVal._seconds) {
             dateVal = new Date(dateVal._seconds * 1000).toISOString();
           }
-          
+
           return {
             id: doc.id,
             Date: dateVal,
-          Description: raw['Description'] || raw['description'] || '',
-          Amount: raw['Amount'] !== undefined ? raw['Amount'] : (raw['amount'] || 0),
-          Type: raw['Type'] || raw['type'] || '',
-          Balance: raw['Balance'] || raw['balance'] || '',
-          Category: raw['Category'] || raw['category'] || '',
-          Subcategory: raw['Subcategory'] || raw['subcategory'] || '',
-          status: raw['status'] || 'reviewed', // default to reviewed if missing
-          importId: raw['importId'] || ''
-        };
-      }).filter(tx => tx.status !== 'archived');
+            Description: raw['Description'] || raw['description'] || '',
+            Amount: raw['Amount'] !== undefined ? raw['Amount'] : raw['amount'] || 0,
+            Type: raw['Type'] || raw['type'] || '',
+            Balance: raw['Balance'] || raw['balance'] || '',
+            Category: raw['Category'] || raw['category'] || '',
+            Subcategory: raw['Subcategory'] || raw['subcategory'] || '',
+            status: raw['status'] || 'reviewed', // default to reviewed if missing
+            importId: raw['importId'] || '',
+          };
+        })
+        .filter((tx) => tx.status !== 'archived');
 
-      let headers = ['Date', 'Description', 'Amount', 'Type', 'Balance', 'Category', 'Subcategory', 'status'];
+      const headers = [
+        'Date',
+        'Description',
+        'Amount',
+        'Type',
+        'Balance',
+        'Category',
+        'Subcategory',
+        'status',
+      ];
 
       const budgetSnapshot = await budgetsCollection.get();
-      const budgetData = budgetSnapshot.docs.map(doc => {
+      const budgetData = budgetSnapshot.docs.map((doc) => {
         const docData = doc.data();
         return {
           id: doc.id, // we can include id just in case
-          "0": docData.Category,
-          "1": docData.Amount,
+          '0': docData.Category,
+          '1': docData.Amount,
         };
       });
 
       res.json({ data, headers, budgetData, budgetHeaders: [] });
     } catch (error: any) {
-      console.error("Error fetching data from Firestore:", error);
-      res.status(500).json({ error: error.message || "Failed to fetch data" });
+      console.error('Error fetching data from Firestore:', error);
+      res.status(500).json({ error: error.message || 'Failed to fetch data' });
     }
   });
 
-  app.get("/api/migrate", async (req, res) => {
+  app.get('/api/migrate', async (req, res) => {
     const authHeader = req.headers.authorization;
     let tokensCookie = req.cookies.google_tokens;
-    
-    if (authHeader && authHeader.startsWith("Bearer ")) {
-      tokensCookie = decodeURIComponent(authHeader.split(" ")[1]);
+
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      tokensCookie = decodeURIComponent(authHeader.split(' ')[1]);
     }
 
     if (!tokensCookie) {
-      res.status(401).json({ error: "Not authenticated. Please log in first." });
+      res.status(401).json({ error: 'Not authenticated. Please log in first.' });
       return;
     }
 
     const sheetUrl = process.env.SHEET_URL;
     if (!sheetUrl) {
-      res.status(400).json({ error: "Missing SHEET_URL environment variable" });
+      res.status(400).json({ error: 'Missing SHEET_URL environment variable' });
       return;
     }
 
@@ -598,7 +669,7 @@ ${JSON.stringify(uniqueFuzzyDescs)}
     const spreadsheetId = match ? match[1] : null;
 
     if (!spreadsheetId) {
-      res.status(400).json({ error: "Invalid Google Sheet URL" });
+      res.status(400).json({ error: 'Invalid Google Sheet URL' });
       return;
     }
 
@@ -608,11 +679,11 @@ ${JSON.stringify(uniqueFuzzyDescs)}
       const oauth2Client = createOAuth2Client(redirectUri);
       oauth2Client.setCredentials(tokens);
 
-      const sheets = google.sheets({ version: "v4", auth: oauth2Client });
-      
+      const sheets = google.sheets({ version: 'v4', auth: oauth2Client });
+
       const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId });
-      
-      let sheetName = "";
+
+      let sheetName = '';
       const gidMatch = sheetUrl.match(/gid=([0-9]+)/);
       if (gidMatch && spreadsheet.data.sheets) {
         const gid = parseInt(gidMatch[1], 10);
@@ -622,7 +693,7 @@ ${JSON.stringify(uniqueFuzzyDescs)}
         }
       }
       if (!sheetName && spreadsheet.data.sheets && spreadsheet.data.sheets.length > 0) {
-        sheetName = spreadsheet.data.sheets[0].properties?.title || "";
+        sheetName = spreadsheet.data.sheets[0].properties?.title || '';
       }
 
       const response = await sheets.spreadsheets.values.get({
@@ -646,7 +717,7 @@ ${JSON.stringify(uniqueFuzzyDescs)}
 
       let budgetData: any[] = [];
       const budgetSheet = spreadsheet.data.sheets?.find(
-        (s) => s.properties?.title?.toLowerCase() === "budget"
+        (s) => s.properties?.title?.toLowerCase() === 'budget'
       );
 
       if (budgetSheet && budgetSheet.properties?.title) {
@@ -654,7 +725,7 @@ ${JSON.stringify(uniqueFuzzyDescs)}
           spreadsheetId,
           range: budgetSheet.properties.title,
         });
-        
+
         const budgetRows = budgetResponse.data.values;
         if (budgetRows && budgetRows.length > 0) {
           budgetData = budgetRows.map((row) => {
@@ -667,9 +738,9 @@ ${JSON.stringify(uniqueFuzzyDescs)}
         }
       }
 
-      const firestore = new Firestore({ projectId: "tx-analyzer-1777844550" });
-      const transactionsCollection = firestore.collection("transactions");
-      const budgetsCollection = firestore.collection("budgets");
+      const firestore = new Firestore({ projectId: 'tx-analyzer-1777844550' });
+      const transactionsCollection = firestore.collection('transactions');
+      const budgetsCollection = firestore.collection('budgets');
 
       // Write transactions
       let transactionsCount = 0;
@@ -682,8 +753,8 @@ ${JSON.stringify(uniqueFuzzyDescs)}
       let budgetsCount = 0;
       for (const item of budgetData) {
         // budgetData objects have numeric string keys like "0": category, "1": amount
-        const category = item["0"];
-        const amount = item["1"];
+        const category = item['0'];
+        const amount = item['1'];
         if (category) {
           await budgetsCollection.add({
             Category: category,
@@ -693,41 +764,41 @@ ${JSON.stringify(uniqueFuzzyDescs)}
         }
       }
 
-      res.json({ 
-        success: true, 
-        message: `Successfully migrated ${transactionsCount} transactions and ${budgetsCount} budget items to Firestore.` 
+      res.json({
+        success: true,
+        message: `Successfully migrated ${transactionsCount} transactions and ${budgetsCount} budget items to Firestore.`,
       });
     } catch (error: any) {
-      console.error("Error migrating to Firestore:", error);
-      res.status(500).json({ error: error.message || "Failed to migrate data" });
+      console.error('Error migrating to Firestore:', error);
+      res.status(500).json({ error: error.message || 'Failed to migrate data' });
     }
   });
 
-  app.post("/api/budget/update", async (req, res) => {
+  app.post('/api/budget/update', async (req, res) => {
     const authHeader = req.headers.authorization;
     let tokensCookie = req.cookies.google_tokens;
-    
-    if (authHeader && authHeader.startsWith("Bearer ")) {
-      tokensCookie = decodeURIComponent(authHeader.split(" ")[1]);
+
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      tokensCookie = decodeURIComponent(authHeader.split(' ')[1]);
     }
 
     if (!tokensCookie) {
-      res.status(401).json({ error: "Not authenticated" });
+      res.status(401).json({ error: 'Not authenticated' });
       return;
     }
 
     const { category, amount } = req.body;
     if (!category || amount === undefined) {
-      res.status(400).json({ error: "Missing category or amount" });
+      res.status(400).json({ error: 'Missing category or amount' });
       return;
     }
 
     try {
-      const firestore = new Firestore({ projectId: "tx-analyzer-1777844550" });
-      const budgetsCollection = firestore.collection("budgets");
+      const firestore = new Firestore({ projectId: 'tx-analyzer-1777844550' });
+      const budgetsCollection = firestore.collection('budgets');
 
-      const querySnapshot = await budgetsCollection.where("Category", "==", category).get();
-      
+      const querySnapshot = await budgetsCollection.where('Category', '==', category).get();
+
       if (querySnapshot.empty) {
         await budgetsCollection.add({ Category: category, Amount: amount });
       } else {
@@ -737,33 +808,33 @@ ${JSON.stringify(uniqueFuzzyDescs)}
 
       res.json({ success: true });
     } catch (error: any) {
-      console.error("Error updating budget:", error);
-      res.status(500).json({ error: error.message || "Failed to update budget" });
+      console.error('Error updating budget:', error);
+      res.status(500).json({ error: error.message || 'Failed to update budget' });
     }
   });
 
-  app.post("/api/transaction/update", async (req, res) => {
+  app.post('/api/transaction/update', async (req, res) => {
     const authHeader = req.headers.authorization;
     let tokensCookie = req.cookies.google_tokens;
-    
-    if (authHeader && authHeader.startsWith("Bearer ")) {
-      tokensCookie = decodeURIComponent(authHeader.split(" ")[1]);
+
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      tokensCookie = decodeURIComponent(authHeader.split(' ')[1]);
     }
 
     if (!tokensCookie) {
-      res.status(401).json({ error: "Not authenticated" });
+      res.status(401).json({ error: 'Not authenticated' });
       return;
     }
 
     const { id, amount, category, subcategory, status, date } = req.body;
     if (!id || amount === undefined || !category) {
-      res.status(400).json({ error: "Missing required fields" });
+      res.status(400).json({ error: 'Missing required fields' });
       return;
     }
 
     try {
-      const firestore = new Firestore({ projectId: "tx-analyzer-1777844550" });
-      const transactionsCollection = firestore.collection("transactions");
+      const firestore = new Firestore({ projectId: 'tx-analyzer-1777844550' });
+      const transactionsCollection = firestore.collection('transactions');
 
       const updatesObj: Record<string, any> = { Amount: amount, Category: category };
       if (subcategory !== undefined) {
@@ -776,7 +847,7 @@ ${JSON.stringify(uniqueFuzzyDescs)}
         const d = parseStrictDate(date);
         const newDateVal = d ? Timestamp.fromDate(d) : null;
         updatesObj.Date = newDateVal;
-        
+
         // Regenerate the signature so it doesn't accidentally trigger duplicate checks using the old date
         const docSnap = await transactionsCollection.doc(id).get();
         if (docSnap.exists) {
@@ -790,37 +861,37 @@ ${JSON.stringify(uniqueFuzzyDescs)}
 
       res.json({ success: true });
     } catch (error: any) {
-      console.error("Error updating transaction:", error);
-      res.status(500).json({ error: error.message || "Failed to update transaction" });
+      console.error('Error updating transaction:', error);
+      res.status(500).json({ error: error.message || 'Failed to update transaction' });
     }
   });
 
   // Bulk update endpoint
-  app.post("/api/transaction/bulk-update", async (req, res) => {
+  app.post('/api/transaction/bulk-update', async (req, res) => {
     const authHeader = req.headers.authorization;
     let tokensCookie = req.cookies.google_tokens;
-    if (authHeader && authHeader.startsWith("Bearer ")) {
-      tokensCookie = decodeURIComponent(authHeader.split(" ")[1]);
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      tokensCookie = decodeURIComponent(authHeader.split(' ')[1]);
     }
     if (!tokensCookie) {
-      res.status(401).json({ error: "Not authenticated" });
+      res.status(401).json({ error: 'Not authenticated' });
       return;
     }
 
     const { updates } = req.body;
     if (!Array.isArray(updates)) {
-      res.status(400).json({ error: "Missing updates array" });
+      res.status(400).json({ error: 'Missing updates array' });
       return;
     }
 
     try {
-      const firestore = new Firestore({ projectId: "tx-analyzer-1777844550" });
+      const firestore = new Firestore({ projectId: 'tx-analyzer-1777844550' });
       const batchSize = 400;
       for (let i = 0; i < updates.length; i += batchSize) {
         const batch = firestore.batch();
         const chunk = updates.slice(i, i + batchSize);
         chunk.forEach((update: any) => {
-          const ref = firestore.collection("transactions").doc(update.id);
+          const ref = firestore.collection('transactions').doc(update.id);
           const data: any = {};
           if (update.category !== undefined) data.Category = update.category;
           if (update.subcategory !== undefined) data.Subcategory = update.subcategory;
@@ -831,21 +902,22 @@ ${JSON.stringify(uniqueFuzzyDescs)}
       }
       res.json({ success: true });
     } catch (error: any) {
-      console.error("Error in bulk update:", error);
-      res.status(500).json({ error: error.message || "Failed to bulk update" });
+      console.error('Error in bulk update:', error);
+      res.status(500).json({ error: error.message || 'Failed to bulk update' });
     }
   });
 
   // Taxonomy management endpoints
-  app.get("/api/taxonomy", async (req, res) => {
+  app.get('/api/taxonomy', async (req, res) => {
     const authHeader = req.headers.authorization;
     let tokensCookie = req.cookies.google_tokens;
-    if (authHeader && authHeader.startsWith("Bearer ")) tokensCookie = decodeURIComponent(authHeader.split(" ")[1]);
-    if (!tokensCookie) return res.status(401).json({ error: "Not authenticated" });
+    if (authHeader && authHeader.startsWith('Bearer '))
+      tokensCookie = decodeURIComponent(authHeader.split(' ')[1]);
+    if (!tokensCookie) return res.status(401).json({ error: 'Not authenticated' });
 
     try {
-      const firestore = new Firestore({ projectId: "tx-analyzer-1777844550" });
-      const doc = await firestore.collection("taxonomy").doc("global").get();
+      const firestore = new Firestore({ projectId: 'tx-analyzer-1777844550' });
+      const doc = await firestore.collection('taxonomy').doc('global').get();
       if (!doc.exists) {
         res.json({ taxonomy: {} });
       } else {
@@ -856,73 +928,76 @@ ${JSON.stringify(uniqueFuzzyDescs)}
     }
   });
 
-  app.post("/api/taxonomy/init", async (req, res) => {
+  app.post('/api/taxonomy/init', async (req, res) => {
     const authHeader = req.headers.authorization;
     let tokensCookie = req.cookies.google_tokens;
-    if (authHeader && authHeader.startsWith("Bearer ")) tokensCookie = decodeURIComponent(authHeader.split(" ")[1]);
-    if (!tokensCookie) return res.status(401).json({ error: "Not authenticated" });
+    if (authHeader && authHeader.startsWith('Bearer '))
+      tokensCookie = decodeURIComponent(authHeader.split(' ')[1]);
+    if (!tokensCookie) return res.status(401).json({ error: 'Not authenticated' });
 
     try {
-      const firestore = new Firestore({ projectId: "tx-analyzer-1777844550" });
-      const transactionsSnapshot = await firestore.collection("transactions").get();
-      
+      const firestore = new Firestore({ projectId: 'tx-analyzer-1777844550' });
+      const transactionsSnapshot = await firestore.collection('transactions').get();
+
       const taxonomy: Record<string, string[]> = {};
-      
-      transactionsSnapshot.docs.forEach(doc => {
-          const data = doc.data();
-          if (data.Category) {
-              const cat = data.Category;
-              const subcat = data.Subcategory;
-              
-              if (!taxonomy[cat]) {
-                  taxonomy[cat] = [];
-              }
-              if (subcat && !taxonomy[cat].includes(subcat)) {
-                  taxonomy[cat].push(subcat);
-              }
+
+      transactionsSnapshot.docs.forEach((doc) => {
+        const data = doc.data();
+        if (data.Category) {
+          const cat = data.Category;
+          const subcat = data.Subcategory;
+
+          if (!taxonomy[cat]) {
+            taxonomy[cat] = [];
           }
+          if (subcat && !taxonomy[cat].includes(subcat)) {
+            taxonomy[cat].push(subcat);
+          }
+        }
       });
-      
+
       // Sort the arrays for neatness
-      Object.keys(taxonomy).forEach(cat => {
+      Object.keys(taxonomy).forEach((cat) => {
         taxonomy[cat].sort();
       });
 
-      await firestore.collection("taxonomy").doc("global").set({ mapping: taxonomy });
+      await firestore.collection('taxonomy').doc('global').set({ mapping: taxonomy });
       res.json({ success: true, taxonomy });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
   });
 
-  app.post("/api/taxonomy/update", async (req, res) => {
+  app.post('/api/taxonomy/update', async (req, res) => {
     const authHeader = req.headers.authorization;
     let tokensCookie = req.cookies.google_tokens;
-    if (authHeader && authHeader.startsWith("Bearer ")) tokensCookie = decodeURIComponent(authHeader.split(" ")[1]);
-    if (!tokensCookie) return res.status(401).json({ error: "Not authenticated" });
+    if (authHeader && authHeader.startsWith('Bearer '))
+      tokensCookie = decodeURIComponent(authHeader.split(' ')[1]);
+    if (!tokensCookie) return res.status(401).json({ error: 'Not authenticated' });
 
     try {
       const { taxonomy } = req.body;
-      const firestore = new Firestore({ projectId: "tx-analyzer-1777844550" });
-      await firestore.collection("taxonomy").doc("global").set({ mapping: taxonomy });
+      const firestore = new Firestore({ projectId: 'tx-analyzer-1777844550' });
+      await firestore.collection('taxonomy').doc('global').set({ mapping: taxonomy });
       res.json({ success: true });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
   });
 
-  app.post("/api/taxonomy/check-usage", async (req, res) => {
+  app.post('/api/taxonomy/check-usage', async (req, res) => {
     const authHeader = req.headers.authorization;
     let tokensCookie = req.cookies.google_tokens;
-    if (authHeader && authHeader.startsWith("Bearer ")) tokensCookie = decodeURIComponent(authHeader.split(" ")[1]);
-    if (!tokensCookie) return res.status(401).json({ error: "Not authenticated" });
+    if (authHeader && authHeader.startsWith('Bearer '))
+      tokensCookie = decodeURIComponent(authHeader.split(' ')[1]);
+    if (!tokensCookie) return res.status(401).json({ error: 'Not authenticated' });
 
     try {
       const { category, subcategory } = req.body;
-      const firestore = new Firestore({ projectId: "tx-analyzer-1777844550" });
-      let query = firestore.collection("transactions").where("Category", "==", category);
+      const firestore = new Firestore({ projectId: 'tx-analyzer-1777844550' });
+      let query = firestore.collection('transactions').where('Category', '==', category);
       if (subcategory) {
-          query = query.where("Subcategory", "==", subcategory);
+        query = query.where('Subcategory', '==', subcategory);
       }
       const snapshot = await query.limit(1).get();
       res.json({ inUse: !snapshot.empty });
@@ -930,21 +1005,22 @@ ${JSON.stringify(uniqueFuzzyDescs)}
       res.status(500).json({ error: error.message });
     }
   });
-  app.post("/api/admin/reclassify", async (req, res) => {
+  app.post('/api/admin/reclassify', async (req, res) => {
     const authHeader = req.headers.authorization;
     let tokensCookie = req.cookies.google_tokens;
-    if (authHeader && authHeader.startsWith("Bearer ")) tokensCookie = decodeURIComponent(authHeader.split(" ")[1]);
-    if (!tokensCookie) return res.status(401).json({ error: "Not authenticated" });
+    if (authHeader && authHeader.startsWith('Bearer '))
+      tokensCookie = decodeURIComponent(authHeader.split(' ')[1]);
+    if (!tokensCookie) return res.status(401).json({ error: 'Not authenticated' });
 
     const { ids, importId } = req.body;
     if (!ids || !Array.isArray(ids) || ids.length === 0 || !importId) {
-      return res.status(400).json({ error: "Invalid payload: requires ids array and importId" });
+      return res.status(400).json({ error: 'Invalid payload: requires ids array and importId' });
     }
 
     try {
-      const firestore = new Firestore({ projectId: "tx-analyzer-1777844550" });
-      const transactionsCollection = firestore.collection("transactions");
-      const importsCollection = firestore.collection("imports");
+      const firestore = new Firestore({ projectId: 'tx-analyzer-1777844550' });
+      const transactionsCollection = firestore.collection('transactions');
+      const importsCollection = firestore.collection('imports');
 
       // 1. Fetch ALL transactions to build known mapping from categorized ones
       const snapshot = await transactionsCollection.get();
@@ -952,44 +1028,57 @@ ${JSON.stringify(uniqueFuzzyDescs)}
       const targetDocs: { id: string; Description: string }[] = [];
       const idsSet = new Set(ids);
 
-      snapshot.docs.forEach(doc => {
+      snapshot.docs.forEach((doc) => {
         const data = doc.data();
-        if (data.status !== "archived") {
-          if (data.Category && data.Category !== "Uncategorized" && data.Description) {
+        if (data.status !== 'archived') {
+          if (data.Category && data.Category !== 'Uncategorized' && data.Description) {
             knownMapping[data.Description] = {
               Category: data.Category,
-              Subcategory: data.Subcategory || ""
+              Subcategory: data.Subcategory || '',
             };
           }
           // Collect target docs from the requested IDs
           if (idsSet.has(doc.id)) {
-            targetDocs.push({ id: doc.id, Description: data.Description || "" });
+            targetDocs.push({ id: doc.id, Description: data.Description || '' });
           }
         }
       });
 
-      console.log(`[Server] Processing reclassify chunk: ${ids.length} IDs requested, ${targetDocs.length} found in DB`);
+      console.log(
+        `[Server] Processing reclassify chunk: ${ids.length} IDs requested, ${targetDocs.length} found in DB`
+      );
 
       if (targetDocs.length === 0) {
-        return res.json({ success: true, message: "No matching transactions found.", count: 0 });
+        return res.json({ success: true, message: 'No matching transactions found.', count: 0 });
       }
 
       // 2. Fetch taxonomy for strict validation
-      const taxonomyDoc = await firestore.collection("taxonomy").doc("global").get();
+      const taxonomyDoc = await firestore.collection('taxonomy').doc('global').get();
       const globalTaxonomy = taxonomyDoc.exists ? taxonomyDoc.data()?.mapping || {} : {};
 
-      let geminiErrorMessage = "";
-      type ReclassifiedDoc = { id: string; Description: string; Category?: string; Subcategory?: string; status: string };
-      let finalTransactions: ReclassifiedDoc[] = targetDocs.map(d => ({ ...d, status: "pending_review" }));
+      const geminiErrorMessage = '';
+      type ReclassifiedDoc = {
+        id: string;
+        Description: string;
+        Category?: string;
+        Subcategory?: string;
+        status: string;
+      };
+      let finalTransactions: ReclassifiedDoc[] = targetDocs.map((d) => ({
+        ...d,
+        status: 'pending_review',
+      }));
 
       if (process.env.GEMINI_API_KEY) {
         try {
-          console.log("[Server] Calling Gemini for reclassification...");
+          console.log('[Server] Calling Gemini for reclassification...');
           const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-          
-          const uniqueDescs = Array.from(new Set(targetDocs.map(tx => tx.Description))).filter(Boolean);
+
+          const uniqueDescs = Array.from(new Set(targetDocs.map((tx) => tx.Description))).filter(
+            Boolean
+          );
           console.log(`[Server] Found ${uniqueDescs.length} unique descriptions to ask Gemini`);
-          
+
           if (uniqueDescs.length > 0) {
             const examplesStr = JSON.stringify(knownMapping);
             const prompt = `You are an expert financial categorizer.
@@ -1006,96 +1095,109 @@ ${JSON.stringify(uniqueDescs)}
               contents: prompt,
             });
 
-            const text = response.text || "";
+            const text = response.text || '';
             const jsonMatch = text.match(/```json\n([\s\S]*?)\n```/) || text.match(/{[\s\S]*}/);
-            
+
             if (jsonMatch) {
               const parsedText = jsonMatch[1] || jsonMatch[0];
               const predictions = JSON.parse(parsedText);
-              
-              finalTransactions = targetDocs.map(tx => {
+
+              finalTransactions = targetDocs.map((tx) => {
                 const pred = predictions[tx.Description];
                 if (pred) {
                   let validCat = pred.Category;
                   let validSubcat = pred.Subcategory;
-                  
+
                   if (validCat && !globalTaxonomy[validCat]) {
-                    validCat = "";
-                    validSubcat = "";
-                  } else if (validCat && validSubcat && (!globalTaxonomy[validCat].includes(validSubcat))) {
-                    validSubcat = "";
+                    validCat = '';
+                    validSubcat = '';
+                  } else if (
+                    validCat &&
+                    validSubcat &&
+                    !globalTaxonomy[validCat].includes(validSubcat)
+                  ) {
+                    validSubcat = '';
                   }
 
                   return {
                     ...tx,
-                    Category: validCat || "",
-                    Subcategory: validSubcat || "",
-                    status: "pending_review"
+                    Category: validCat || '',
+                    Subcategory: validSubcat || '',
+                    status: 'pending_review',
                   };
                 }
-                return { ...tx, status: "pending_review" };
+                return { ...tx, status: 'pending_review' };
               });
             }
           }
         } catch (geminiErr: any) {
-          console.error("Gemini reclassification failed:", geminiErr);
-          return res.status(500).json({ error: "Gemini AI Error: " + (geminiErr?.message || "Categorization failed") });
+          console.error('Gemini reclassification failed:', geminiErr);
+          return res
+            .status(500)
+            .json({ error: 'Gemini AI Error: ' + (geminiErr?.message || 'Categorization failed') });
         }
       } else {
-        return res.status(400).json({ error: "No Gemini API key configured." });
+        return res.status(400).json({ error: 'No Gemini API key configured.' });
       }
 
       const batch = firestore.batch();
 
-      finalTransactions.forEach(tx => {
+      finalTransactions.forEach((tx) => {
         const docRef = transactionsCollection.doc(tx.id);
         const updateData: any = {
           status: tx.status,
-          importId: importId
+          importId: importId,
         };
-        if (tx.Category && tx.Category !== "Uncategorized") {
+        if (tx.Category && tx.Category !== 'Uncategorized') {
           updateData.Category = tx.Category;
-          updateData.Subcategory = tx.Subcategory || "";
+          updateData.Subcategory = tx.Subcategory || '';
         }
         batch.update(docRef, updateData);
       });
 
       // Update import record atomically
       const importRef = importsCollection.doc(importId);
-      batch.set(importRef, {
-        importId,
-        date: new Date().toISOString(),
-        transactionCount: FieldValue.increment(finalTransactions.length),
-        duplicateCount: 0,
-        archived: false,
-        reclassification: true
-      }, { merge: true });
+      batch.set(
+        importRef,
+        {
+          importId,
+          date: new Date().toISOString(),
+          transactionCount: FieldValue.increment(finalTransactions.length),
+          duplicateCount: 0,
+          archived: false,
+          reclassification: true,
+        },
+        { merge: true }
+      );
 
       await batch.commit();
 
-      res.json({ 
-        success: true, 
-        message: "Reclassification complete.", 
+      res.json({
+        success: true,
+        message: 'Reclassification complete.',
         count: finalTransactions.length,
-        geminiError: geminiErrorMessage 
+        geminiError: geminiErrorMessage,
       });
-
     } catch (error: any) {
-      console.error("[Server] Reclassify Error:", error);
+      console.error('[Server] Reclassify Error:', error);
       res.status(500).json({ error: error.message });
     }
   });
 
-  app.get("/api/admin/archived-transactions", async (req, res) => {
+  app.get('/api/admin/archived-transactions', async (req, res) => {
     const authHeader = req.headers.authorization;
     let tokensCookie = req.cookies.google_tokens;
-    if (authHeader && authHeader.startsWith("Bearer ")) tokensCookie = decodeURIComponent(authHeader.split(" ")[1]);
-    if (!tokensCookie) return res.status(401).json({ error: "Not authenticated" });
+    if (authHeader && authHeader.startsWith('Bearer '))
+      tokensCookie = decodeURIComponent(authHeader.split(' ')[1]);
+    if (!tokensCookie) return res.status(401).json({ error: 'Not authenticated' });
 
     try {
-      const firestore = new Firestore({ projectId: "tx-analyzer-1777844550" });
-      const snapshot = await firestore.collection("transactions").where("status", "==", "archived").get();
-      const transactions = snapshot.docs.map(doc => {
+      const firestore = new Firestore({ projectId: 'tx-analyzer-1777844550' });
+      const snapshot = await firestore
+        .collection('transactions')
+        .where('status', '==', 'archived')
+        .get();
+      const transactions = snapshot.docs.map((doc) => {
         const raw = doc.data();
         let dateVal = raw['Date'] || raw['Posting Date'] || raw['date'] || '';
         if (dateVal && typeof dateVal.toDate === 'function') {
@@ -1107,7 +1209,7 @@ ${JSON.stringify(uniqueDescs)}
           id: doc.id,
           ...raw,
           Date: dateVal,
-          Amount: raw['Amount'] !== undefined ? raw['Amount'] : (raw['amount'] || 0)
+          Amount: raw['Amount'] !== undefined ? raw['Amount'] : raw['amount'] || 0,
         };
       });
       res.json({ transactions });
@@ -1116,33 +1218,38 @@ ${JSON.stringify(uniqueDescs)}
     }
   });
 
-  app.get("/api/admin/all-imports", async (req, res) => {
+  app.get('/api/admin/all-imports', async (req, res) => {
     const authHeader = req.headers.authorization;
     let tokensCookie = req.cookies.google_tokens;
-    if (authHeader && authHeader.startsWith("Bearer ")) tokensCookie = decodeURIComponent(authHeader.split(" ")[1]);
-    if (!tokensCookie) return res.status(401).json({ error: "Not authenticated" });
+    if (authHeader && authHeader.startsWith('Bearer '))
+      tokensCookie = decodeURIComponent(authHeader.split(' ')[1]);
+    if (!tokensCookie) return res.status(401).json({ error: 'Not authenticated' });
 
     try {
-      const firestore = new Firestore({ projectId: "tx-analyzer-1777844550" });
-      const snapshot = await firestore.collection("imports").orderBy("date", "desc").get();
-      const imports = snapshot.docs.map(doc => doc.data());
+      const firestore = new Firestore({ projectId: 'tx-analyzer-1777844550' });
+      const snapshot = await firestore.collection('imports').orderBy('date', 'desc').get();
+      const imports = snapshot.docs.map((doc) => doc.data());
       res.json({ imports });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
   });
-  app.post("/api/admin/unarchive-import", async (req, res) => {
+  app.post('/api/admin/unarchive-import', async (req, res) => {
     const authHeader = req.headers.authorization;
     let tokensCookie = req.cookies.google_tokens;
-    if (authHeader && authHeader.startsWith("Bearer ")) tokensCookie = decodeURIComponent(authHeader.split(" ")[1]);
-    if (!tokensCookie) return res.status(401).json({ error: "Not authenticated" });
+    if (authHeader && authHeader.startsWith('Bearer '))
+      tokensCookie = decodeURIComponent(authHeader.split(' ')[1]);
+    if (!tokensCookie) return res.status(401).json({ error: 'Not authenticated' });
 
     try {
       const { importId } = req.body;
-      const firestore = new Firestore({ projectId: "tx-analyzer-1777844550" });
-      await firestore.collection("imports").doc(importId).update({ archived: false });
-      
-      const txSnapshot = await firestore.collection("transactions").where("importId", "==", importId).get();
+      const firestore = new Firestore({ projectId: 'tx-analyzer-1777844550' });
+      await firestore.collection('imports').doc(importId).update({ archived: false });
+
+      const txSnapshot = await firestore
+        .collection('transactions')
+        .where('importId', '==', importId)
+        .get();
       const batch = firestore.batch();
       txSnapshot.docs.forEach((doc) => {
         batch.update(doc.ref, { status: 'reviewed' });
@@ -1155,49 +1262,51 @@ ${JSON.stringify(uniqueDescs)}
     }
   });
 
-  app.get("/api/admin/duplicate-stats", async (req, res) => {
+  app.get('/api/admin/duplicate-stats', async (req, res) => {
     const authHeader = req.headers.authorization;
     let tokensCookie = req.cookies.google_tokens;
-    if (authHeader && authHeader.startsWith("Bearer ")) tokensCookie = decodeURIComponent(authHeader.split(" ")[1]);
-    if (!tokensCookie) return res.status(401).json({ error: "Not authenticated" });
+    if (authHeader && authHeader.startsWith('Bearer '))
+      tokensCookie = decodeURIComponent(authHeader.split(' ')[1]);
+    if (!tokensCookie) return res.status(401).json({ error: 'Not authenticated' });
 
     try {
-      const firestore = new Firestore({ projectId: "tx-analyzer-1777844550" });
-      const snapshot = await firestore.collection("transactions").get();
-      
+      const firestore = new Firestore({ projectId: 'tx-analyzer-1777844550' });
+      const snapshot = await firestore.collection('transactions').get();
+
       const sigMap = new Map<string, number>();
       let duplicateCount = 0;
-      
-      snapshot.docs.forEach(doc => {
+
+      snapshot.docs.forEach((doc) => {
         const data = doc.data();
-        if (data.status === "archived") return;
+        if (data.status === 'archived') return;
         const sig = generateSignature(data);
         const count = sigMap.get(sig) || 0;
         if (count > 0) duplicateCount++;
         sigMap.set(sig, count + 1);
       });
-      
+
       res.json({ count: duplicateCount });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
   });
 
-  app.post("/api/admin/deduplicate", async (req, res) => {
+  app.post('/api/admin/deduplicate', async (req, res) => {
     const authHeader = req.headers.authorization;
     let tokensCookie = req.cookies.google_tokens;
-    if (authHeader && authHeader.startsWith("Bearer ")) tokensCookie = decodeURIComponent(authHeader.split(" ")[1]);
-    if (!tokensCookie) return res.status(401).json({ error: "Not authenticated" });
+    if (authHeader && authHeader.startsWith('Bearer '))
+      tokensCookie = decodeURIComponent(authHeader.split(' ')[1]);
+    if (!tokensCookie) return res.status(401).json({ error: 'Not authenticated' });
 
     try {
-      const firestore = new Firestore({ projectId: "tx-analyzer-1777844550" });
-      const snapshot = await firestore.collection("transactions").get();
-      
-      const groups = new Map<string, Array<{ id: string, ref: any, data: any }>>();
-      
-      snapshot.docs.forEach(doc => {
+      const firestore = new Firestore({ projectId: 'tx-analyzer-1777844550' });
+      const snapshot = await firestore.collection('transactions').get();
+
+      const groups = new Map<string, Array<{ id: string; ref: any; data: any }>>();
+
+      snapshot.docs.forEach((doc) => {
         const data = doc.data();
-        if (data.status === "archived") return;
+        if (data.status === 'archived') return;
         const sig = generateSignature(data);
         if (!groups.has(sig)) groups.set(sig, []);
         groups.get(sig)!.push({ id: doc.id, ref: doc.ref, data });
@@ -1221,14 +1330,14 @@ ${JSON.stringify(uniqueDescs)}
           // Sort docs to prioritize keeping the "best" one.
           // Best = Has Category (not Uncategorized), then status = reviewed, then anything else.
           docs.sort((a, b) => {
-            const aCat = a.data.Category && a.data.Category !== "Uncategorized" ? 1 : 0;
-            const bCat = b.data.Category && b.data.Category !== "Uncategorized" ? 1 : 0;
+            const aCat = a.data.Category && a.data.Category !== 'Uncategorized' ? 1 : 0;
+            const bCat = b.data.Category && b.data.Category !== 'Uncategorized' ? 1 : 0;
             if (aCat !== bCat) return bCat - aCat; // categorized first
-            
-            const aRev = a.data.status === "reviewed" ? 1 : 0;
-            const bRev = b.data.status === "reviewed" ? 1 : 0;
+
+            const aRev = a.data.status === 'reviewed' ? 1 : 0;
+            const bRev = b.data.status === 'reviewed' ? 1 : 0;
             if (aRev !== bRev) return bRev - aRev; // reviewed first
-            
+
             return 0; // tie
           });
 
@@ -1237,7 +1346,7 @@ ${JSON.stringify(uniqueDescs)}
             batch.update(docs[i].ref, { status: 'archived' });
             opCount++;
             deletedCount++;
-            
+
             if (opCount >= batchSize) {
               await commitBatch();
             }
@@ -1249,26 +1358,26 @@ ${JSON.stringify(uniqueDescs)}
 
       res.json({ success: true, deletedCount });
     } catch (err: any) {
-      console.error("Deduplication error:", err);
+      console.error('Deduplication error:', err);
       res.status(500).json({ error: err.message });
     }
   });
 
-  app.get("/api/admin/migrate-dates", async (req, res) => {
+  app.get('/api/admin/migrate-dates', async (req, res) => {
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
-    
+
     const sendEvent = (msg: string) => {
       res.write(`${msg}\n`);
     };
 
     try {
-      sendEvent("Starting date migration and duplicate cleanup...");
-      const firestore = new Firestore({ projectId: "tx-analyzer-1777844550" });
-      const snapshot = await firestore.collection("transactions").get();
+      sendEvent('Starting date migration and duplicate cleanup...');
+      const firestore = new Firestore({ projectId: 'tx-analyzer-1777844550' });
+      const snapshot = await firestore.collection('transactions').get();
       const seenSignatures = new Set<string>();
-      
+
       let deletedCount = 0;
       let updatedCount = 0;
       let batch = firestore.batch();
@@ -1280,7 +1389,7 @@ ${JSON.stringify(uniqueDescs)}
 
       for (const doc of snapshot.docs) {
         const data = doc.data();
-        
+
         const rawDate = data.Date || data['Posting Date'] || data.date;
         let newDateVal = rawDate !== undefined ? rawDate : null;
         const d = parseStrictDate(rawDate);
@@ -1318,36 +1427,38 @@ ${JSON.stringify(uniqueDescs)}
           sendEvent(`Processed ${totalProcessed}/${totalDocs} transactions...`);
         }
       }
-      
+
       if (opsInBatch > 0) {
         await batch.commit();
       }
-      
-      sendEvent(`Migration complete! Deleted ${deletedCount} duplicates, migrated ${updatedCount} transactions.`);
+
+      sendEvent(
+        `Migration complete! Deleted ${deletedCount} duplicates, migrated ${updatedCount} transactions.`
+      );
       res.end();
     } catch (error: any) {
-      console.error("[Server] Error migrating dates:", error);
+      console.error('[Server] Error migrating dates:', error);
       sendEvent(`Error: ${error.message}`);
       res.end();
     }
   });
 
   // Vite middleware for development
-  if (process.env.NODE_ENV !== "production") {
+  if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
       server: { middlewareMode: true },
-      appType: "spa",
+      appType: 'spa',
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), "dist");
+    const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
-    app.get("*", (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
+    app.get('*', (req, res) => {
+      res.sendFile(path.join(distPath, 'index.html'));
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
+  app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on http://localhost:${PORT}`);
   });
 }

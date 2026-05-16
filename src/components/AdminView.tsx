@@ -1,39 +1,61 @@
-import React, { useState, useEffect } from "react";
-import { Loader2, RefreshCw, ArchiveRestore, Archive } from "lucide-react";
-import { format } from "date-fns";
+import React, { useState, useEffect } from 'react';
+import { Loader2, RefreshCw, ArchiveRestore, Archive } from 'lucide-react';
+import { format } from 'date-fns';
 
-export function AdminView({ onDataChanged, transactions = [] }: { onDataChanged?: () => void, transactions?: any[] }) {
+/**
+ * AdminView Component.
+ * Provides administrative controls for the application, such as:
+ * - Reclassifying uncategorized transactions using AI.
+ * - Deduplicating the database.
+ * - Viewing and restoring archived transactions.
+ * - Viewing the history of all imports.
+ *
+ * @param props.onDataChanged - Callback function to trigger a global data refresh when admin actions complete.
+ * @param props.transactions - The full array of transactions loaded in the app.
+ */
+export function AdminView({
+  onDataChanged,
+  transactions = [],
+}: {
+  onDataChanged?: () => void;
+  transactions?: any[];
+}) {
   const [loading, setLoading] = useState(true);
   const [archivedTxs, setArchivedTxs] = useState<any[]>([]);
   const [allImports, setAllImports] = useState<any[]>([]);
   const [selectedTxIds, setSelectedTxIds] = useState<Set<string>>(new Set());
   const [isUpdating, setIsUpdating] = useState(false);
   const [isReclassifying, setIsReclassifying] = useState(false);
-  const [reclassifyProgress, setReclassifyProgress] = useState<{ processed: number; total: number } | null>(null);
+  const [reclassifyProgress, setReclassifyProgress] = useState<{
+    processed: number;
+    total: number;
+  } | null>(null);
 
   const [duplicateCount, setDuplicateCount] = useState(0);
   const [isDeduplicating, setIsDeduplicating] = useState(false);
 
-  const uncategorizedTxs = transactions.filter(t => !t._category || t._category === "Uncategorized");
+  const uncategorizedTxs = transactions.filter(
+    (t) => !t._category || t._category === 'Uncategorized'
+  );
   const uncategorizedCount = uncategorizedTxs.length;
 
   const fetchData = async () => {
     setLoading(true);
     try {
       const [txRes, importsRes, dupRes] = await Promise.all([
-        fetch("/api/admin/archived-transactions"),
-        fetch("/api/admin/all-imports"),
-        fetch("/api/admin/duplicate-stats")
+        fetch('/api/admin/archived-transactions'),
+        fetch('/api/admin/all-imports'),
+        fetch('/api/admin/duplicate-stats'),
       ]);
       const txData = await txRes.json();
       const importsData = await importsRes.json();
       const dupData = await dupRes.json();
-      
+
       setArchivedTxs(txData.transactions || []);
       setAllImports(importsData.imports || []);
       setDuplicateCount(dupData.count || 0);
     } catch (err) {
-      console.error("Error fetching admin data:", err);
+      console.error('Error fetching admin data:', err);
     } finally {
       setLoading(false);
     }
@@ -47,39 +69,44 @@ export function AdminView({ onDataChanged, transactions = [] }: { onDataChanged?
     if (selectedTxIds.size === 0) return;
     setIsUpdating(true);
     try {
-      const updates = Array.from(selectedTxIds).map(id => ({ id, status: 'reviewed' }));
-      const res = await fetch("/api/transaction/bulk-update", {
-        method: "POST",
+      const updates = Array.from(selectedTxIds).map((id) => ({ id, status: 'reviewed' }));
+      const res = await fetch('/api/transaction/bulk-update', {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ updates })
+        body: JSON.stringify({ updates }),
       });
-      if (!res.ok) throw new Error("Failed to restore transactions");
+      if (!res.ok) throw new Error('Failed to restore transactions');
       setSelectedTxIds(new Set());
       await fetchData();
       onDataChanged?.();
     } catch (err) {
       console.error(err);
-      alert("Failed to restore transactions");
+      alert('Failed to restore transactions');
     } finally {
       setIsUpdating(false);
     }
   };
 
   const handleUnarchiveImport = async (importId: string) => {
-    if (!confirm("Are you sure you want to restore this import? This will also unarchive all associated transactions.")) return;
+    if (
+      !confirm(
+        'Are you sure you want to restore this import? This will also unarchive all associated transactions.'
+      )
+    )
+      return;
     setIsUpdating(true);
     try {
-      const res = await fetch("/api/admin/unarchive-import", {
-        method: "POST",
+      const res = await fetch('/api/admin/unarchive-import', {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ importId })
+        body: JSON.stringify({ importId }),
       });
-      if (!res.ok) throw new Error("Failed to unarchive import");
+      if (!res.ok) throw new Error('Failed to unarchive import');
       await fetchData();
       onDataChanged?.();
     } catch (err) {
       console.error(err);
-      alert("Failed to unarchive import");
+      alert('Failed to unarchive import');
     } finally {
       setIsUpdating(false);
     }
@@ -87,32 +114,35 @@ export function AdminView({ onDataChanged, transactions = [] }: { onDataChanged?
 
   const handleReclassify = async () => {
     if (uncategorizedCount === 0) {
-      alert("No uncategorized transactions to reclassify.");
+      alert('No uncategorized transactions to reclassify.');
       return;
     }
-    
+
     setIsReclassifying(true);
     setReclassifyProgress({ processed: 0, total: uncategorizedCount });
-    
+
     const chunkSize = 50;
     const maxConcurrency = 3;
     const importId = `reclassify_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-    
-    // Extract just the IDs — the server will look up the actual documents
+
+    // We only send the IDs to the server to minimize payload size.
+    // The server will query Firestore to get the actual transaction data to send to Gemini.
     const allIds = uncategorizedTxs.map((t: any) => t.id).filter(Boolean);
     const chunks = [];
     for (let i = 0; i < allIds.length; i += chunkSize) {
       chunks.push(allIds.slice(i, i + chunkSize));
     }
-    
+
     let processed = 0;
     let chunkIndex = 0;
     let activeCount = 0;
     let hasGeminiError = false;
-    let lastGeminiError = "";
-    
+    let lastGeminiError = '';
+
     try {
       await new Promise<void>((resolve, reject) => {
+        // We use a custom concurrency queue to process chunks of IDs.
+        // This prevents hitting rate limits on the Gemini API while remaining fast.
         const next = () => {
           if (chunkIndex >= chunks.length && activeCount === 0) {
             resolve();
@@ -121,7 +151,7 @@ export function AdminView({ onDataChanged, transactions = [] }: { onDataChanged?
           while (activeCount < maxConcurrency && chunkIndex < chunks.length) {
             const currentChunk = chunks[chunkIndex++];
             activeCount++;
-            
+
             processChunk(currentChunk)
               .then(() => {
                 activeCount--;
@@ -130,34 +160,36 @@ export function AdminView({ onDataChanged, transactions = [] }: { onDataChanged?
               .catch((err) => reject(err));
           }
         };
-        
+
         const processChunk = async (idsChunk: string[]) => {
-          const res = await fetch("/api/admin/reclassify", { 
-            method: "POST",
+          const res = await fetch('/api/admin/reclassify', {
+            method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ids: idsChunk, importId })
+            body: JSON.stringify({ ids: idsChunk, importId }),
           });
           const data = await res.json();
-          if (!res.ok) throw new Error(data.error || "Failed to reclassify chunk");
-          
+          if (!res.ok) throw new Error(data.error || 'Failed to reclassify chunk');
+
           if (data.geminiError) {
             hasGeminiError = true;
             lastGeminiError = data.geminiError;
           }
-          
+
           processed += idsChunk.length;
           setReclassifyProgress({ processed, total: uncategorizedCount });
         };
-        
+
         next();
       });
-      
-      alert(`Success! Reclassified ${uncategorizedCount} transactions. They are now in the Review Queue.${hasGeminiError ? `\n\nNote: Gemini returned an error on some chunks: ${lastGeminiError}` : ""}`);
+
+      alert(
+        `Success! Reclassified ${uncategorizedCount} transactions. They are now in the Review Queue.${hasGeminiError ? `\n\nNote: Gemini returned an error on some chunks: ${lastGeminiError}` : ''}`
+      );
       onDataChanged?.();
       fetchData();
     } catch (err: any) {
       console.error(err);
-      alert("Error: " + err.message);
+      alert('Error: ' + err.message);
     } finally {
       setIsReclassifying(false);
       setReclassifyProgress(null);
@@ -166,20 +198,25 @@ export function AdminView({ onDataChanged, transactions = [] }: { onDataChanged?
 
   const handleDeduplicate = async () => {
     if (duplicateCount === 0) return;
-    if (!confirm(`Are you sure you want to move ${duplicateCount} duplicate transactions to the Archive? You can easily restore them later if needed.`)) return;
+    if (
+      !confirm(
+        `Are you sure you want to move ${duplicateCount} duplicate transactions to the Archive? You can easily restore them later if needed.`
+      )
+    )
+      return;
 
     setIsDeduplicating(true);
     try {
-      const res = await fetch("/api/admin/deduplicate", { method: "POST" });
+      const res = await fetch('/api/admin/deduplicate', { method: 'POST' });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to deduplicate");
-      
+      if (!res.ok) throw new Error(data.error || 'Failed to deduplicate');
+
       alert(`Success! Moved ${data.deletedCount} duplicate transactions to the Archive.`);
       onDataChanged?.();
       fetchData();
     } catch (err: any) {
       console.error(err);
-      alert("Error: " + err.message);
+      alert('Error: ' + err.message);
     } finally {
       setIsDeduplicating(false);
     }
@@ -198,7 +235,7 @@ export function AdminView({ onDataChanged, transactions = [] }: { onDataChanged?
     <div className="space-y-8 animate-in fade-in duration-500">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold text-slate-900">Admin Controls</h2>
-        <button 
+        <button
           onClick={fetchData}
           className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
         >
@@ -211,21 +248,28 @@ export function AdminView({ onDataChanged, transactions = [] }: { onDataChanged?
         <div className="space-y-4">
           <div className="flex items-center justify-between p-4 bg-slate-50 border border-slate-100 rounded-xl">
             <div className="flex-1 mr-8">
-              <h4 className="font-semibold text-slate-700">Reclassify Uncategorized Transactions</h4>
+              <h4 className="font-semibold text-slate-700">
+                Reclassify Uncategorized Transactions
+              </h4>
               <p className="text-sm text-slate-500 mt-1">
-                Found <strong className="text-slate-700">{uncategorizedCount}</strong> transactions currently missing a category. 
-                Running this will use AI to automatically classify them based on your history and place them in the Review Queue.
+                Found <strong className="text-slate-700">{uncategorizedCount}</strong> transactions
+                currently missing a category. Running this will use AI to automatically classify
+                them based on your history and place them in the Review Queue.
               </p>
               {reclassifyProgress && (
                 <div className="mt-3">
                   <div className="flex justify-between text-xs text-slate-500 mb-1">
                     <span>Classifying...</span>
-                    <span>{reclassifyProgress.processed} / {reclassifyProgress.total}</span>
+                    <span>
+                      {reclassifyProgress.processed} / {reclassifyProgress.total}
+                    </span>
                   </div>
                   <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
-                    <div 
-                      className="bg-blue-600 h-2 transition-all duration-300" 
-                      style={{ width: `${Math.round((reclassifyProgress.processed / reclassifyProgress.total) * 100)}%` }}
+                    <div
+                      className="bg-blue-600 h-2 transition-all duration-300"
+                      style={{
+                        width: `${Math.round((reclassifyProgress.processed / reclassifyProgress.total) * 100)}%`,
+                      }}
                     />
                   </div>
                 </div>
@@ -236,8 +280,12 @@ export function AdminView({ onDataChanged, transactions = [] }: { onDataChanged?
               disabled={isReclassifying || uncategorizedCount === 0}
               className="shrink-0 flex items-center gap-2 px-4 py-2 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
             >
-              {isReclassifying ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-              {isReclassifying ? "Classifying..." : "Run AI Classification"}
+              {isReclassifying ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <RefreshCw className="w-4 h-4" />
+              )}
+              {isReclassifying ? 'Classifying...' : 'Run AI Classification'}
             </button>
           </div>
 
@@ -245,8 +293,9 @@ export function AdminView({ onDataChanged, transactions = [] }: { onDataChanged?
             <div className="flex-1 mr-8">
               <h4 className="font-semibold text-slate-700">Deduplicate Database</h4>
               <p className="text-sm text-slate-500 mt-1">
-                Found <strong className="text-orange-600">{duplicateCount}</strong> duplicate transactions in your database. 
-                Running this will move redundant copies to the Archive below while preserving your categorized ones.
+                Found <strong className="text-orange-600">{duplicateCount}</strong> duplicate
+                transactions in your database. Running this will move redundant copies to the
+                Archive below while preserving your categorized ones.
               </p>
             </div>
             <button
@@ -254,8 +303,12 @@ export function AdminView({ onDataChanged, transactions = [] }: { onDataChanged?
               disabled={isDeduplicating || duplicateCount === 0}
               className="shrink-0 flex items-center gap-2 px-4 py-2 bg-orange-500 text-white font-semibold rounded-lg hover:bg-orange-600 disabled:opacity-50 transition-colors"
             >
-              {isDeduplicating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Archive className="w-4 h-4" />}
-              {isDeduplicating ? "Archiving..." : "Archive Duplicates"}
+              {isDeduplicating ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Archive className="w-4 h-4" />
+              )}
+              {isDeduplicating ? 'Archiving...' : 'Archive Duplicates'}
             </button>
           </div>
         </div>
@@ -275,7 +328,11 @@ export function AdminView({ onDataChanged, transactions = [] }: { onDataChanged?
                 disabled={isUpdating}
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 disabled:opacity-50 transition-colors"
               >
-                {isUpdating ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArchiveRestore className="w-4 h-4" />}
+                {isUpdating ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <ArchiveRestore className="w-4 h-4" />
+                )}
                 Restore Selected
               </button>
             )}
@@ -291,26 +348,33 @@ export function AdminView({ onDataChanged, transactions = [] }: { onDataChanged?
                 <thead className="text-xs text-slate-500 uppercase bg-white sticky top-0 z-10 shadow-sm">
                   <tr>
                     <th className="px-4 py-3 font-semibold border-b border-slate-100 w-10 text-center">
-                      <input 
+                      <input
                         type="checkbox"
-                        checked={selectedTxIds.size === archivedTxs.length && archivedTxs.length > 0}
+                        checked={
+                          selectedTxIds.size === archivedTxs.length && archivedTxs.length > 0
+                        }
                         onChange={(e) => {
-                          if (e.target.checked) setSelectedTxIds(new Set(archivedTxs.map(t => t.id)));
+                          if (e.target.checked)
+                            setSelectedTxIds(new Set(archivedTxs.map((t) => t.id)));
                           else setSelectedTxIds(new Set());
                         }}
                         className="rounded border-slate-300 bg-white text-blue-600"
                       />
                     </th>
                     <th className="px-4 py-3 font-semibold border-b border-slate-100">Date</th>
-                    <th className="px-4 py-3 font-semibold border-b border-slate-100">Description</th>
-                    <th className="px-4 py-3 font-semibold border-b border-slate-100 text-right">Amount</th>
+                    <th className="px-4 py-3 font-semibold border-b border-slate-100">
+                      Description
+                    </th>
+                    <th className="px-4 py-3 font-semibold border-b border-slate-100 text-right">
+                      Amount
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50">
-                  {archivedTxs.map(tx => (
+                  {archivedTxs.map((tx) => (
                     <tr key={tx.id} className="hover:bg-slate-50/50 transition-colors">
                       <td className="px-4 py-3 text-center">
-                        <input 
+                        <input
                           type="checkbox"
                           checked={selectedTxIds.has(tx.id)}
                           onChange={(e) => {
@@ -323,13 +387,21 @@ export function AdminView({ onDataChanged, transactions = [] }: { onDataChanged?
                         />
                       </td>
                       <td className="px-4 py-3 text-slate-600 font-mono text-xs">
-                        {tx.Date ? format(new Date(tx.Date), "MM/dd/yyyy") : "Unknown"}
+                        {tx.Date ? format(new Date(tx.Date), 'MM/dd/yyyy') : 'Unknown'}
                       </td>
-                      <td className="px-4 py-3 text-slate-800 font-medium truncate max-w-[200px]" title={tx.Description}>
+                      <td
+                        className="px-4 py-3 text-slate-800 font-medium truncate max-w-[200px]"
+                        title={tx.Description}
+                      >
                         {tx.Description}
                       </td>
                       <td className="px-4 py-3 text-right font-mono text-slate-900">
-                        ${Number(typeof tx.Amount === 'string' ? tx.Amount.replace(/[^0-9.-]+/g, "") : tx.Amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        $
+                        {Number(
+                          typeof tx.Amount === 'string'
+                            ? tx.Amount.replace(/[^0-9.-]+/g, '')
+                            : tx.Amount
+                        ).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                       </td>
                     </tr>
                   ))}
@@ -354,22 +426,28 @@ export function AdminView({ onDataChanged, transactions = [] }: { onDataChanged?
                 <p>No import history found.</p>
               </div>
             ) : (
-              allImports.map(imp => (
-                <div key={imp.id} className={`p-4 border rounded-xl flex items-center justify-between gap-4 ${imp.archived ? 'bg-red-50/30 border-red-100' : 'bg-slate-50/50 border-slate-100'}`}>
+              allImports.map((imp) => (
+                <div
+                  key={imp.id}
+                  className={`p-4 border rounded-xl flex items-center justify-between gap-4 ${imp.archived ? 'bg-red-50/30 border-red-100' : 'bg-slate-50/50 border-slate-100'}`}
+                >
                   <div>
                     <div className="flex items-center gap-2 mb-1">
                       <span className="font-mono text-xs font-semibold text-slate-500 bg-white px-2 py-0.5 rounded border border-slate-200">
                         {imp.id}
                       </span>
                       {imp.archived && (
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-red-600 bg-red-100 px-2 py-0.5 rounded">Archived</span>
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-red-600 bg-red-100 px-2 py-0.5 rounded">
+                          Archived
+                        </span>
                       )}
                     </div>
                     <p className="text-sm font-medium text-slate-800">
                       {format(new Date(imp.date), "PPP 'at' p")}
                     </p>
                     <p className="text-xs text-slate-500 mt-0.5">
-                      {imp.transactionCount} transactions parsed, {imp.duplicateCount || 0} duplicates skipped.
+                      {imp.transactionCount} transactions parsed, {imp.duplicateCount || 0}{' '}
+                      duplicates skipped.
                     </p>
                   </div>
                   {imp.archived && (

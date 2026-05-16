@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect } from 'react';
 import {
   BarChart,
   Bar,
@@ -13,7 +13,7 @@ import {
   Cell,
   LineChart,
   Line,
-} from "recharts";
+} from 'recharts';
 import {
   FileSpreadsheet,
   LogOut,
@@ -44,56 +44,62 @@ import {
   Check,
   Edit3,
   Archive,
-} from "lucide-react";
-import { format, parseISO, isValid, parse } from "date-fns";
-import { ImportModal } from "./components/ImportModal";
-import { ReviewQueue } from "./components/ReviewQueue";
-import { ImportHistory } from "./components/ImportHistory";
-import { CategoriesView } from "./components/CategoriesView";
-import { AdminView } from "./components/AdminView";
+} from 'lucide-react';
+import { format, parseISO, isValid, parse } from 'date-fns';
+import { ImportModal } from './components/ImportModal';
+import { ReviewQueue } from './components/ReviewQueue';
+import { ImportHistory } from './components/ImportHistory';
+import { CategoriesView } from './components/CategoriesView';
+import { AdminView } from './components/AdminView';
 
 const CATEGORY_COLORS = [
-  "#3377FF",
-  "#3355FF",
-  "#3333FF",
-  "#5533FF",
-  "#7733FF",
-  "#9933FF",
-  "#BB33FF",
-  "#DD33FF",
-  "#FF33FF",
-  "#FF3333",
-  "#FF5533",
-  "#FF7733",
-  "#FF9933",
-  "#FFBB33",
-  "#FFDD33",
-  "#FFFF33",
-  "#DDFF33",
-  "#55FF33",
-  "#33FFFF",
-  "#33DDFF",
-  "#33BBFF",
-  "#3399FF"
+  '#3377FF',
+  '#3355FF',
+  '#3333FF',
+  '#5533FF',
+  '#7733FF',
+  '#9933FF',
+  '#BB33FF',
+  '#DD33FF',
+  '#FF33FF',
+  '#FF3333',
+  '#FF5533',
+  '#FF7733',
+  '#FF9933',
+  '#FFBB33',
+  '#FFDD33',
+  '#FFFF33',
+  '#DDFF33',
+  '#55FF33',
+  '#33FFFF',
+  '#33DDFF',
+  '#33BBFF',
+  '#3399FF',
 ];
 
 const categoryColorMap = new Map<string, string>();
 let nextColorIndex = 0;
 
 const getCategoryColor = (categoryName: string) => {
-  if (!categoryName) return "#cbd5e1";
-  
+  if (!categoryName) return '#cbd5e1';
+
   if (categoryColorMap.has(categoryName)) {
     return categoryColorMap.get(categoryName)!;
   }
-  
+
   const color = CATEGORY_COLORS[nextColorIndex % CATEGORY_COLORS.length];
   categoryColorMap.set(categoryName, color);
   nextColorIndex++;
-  
+
   return color;
 };
 
+/**
+ * Main Application Component.
+ * Manages global state (authentication, loaded transactions, taxonomy, user preferences),
+ * handles routing between different views (Dashboard, Transactions, Budget, Admin),
+ * and performs data aggregation and analysis for dashboard metrics.
+ */
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(false);
@@ -106,14 +112,16 @@ export default function App() {
   const [showTableTotals, setShowTableTotals] = useState(false);
   const [budgetData, setBudgetData] = useState<any[]>([]);
   const [budgetHeaders, setBudgetHeaders] = useState<string[]>([]);
-  const [currentView, setCurrentView] = useState<"dashboard" | "transactions" | "budget" | "categories" | "admin">("dashboard");
+  const [currentView, setCurrentView] = useState<
+    'dashboard' | 'transactions' | 'budget' | 'categories' | 'admin'
+  >('dashboard');
   const [taxonomy, setTaxonomy] = useState<Record<string, string[]>>({});
-  const [txFilterCategory, setTxFilterCategory] = useState("");
-  const [txFilterSubcategory, setTxFilterSubcategory] = useState("");
-  const [txFilterType, setTxFilterType] = useState<"all" | "income" | "expense">("all");
+  const [txFilterCategory, setTxFilterCategory] = useState('');
+  const [txFilterSubcategory, setTxFilterSubcategory] = useState('');
+  const [txFilterType, setTxFilterType] = useState<'all' | 'income' | 'expense'>('all');
   const [showTxTotals, setShowTxTotals] = useState(false);
   const [selectedYear, setSelectedYear] = useState<string>(new Date().getFullYear().toString());
-  const [selectedMonth, setSelectedMonth] = useState<string>(format(new Date(), "MMM yyyy"));
+  const [selectedMonth, setSelectedMonth] = useState<string>(format(new Date(), 'MMM yyyy'));
   const [availableYears, setAvailableYears] = useState<string[]>([]);
   const [hoveredCategory, setHoveredCategory] = useState<string | null>(null);
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
@@ -121,52 +129,68 @@ export default function App() {
   const [isBudgetExpensesExpanded, setIsBudgetExpensesExpanded] = useState(true);
   const [isBudgetIncomeExpanded, setIsBudgetIncomeExpanded] = useState(true);
   const [showBudgetAverage, setShowBudgetAverage] = useState(false);
-  const [editingBudget, setEditingBudget] = useState<{ category: string; actual: number; average: number; unscaledAverage: number; current: number; monthlyBudget: number } | null>(null);
-  const [newBudgetValue, setNewBudgetValue] = useState<string>("");
+  const [editingBudget, setEditingBudget] = useState<{
+    category: string;
+    actual: number;
+    average: number;
+    unscaledAverage: number;
+    current: number;
+    monthlyBudget: number;
+  } | null>(null);
+  const [newBudgetValue, setNewBudgetValue] = useState<string>('');
   const [isUpdatingBudget, setIsUpdatingBudget] = useState(false);
   const [isTxModalOpen, setIsTxModalOpen] = useState(false);
   const [editingTx, setEditingTx] = useState<any>(null);
-  const [editTxAmount, setEditTxAmount] = useState("");
-  const [editTxDate, setEditTxDate] = useState("");
-  const [editTxCategory, setEditTxCategory] = useState("");
-  const [editTxSubcategory, setEditTxSubcategory] = useState("");
+  const [editTxAmount, setEditTxAmount] = useState('');
+  const [editTxDate, setEditTxDate] = useState('');
+  const [editTxCategory, setEditTxCategory] = useState('');
+  const [editTxSubcategory, setEditTxSubcategory] = useState('');
   const [isUpdatingTx, setIsUpdatingTx] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
-  const [importStatus, setImportStatus] = useState<{ type: 'loading' | 'success' | 'error'; message: string } | null>(null);
+  const [importStatus, setImportStatus] = useState<{
+    type: 'loading' | 'success' | 'error';
+    message: string;
+  } | null>(null);
   const [importHistoryRefresh, setImportHistoryRefresh] = useState(0);
 
   const [selectedTxIds, setSelectedTxIds] = useState<Set<string>>(new Set());
   const [isBulkEditingTx, setIsBulkEditingTx] = useState(false);
-  const [bulkEditTxCategory, setBulkEditTxCategory] = useState("");
-  const [bulkEditTxSubcategory, setBulkEditTxSubcategory] = useState("");
-  const [txSearchText, setTxSearchText] = useState("");
-  const [txSortConfig, setTxSortConfig] = useState<{ key: string, direction: 'asc'|'desc' }>({ key: 'Date', direction: 'desc' });
+  const [bulkEditTxCategory, setBulkEditTxCategory] = useState('');
+  const [bulkEditTxSubcategory, setBulkEditTxSubcategory] = useState('');
+  const [txSearchText, setTxSearchText] = useState('');
+  const [txSortConfig, setTxSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' }>({
+    key: 'Date',
+    direction: 'desc',
+  });
   const [isBulkUpdatingTx, setIsBulkUpdatingTx] = useState(false);
 
+  // Reset selected transactions when filter/view parameters change
   useEffect(() => {
     setSelectedTxIds(new Set());
     setIsBulkEditingTx(false);
   }, [selectedYear, selectedMonth, txFilterCategory, txFilterSubcategory, txFilterType]);
 
+  // Initial auth check and set up message listener for OAuth popup flow
   useEffect(() => {
     checkAuthStatus();
 
     const handleMessage = (event: MessageEvent) => {
       const origin = event.origin;
-      if (!origin.endsWith(".run.app") && !origin.includes("localhost")) {
+      if (!origin.endsWith('.run.app') && !origin.includes('localhost')) {
         return;
       }
-      if (event.data?.type === "OAUTH_AUTH_SUCCESS") {
+      if (event.data?.type === 'OAUTH_AUTH_SUCCESS') {
         if (event.data.tokens) {
-          localStorage.setItem("google_tokens", JSON.stringify(event.data.tokens));
+          localStorage.setItem('google_tokens', JSON.stringify(event.data.tokens));
         }
         checkAuthStatus();
       }
     };
-    window.addEventListener("message", handleMessage);
-    return () => window.removeEventListener("message", handleMessage);
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
   }, []);
 
+  // Fetch initial data once authenticated
   useEffect(() => {
     if (isAuthenticated) {
       fetchSheetData();
@@ -174,89 +198,84 @@ export default function App() {
     }
   }, [isAuthenticated]);
 
+  // Re-run data analysis whenever core data or timeframe filters change
   useEffect(() => {
     if (data.length > 0 && headers.length > 0) {
       analyzeData(data, headers);
     }
   }, [selectedYear, selectedMonth, data, headers, budgetData]);
 
-  const fetchTaxonomy = async () => {
+  async function fetchTaxonomy() {
     try {
-      const res = await fetch("/api/taxonomy");
+      const res = await fetch('/api/taxonomy');
       if (res.ok) {
         const data = await res.json();
         setTaxonomy(data.taxonomy || {});
       }
     } catch (err) {
-      console.error("Failed to fetch taxonomy:", err);
+      console.error('Failed to fetch taxonomy:', err);
     }
-  };
+  }
 
-  const checkAuthStatus = async () => {
+  async function checkAuthStatus() {
     try {
-      const res = await fetch("/api/auth/status");
+      const res = await fetch('/api/auth/status');
       const data = await res.json();
-      
+
       if (!data.authenticated) {
-        localStorage.removeItem("google_tokens");
+        localStorage.removeItem('google_tokens');
       }
-      
+
       setIsAuthenticated(data.authenticated);
     } catch (err) {
-      console.error("Failed to check auth status", err);
+      console.error('Failed to check auth status', err);
       setIsAuthenticated(false);
     }
-  };
+  }
 
   const handleLogin = async () => {
     try {
       const redirectUri = `${window.location.origin}/auth/callback`;
-      const res = await fetch(
-        `/api/auth/url?redirectUri=${encodeURIComponent(redirectUri)}`
-      );
-      if (!res.ok) throw new Error("Failed to get auth URL");
+      const res = await fetch(`/api/auth/url?redirectUri=${encodeURIComponent(redirectUri)}`);
+      if (!res.ok) throw new Error('Failed to get auth URL');
       const { url } = await res.json();
 
-      const authWindow = window.open(
-        url,
-        "oauth_popup",
-        "width=600,height=700"
-      );
+      const authWindow = window.open(url, 'oauth_popup', 'width=600,height=700');
       if (!authWindow) {
-        setError("Please allow popups for this site to connect your account.");
+        setError('Please allow popups for this site to connect your account.');
       }
     } catch (err: any) {
-      setError(err.message || "Failed to initiate login");
+      setError(err.message || 'Failed to initiate login');
     }
   };
 
   const handleLogout = async () => {
     try {
-      await fetch("/api/auth/logout", { method: "POST" });
-      localStorage.removeItem("google_tokens");
+      await fetch('/api/auth/logout', { method: 'POST' });
+      localStorage.removeItem('google_tokens');
       setIsAuthenticated(false);
       setData([]);
       setAnalysis(null);
     } catch (err) {
-      console.error("Failed to logout", err);
+      console.error('Failed to logout', err);
     }
   };
 
-  const fetchSheetData = async () => {
+  async function fetchSheetData() {
     setLoading(true);
     setError(null);
 
     try {
-      const res = await fetch("/api/sheet", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+      const res = await fetch('/api/sheet', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({}),
       });
 
       const result = await res.json();
 
       if (!res.ok) {
-        throw new Error(result.error || "Failed to fetch data");
+        throw new Error(result.error || 'Failed to fetch data');
       }
 
       if (result.data && result.data.length > 0) {
@@ -267,36 +286,36 @@ export default function App() {
           setBudgetHeaders(result.budgetHeaders || []);
         }
       } else {
-        setError("No data found in the sheet");
+        setError('No data found in the sheet');
       }
     } catch (err: any) {
-      setError(err.message || "An error occurred while fetching data");
+      setError(err.message || 'An error occurred while fetching data');
     } finally {
       setLoading(false);
     }
-  };
+  }
 
   const handleUpdateBudget = async () => {
     if (!editingBudget) return;
-    
+
     setIsUpdatingBudget(true);
     try {
-      const tokens = localStorage.getItem("google_tokens");
+      const tokens = localStorage.getItem('google_tokens');
       const headers: Record<string, string> = {
-        "Content-Type": "application/json",
+        'Content-Type': 'application/json',
       };
       if (tokens) {
-        headers["Authorization"] = `Bearer ${encodeURIComponent(tokens)}`;
+        headers['Authorization'] = `Bearer ${encodeURIComponent(tokens)}`;
       }
 
       const amount = parseFloat(newBudgetValue);
       if (isNaN(amount)) {
-        alert("Please enter a valid number");
+        alert('Please enter a valid number');
         return;
       }
 
-      const res = await fetch("/api/budget/update", {
-        method: "POST",
+      const res = await fetch('/api/budget/update', {
+        method: 'POST',
         headers,
         body: JSON.stringify({
           category: editingBudget.category,
@@ -306,7 +325,7 @@ export default function App() {
 
       if (!res.ok) {
         const result = await res.json();
-        throw new Error(result.error || "Failed to update budget");
+        throw new Error(result.error || 'Failed to update budget');
       }
 
       // Refresh data
@@ -314,35 +333,37 @@ export default function App() {
       setIsBudgetModalOpen(false);
       setEditingBudget(null);
     } catch (err: any) {
-      alert(err.message || "An error occurred while updating budget");
+      alert(err.message || 'An error occurred while updating budget');
     } finally {
       setIsUpdatingBudget(false);
     }
   };
 
-  const handleBulkTxUpdate = async (updates: {id: string, category?: string, subcategory?: string, status?: string}[]) => {
+  const handleBulkTxUpdate = async (
+    updates: { id: string; category?: string; subcategory?: string; status?: string }[]
+  ) => {
     setIsBulkUpdatingTx(true);
     try {
-      const payload = updates.map(u => ({
+      const payload = updates.map((u) => ({
         id: u.id,
         ...(u.category !== undefined && { category: u.category }),
         ...(u.subcategory !== undefined && { subcategory: u.subcategory }),
-        ...(u.status !== undefined && { status: u.status })
+        ...(u.status !== undefined && { status: u.status }),
       }));
-      const res = await fetch("/api/transaction/bulk-update", {
-        method: "POST",
+      const res = await fetch('/api/transaction/bulk-update', {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ updates: payload })
+        body: JSON.stringify({ updates: payload }),
       });
-      if (!res.ok) throw new Error("Bulk update failed");
+      if (!res.ok) throw new Error('Bulk update failed');
       await fetchSheetData();
       setSelectedTxIds(new Set());
       setIsBulkEditingTx(false);
-      setBulkEditTxCategory("");
-      setBulkEditTxSubcategory("");
+      setBulkEditTxCategory('');
+      setBulkEditTxSubcategory('');
     } catch (err) {
-      console.error("Bulk tx update failed:", err);
-      alert("Failed to update transactions");
+      console.error('Bulk tx update failed:', err);
+      alert('Failed to update transactions');
     } finally {
       setIsBulkUpdatingTx(false);
     }
@@ -350,28 +371,28 @@ export default function App() {
 
   const handleUpdateTransaction = async () => {
     if (!editingTx) return;
-    
+
     setIsUpdatingTx(true);
     try {
-      const tokens = localStorage.getItem("google_tokens");
+      const tokens = localStorage.getItem('google_tokens');
       const fetchHeaders: Record<string, string> = {
-        "Content-Type": "application/json",
+        'Content-Type': 'application/json',
       };
       if (tokens) {
-        fetchHeaders["Authorization"] = `Bearer ${encodeURIComponent(tokens)}`;
+        fetchHeaders['Authorization'] = `Bearer ${encodeURIComponent(tokens)}`;
       }
 
       const amount = parseFloat(editTxAmount);
       if (isNaN(amount)) {
-        alert("Please enter a valid number");
+        alert('Please enter a valid number');
         return;
       }
 
       // Ensure we maintain the correct sign for the spreadsheet
       const signedAmount = editingTx._isExpense ? -Math.abs(amount) : Math.abs(amount);
 
-      const res = await fetch("/api/transaction/update", {
-        method: "POST",
+      const res = await fetch('/api/transaction/update', {
+        method: 'POST',
         headers: fetchHeaders,
         body: JSON.stringify({
           id: editingTx.id,
@@ -384,7 +405,7 @@ export default function App() {
 
       if (!res.ok) {
         const result = await res.json();
-        throw new Error(result.error || "Failed to update transaction");
+        throw new Error(result.error || 'Failed to update transaction');
       }
 
       // Refresh data
@@ -392,12 +413,16 @@ export default function App() {
       setIsTxModalOpen(false);
       setEditingTx(null);
     } catch (err: any) {
-      alert(err.message || "An error occurred while updating transaction");
+      alert(err.message || 'An error occurred while updating transaction');
     } finally {
       setIsUpdatingTx(false);
     }
   };
 
+  /**
+   * Processes raw transaction data into aggregated metrics, identifying categories,
+   * calculating monthly totals, and preparing data structures for Recharts and data tables.
+   */
   const analyzeData = (rawData: any[], cols: string[]) => {
     // Try to identify column roles
     const dateCol = cols.find((c) => /date/i.test(c)) || cols[0];
@@ -406,17 +431,14 @@ export default function App() {
       cols.find((c) => {
         // Check if first row has a number in this column
         const val = rawData[0]?.[c];
-        return val && !isNaN(Number(val.replace(/[^0-9.-]+/g, "")));
+        return val && !isNaN(Number(val.replace(/[^0-9.-]+/g, '')));
       });
-    const categoryCol =
-      cols.find((c) => /category|group/i.test(c)) || cols[1];
-    const subcategoryCol =
-      cols.find((c) => /subcategory|sub-category|sub category/i.test(c));
-    const descCol =
-      cols.find((c) => /description|name|item|merchant/i.test(c)) || cols[2];
+    const categoryCol = cols.find((c) => /category|group/i.test(c)) || cols[1];
+    const subcategoryCol = cols.find((c) => /subcategory|sub-category|sub category/i.test(c));
+    const descCol = cols.find((c) => /description|name|item|merchant/i.test(c)) || cols[2];
 
     if (!amountCol) {
-      setError("Could not identify an Amount column for analysis.");
+      setError('Could not identify an Amount column for analysis.');
       return;
     }
 
@@ -424,7 +446,7 @@ export default function App() {
     const yearsSet = new Set<string>();
     const preParsedData = rawData.map((row, index) => {
       const dateStr = row[dateCol];
-      let year = "Unknown";
+      let year = 'Unknown';
       if (dateStr) {
         const parsedDate = new Date(dateStr);
         if (isValid(parsedDate)) {
@@ -442,86 +464,91 @@ export default function App() {
     const globalCategoryTotals: Record<string, number> = {};
     const globalIncomeSubcategoryTotals: Record<string, number> = {};
     const globalMonthsSet = new Set<string>();
-    
-    preParsedData.forEach(row => {
+
+    preParsedData.forEach((row) => {
       const rawAmount = row[amountCol];
       if (!rawAmount) return;
-      let amount = Number(String(rawAmount).replace(/[^0-9.-]+/g, ""));
+      const amount = Number(String(rawAmount).replace(/[^0-9.-]+/g, ''));
       if (isNaN(amount)) return;
-      
-      const category = String(row[categoryCol] || "Uncategorized");
-      const subcategory = String(subcategoryCol ? (row[subcategoryCol] || "") : "");
+
+      const category = String(row[categoryCol] || 'Uncategorized');
+      const subcategory = String(subcategoryCol ? row[subcategoryCol] || '' : '');
       const dateStr = row[dateCol];
       if (dateStr) {
         const parsedDate = new Date(dateStr);
         if (isValid(parsedDate)) {
-          globalMonthsSet.add(format(parsedDate, "MMM yyyy"));
+          globalMonthsSet.add(format(parsedDate, 'MMM yyyy'));
         }
       }
-      
+
       if (amount < 0) {
         const absAmount = Math.abs(amount);
         globalCategoryTotals[category] = (globalCategoryTotals[category] || 0) + absAmount;
       } else if (amount > 0) {
-        if (category.toLowerCase() === "transfer") return;
-        
-        let key = "";
-        if (category.toLowerCase() === "income") {
-          key = subcategory || "Other Income";
+        if (category.toLowerCase() === 'transfer') return;
+
+        let key = '';
+        if (category.toLowerCase() === 'income') {
+          key = subcategory || 'Other Income';
         } else {
-          key = "Other";
+          key = 'Other';
         }
         globalIncomeSubcategoryTotals[key] = (globalIncomeSubcategoryTotals[key] || 0) + amount;
       }
     });
 
     const totalMonthsInDataset = globalMonthsSet.size || 1;
-    
+
     const allCategoryNames = new Set([
       ...Object.keys(globalCategoryTotals),
-      ...budgetData.map(b => String(Object.values(b)[0] || ""))
+      ...budgetData.map((b) => String(Object.values(b)[0] || '')),
     ]);
-    
+
     // 1. Identify all income subcategories from the entire dataset
     const allIncomeSubcategories = new Set<string>();
-    preParsedData.forEach(row => {
-      const category = String(row[categoryCol] || "");
-      const subcategory = String(subcategoryCol ? (row[subcategoryCol] || "") : "");
+    preParsedData.forEach((row) => {
+      const category = String(row[categoryCol] || '');
+      const subcategory = String(subcategoryCol ? row[subcategoryCol] || '' : '');
       const rawAmount = row[amountCol];
       let amount = 0;
       if (rawAmount) {
-        amount = Number(String(rawAmount).replace(/[^0-9.-]+/g, ""));
+        amount = Number(String(rawAmount).replace(/[^0-9.-]+/g, ''));
       }
 
-      if (category.toLowerCase() === "income" && subcategory) {
+      if (category.toLowerCase() === 'income' && subcategory) {
         allIncomeSubcategories.add(subcategory);
       }
     });
 
     // Add "Other" if there are any "Other" transactions or a budget for "Other"
-    const hasOtherIncomeTransactions = Object.keys(globalIncomeSubcategoryTotals).includes("Other");
-    const hasOtherBudget = budgetData.some(b => {
+    const hasOtherIncomeTransactions = Object.keys(globalIncomeSubcategoryTotals).includes('Other');
+    const hasOtherBudget = budgetData.some((b) => {
       const catName = Object.values(b)[0];
-      return catName && String(catName).toLowerCase() === "other";
+      return catName && String(catName).toLowerCase() === 'other';
     });
 
     // We'll calculate period-specific budget analysis after filtering data
 
     const currentYearStr = new Date().getFullYear().toString();
-    const currentMonthStr = format(new Date(), "MMM yyyy");
+    const currentMonthStr = format(new Date(), 'MMM yyyy');
 
-    // If current year has no data and we haven't manually changed the year, 
+    // If current year has no data and we haven't manually changed the year,
     // default to the most recent available year
-    if (selectedYear === currentYearStr && !yearsSet.has(currentYearStr) && sortedYears.length > 0) {
+    if (
+      selectedYear === currentYearStr &&
+      !yearsSet.has(currentYearStr) &&
+      sortedYears.length > 0
+    ) {
       setSelectedYear(sortedYears[0]);
       // We don't set month here yet, we'll let the month logic below handle it
-      return; 
+      return;
     }
 
     // Filter data by selected year
-    const filteredData = selectedYear === "All" 
-      ? preParsedData 
-      : preParsedData.filter(row => row._year === selectedYear);
+    const filteredData =
+      selectedYear === 'All'
+        ? preParsedData
+        : preParsedData.filter((row) => row._year === selectedYear);
 
     // Clean and parse data
     let totalIncome = 0;
@@ -529,120 +556,126 @@ export default function App() {
     const categoryTotals: Record<string, number> = {};
     const categoryMonthlyTotals: Record<string, Record<string, number>> = {};
     const categorySubcategoryTotals: Record<string, Record<string, number>> = {};
-    const categorySubcategoryMonthlyTotals: Record<string, Record<string, Record<string, number>>> = {};
+    const categorySubcategoryMonthlyTotals: Record<
+      string,
+      Record<string, Record<string, number>>
+    > = {};
     const monthsSet = new Set<string>();
-    const monthlyTotals: Record<string, { income: number; expense: number }> =
-      {};
+    const monthlyTotals: Record<string, { income: number; expense: number }> = {};
 
     const parsedDataUnfiltered = preParsedData
       .map((row) => {
         const rawAmount = row[amountCol];
         if (!rawAmount) return null;
-        let amount = Number(String(rawAmount).replace(/[^0-9.-]+/g, ""));
+        const amount = Number(String(rawAmount).replace(/[^0-9.-]+/g, ''));
         if (isNaN(amount)) return null;
 
         return {
           ...row,
           _parsedAmount: amount,
-          _category: row[categoryCol] || "Uncategorized",
-          _subcategory: subcategoryCol ? (row[subcategoryCol] || "") : ""
+          _category: row[categoryCol] || 'Uncategorized',
+          _subcategory: subcategoryCol ? row[subcategoryCol] || '' : '',
         };
       })
       .filter((tx): tx is any => tx !== null);
 
-        const parsedData = filteredData
-          .map((row) => {
-            const rawAmount = row[amountCol];
-            if (!rawAmount) return null;
+    const parsedData = filteredData
+      .map((row) => {
+        const rawAmount = row[amountCol];
+        if (!rawAmount) return null;
 
-            // Parse amount (handle currency symbols, commas)
-            let amount = Number(String(rawAmount).replace(/[^0-9.-]+/g, ""));
-            if (isNaN(amount)) return null;
+        // Parse amount (handle currency symbols, commas)
+        let amount = Number(String(rawAmount).replace(/[^0-9.-]+/g, ''));
+        if (isNaN(amount)) return null;
 
-            // Determine if expense or income based purely on the sign of the amount.
-            const category = row[categoryCol] || "Uncategorized";
-            const subcategory = subcategoryCol ? (row[subcategoryCol] || "") : "";
-            const isExpense = amount < 0;
+        // Determine if expense or income based purely on the sign of the amount.
+        const category = row[categoryCol] || 'Uncategorized';
+        const subcategory = subcategoryCol ? row[subcategoryCol] || '' : '';
+        const isExpense = amount < 0;
 
-            amount = Math.abs(amount);
+        amount = Math.abs(amount);
 
-            const dateStr = row[dateCol];
-            let date = new Date();
-            let monthKey = "Unknown";
+        const dateStr = row[dateCol];
+        let date = new Date();
+        let monthKey = 'Unknown';
 
-            if (dateStr) {
-              const parsedDate = new Date(dateStr);
-              if (isValid(parsedDate)) {
-                date = parsedDate;
-                monthKey = format(parsedDate, "MMM yyyy");
-              }
+        if (dateStr) {
+          const parsedDate = new Date(dateStr);
+          if (isValid(parsedDate)) {
+            date = parsedDate;
+            monthKey = format(parsedDate, 'MMM yyyy');
+          }
+        }
+
+        monthsSet.add(monthKey);
+
+        if (isExpense) {
+          totalExpense += amount;
+          categoryTotals[category] = (categoryTotals[category] || 0) + amount;
+
+          if (!categoryMonthlyTotals[category]) {
+            categoryMonthlyTotals[category] = {};
+          }
+          categoryMonthlyTotals[category][monthKey] =
+            (categoryMonthlyTotals[category][monthKey] || 0) + amount;
+
+          if (subcategory) {
+            if (!categorySubcategoryTotals[category]) {
+              categorySubcategoryTotals[category] = {};
             }
+            categorySubcategoryTotals[category][subcategory] =
+              (categorySubcategoryTotals[category][subcategory] || 0) + amount;
 
-            monthsSet.add(monthKey);
-
-            if (isExpense) {
-              totalExpense += amount;
-              categoryTotals[category] = (categoryTotals[category] || 0) + amount;
-              
-              if (!categoryMonthlyTotals[category]) {
-                categoryMonthlyTotals[category] = {};
-              }
-              categoryMonthlyTotals[category][monthKey] = (categoryMonthlyTotals[category][monthKey] || 0) + amount;
-              
-              if (subcategory) {
-                if (!categorySubcategoryTotals[category]) {
-                  categorySubcategoryTotals[category] = {};
-                }
-                categorySubcategoryTotals[category][subcategory] = (categorySubcategoryTotals[category][subcategory] || 0) + amount;
-                
-                if (!categorySubcategoryMonthlyTotals[category]) {
-                  categorySubcategoryMonthlyTotals[category] = {};
-                }
-                if (!categorySubcategoryMonthlyTotals[category][subcategory]) {
-                  categorySubcategoryMonthlyTotals[category][subcategory] = {};
-                }
-                categorySubcategoryMonthlyTotals[category][subcategory][monthKey] = (categorySubcategoryMonthlyTotals[category][subcategory][monthKey] || 0) + amount;
-              }
-            } else {
-              totalIncome += amount;
-              
-              // Track income by subcategory/other for income analysis
-              let incomeKey = "";
-              if (category.toLowerCase() === "income") {
-                incomeKey = subcategory || "Other Income";
-              } else {
-                if (category.toLowerCase() !== "transfer") {
-                  incomeKey = "Other";
-                }
-              }
-              
-              if (incomeKey) {
-                if (!globalIncomeSubcategoryTotals[incomeKey]) globalIncomeSubcategoryTotals[incomeKey] = 0; // Ensure it's tracked
-                // We'll use a local periodIncomeTotals for the period analysis
-              }
+            if (!categorySubcategoryMonthlyTotals[category]) {
+              categorySubcategoryMonthlyTotals[category] = {};
             }
-
-            if (!monthlyTotals[monthKey]) {
-              monthlyTotals[monthKey] = { income: 0, expense: 0 };
+            if (!categorySubcategoryMonthlyTotals[category][subcategory]) {
+              categorySubcategoryMonthlyTotals[category][subcategory] = {};
             }
-            if (isExpense) {
-              monthlyTotals[monthKey].expense += amount;
-            } else {
-              monthlyTotals[monthKey].income += amount;
-            }
+            categorySubcategoryMonthlyTotals[category][subcategory][monthKey] =
+              (categorySubcategoryMonthlyTotals[category][subcategory][monthKey] || 0) + amount;
+          }
+        } else {
+          totalIncome += amount;
 
-            return {
-              ...row,
-              _parsedAmount: amount,
-              _isExpense: isExpense,
-              _category: category,
-              _subcategory: subcategory,
-              _date: date,
-              _monthKey: monthKey,
-            };
-          })
-          .filter((tx): tx is any => tx !== null)
-          .sort((a, b) => b._date.getTime() - a._date.getTime());
+          // Track income by subcategory/other for income analysis
+          let incomeKey = '';
+          if (category.toLowerCase() === 'income') {
+            incomeKey = subcategory || 'Other Income';
+          } else {
+            if (category.toLowerCase() !== 'transfer') {
+              incomeKey = 'Other';
+            }
+          }
+
+          if (incomeKey) {
+            if (!globalIncomeSubcategoryTotals[incomeKey])
+              globalIncomeSubcategoryTotals[incomeKey] = 0; // Ensure it's tracked
+            // We'll use a local periodIncomeTotals for the period analysis
+          }
+        }
+
+        if (!monthlyTotals[monthKey]) {
+          monthlyTotals[monthKey] = { income: 0, expense: 0 };
+        }
+        if (isExpense) {
+          monthlyTotals[monthKey].expense += amount;
+        } else {
+          monthlyTotals[monthKey].income += amount;
+        }
+
+        return {
+          ...row,
+          _parsedAmount: amount,
+          _isExpense: isExpense,
+          _category: category,
+          _subcategory: subcategory,
+          _date: date,
+          _monthKey: monthKey,
+        };
+      })
+      .filter((tx): tx is any => tx !== null)
+      .sort((a, b) => b._date.getTime() - a._date.getTime());
 
     // Prepare chart data
     const categoryChartData = Object.entries(categoryTotals)
@@ -652,13 +685,13 @@ export default function App() {
 
     // Prepare full category table data
     const sortedMonths = Array.from(monthsSet).sort((a, b) => {
-      const dateA = parse(a, "MMM yyyy", new Date());
-      const dateB = parse(b, "MMM yyyy", new Date());
+      const dateA = parse(a, 'MMM yyyy', new Date());
+      const dateB = parse(b, 'MMM yyyy', new Date());
       return dateB.getTime() - dateA.getTime();
     });
 
     // Auto-select logic: If selectedMonth is not in the current data set, pick the best default
-    if (selectedMonth !== "All Months" && !monthsSet.has(selectedMonth)) {
+    if (selectedMonth !== 'All Months' && !monthsSet.has(selectedMonth)) {
       // 1. Try current month (today) if it exists in this year's data
       if (monthsSet.has(currentMonthStr)) {
         setSelectedMonth(currentMonthStr);
@@ -670,7 +703,7 @@ export default function App() {
         return;
       }
       // 3. Fallback to All Months if no months found for this year
-      setSelectedMonth("All Months");
+      setSelectedMonth('All Months');
       return;
     }
 
@@ -682,17 +715,17 @@ export default function App() {
       .sort((a, b) => b.value - a.value)
       .slice(0, 10);
 
-    if (selectedMonth !== "All Months") {
+    if (selectedMonth !== 'All Months') {
       displayIncome = monthlyTotals[selectedMonth]?.income || 0;
       displayExpense = monthlyTotals[selectedMonth]?.expense || 0;
-      
+
       const monthCategoryTotals: Record<string, number> = {};
       Object.entries(categoryMonthlyTotals).forEach(([cat, months]) => {
         if (months[selectedMonth]) {
           monthCategoryTotals[cat] = months[selectedMonth];
         }
       });
-      
+
       displayCategoryChartData = Object.entries(monthCategoryTotals)
         .map(([name, value]) => ({ name, value }))
         .sort((a, b) => b.value - a.value)
@@ -701,11 +734,14 @@ export default function App() {
 
     const categoryTableData = Object.entries(categoryTotals)
       .filter(([name]) => {
-        if (selectedMonth === "All Months") return true;
+        if (selectedMonth === 'All Months') return true;
         return !!categoryMonthlyTotals[name]?.[selectedMonth];
       })
       .map(([name, total]) => {
-        const displayTotal = selectedMonth === "All Months" ? total : (categoryMonthlyTotals[name]?.[selectedMonth] || 0);
+        const displayTotal =
+          selectedMonth === 'All Months'
+            ? total
+            : categoryMonthlyTotals[name]?.[selectedMonth] || 0;
         return {
           name,
           total: displayTotal,
@@ -713,18 +749,21 @@ export default function App() {
           monthly: categoryMonthlyTotals[name] || {},
           subcategories: Object.entries(categorySubcategoryTotals[name] || {})
             .filter(([subName]) => {
-              if (selectedMonth === "All Months") return true;
+              if (selectedMonth === 'All Months') return true;
               return !!categorySubcategoryMonthlyTotals[name]?.[subName]?.[selectedMonth];
             })
             .map(([subName, subTotal]) => {
-              const subDisplayTotal = selectedMonth === "All Months" ? subTotal : (categorySubcategoryMonthlyTotals[name]?.[subName]?.[selectedMonth] || 0);
-              return { 
-                name: subName, 
+              const subDisplayTotal =
+                selectedMonth === 'All Months'
+                  ? subTotal
+                  : categorySubcategoryMonthlyTotals[name]?.[subName]?.[selectedMonth] || 0;
+              return {
+                name: subName,
                 total: subDisplayTotal,
-                monthly: categorySubcategoryMonthlyTotals[name]?.[subName] || {}
+                monthly: categorySubcategoryMonthlyTotals[name]?.[subName] || {},
               };
             })
-            .sort((a, b) => b.total - a.total)
+            .sort((a, b) => b.total - a.total),
         };
       })
       .sort((a, b) => b.total - a.total);
@@ -735,40 +774,42 @@ export default function App() {
       .reverse();
 
     // Calculate period-specific budget analysis
-    const periodMonths = selectedMonth === "All Months" ? monthsSet.size : 1;
-    
+    const periodMonths = selectedMonth === 'All Months' ? monthsSet.size : 1;
+
     const budgetAnalysis = Array.from(allCategoryNames)
-      .filter(name => {
-        if (!name || name === "undefined" || name === "null" || name === "") return false;
+      .filter((name) => {
+        if (!name || name === 'undefined' || name === 'null' || name === '') return false;
         const lowerName = String(name).toLowerCase();
-        if (["income", "expenses", "net", "transfer", "from savings"].includes(lowerName)) return false;
+        if (['income', 'expenses', 'net', 'transfer', 'from savings'].includes(lowerName))
+          return false;
         if (allIncomeSubcategories.has(name)) return false;
-        if (lowerName === "other" && (hasOtherIncomeTransactions || hasOtherBudget)) return false;
+        if (lowerName === 'other' && (hasOtherIncomeTransactions || hasOtherBudget)) return false;
         return true;
       })
-      .map(name => {
-        const actual = selectedMonth === "All Months" 
-          ? (categoryTotals[name] || 0) 
-          : (categoryMonthlyTotals[name]?.[selectedMonth] || 0);
-        
-        const budgetRow = budgetData.find(b => {
+      .map((name) => {
+        const actual =
+          selectedMonth === 'All Months'
+            ? categoryTotals[name] || 0
+            : categoryMonthlyTotals[name]?.[selectedMonth] || 0;
+
+        const budgetRow = budgetData.find((b) => {
           const catName = Object.values(b)[0];
           return catName && String(catName).toLowerCase() === name.toLowerCase();
         });
-        
+
         let monthlyBudgetValue = 0;
         if (budgetRow) {
           const values = Object.values(budgetRow);
           if (values.length > 1) {
-            monthlyBudgetValue = Number(String(values[1]).replace(/[^0-9.-]+/g, ""));
+            monthlyBudgetValue = Number(String(values[1]).replace(/[^0-9.-]+/g, ''));
             if (isNaN(monthlyBudgetValue)) monthlyBudgetValue = 0;
           }
         }
-        
+
         const periodBudgetValue = monthlyBudgetValue * periodMonths;
         const trueMonthlyAverage = (globalCategoryTotals[name] || 0) / totalMonthsInDataset;
         const scaledAverage = trueMonthlyAverage * periodMonths;
-        
+
         return {
           name,
           actual: actual,
@@ -776,56 +817,57 @@ export default function App() {
           unscaledAverage: trueMonthlyAverage,
           budget: periodBudgetValue,
           monthlyBudget: monthlyBudgetValue,
-          diff: actual - periodBudgetValue
+          diff: actual - periodBudgetValue,
         };
       })
       .sort((a, b) => b.actual - a.actual);
 
     const incomeAnalysisNames = Array.from(allIncomeSubcategories);
     if (hasOtherIncomeTransactions || hasOtherBudget) {
-      incomeAnalysisNames.push("Other");
+      incomeAnalysisNames.push('Other');
     }
 
     const incomeAnalysis = incomeAnalysisNames
-      .map(name => {
+      .map((name) => {
         // Calculate period actual income for this subcategory
         let actual = 0;
         parsedData.forEach((t: any) => {
           if (!t || t._isExpense) return;
-          if (selectedMonth !== "All Months" && t._monthKey !== selectedMonth) return;
-          
-          let incomeKey = "";
-          if (t._category.toLowerCase() === "income") {
-            incomeKey = t._subcategory || "Other Income";
+          if (selectedMonth !== 'All Months' && t._monthKey !== selectedMonth) return;
+
+          let incomeKey = '';
+          if (t._category.toLowerCase() === 'income') {
+            incomeKey = t._subcategory || 'Other Income';
           } else {
-            if (t._category.toLowerCase() !== "transfer") {
-              incomeKey = "Other";
+            if (t._category.toLowerCase() !== 'transfer') {
+              incomeKey = 'Other';
             }
           }
-          
+
           if (incomeKey === name) {
             actual += t._parsedAmount;
           }
         });
 
-        const budgetRow = budgetData.find(b => {
+        const budgetRow = budgetData.find((b) => {
           const catName = Object.values(b)[0];
           return catName && String(catName).toLowerCase() === name.toLowerCase();
         });
-        
+
         let monthlyBudgetValue = 0;
         if (budgetRow) {
           const values = Object.values(budgetRow);
           if (values.length > 1) {
-            monthlyBudgetValue = Number(String(values[1]).replace(/[^0-9.-]+/g, ""));
+            monthlyBudgetValue = Number(String(values[1]).replace(/[^0-9.-]+/g, ''));
             if (isNaN(monthlyBudgetValue)) monthlyBudgetValue = 0;
           }
         }
-        
+
         const periodBudgetValue = monthlyBudgetValue * periodMonths;
-        const trueMonthlyAverage = (globalIncomeSubcategoryTotals[name] || 0) / totalMonthsInDataset;
+        const trueMonthlyAverage =
+          (globalIncomeSubcategoryTotals[name] || 0) / totalMonthsInDataset;
         const scaledAverage = trueMonthlyAverage * periodMonths;
-        
+
         return {
           name,
           actual: actual,
@@ -833,7 +875,7 @@ export default function App() {
           unscaledAverage: trueMonthlyAverage,
           budget: periodBudgetValue,
           monthlyBudget: monthlyBudgetValue,
-          diff: actual - periodBudgetValue
+          diff: actual - periodBudgetValue,
         };
       })
       .sort((a, b) => b.actual - a.actual);
@@ -861,7 +903,9 @@ export default function App() {
         description: descCol,
       },
       categories: Array.from(new Set(parsedData.map((t: any) => t._category))).sort(),
-      subcategories: Array.from(new Set(parsedData.map((t: any) => t._subcategory))).filter(Boolean).sort(),
+      subcategories: Array.from(new Set(parsedData.map((t: any) => t._subcategory)))
+        .filter(Boolean)
+        .sort(),
     });
   };
 
@@ -869,19 +913,19 @@ export default function App() {
     if (category) {
       setTxFilterCategory(category);
     } else {
-      setTxFilterCategory("");
+      setTxFilterCategory('');
     }
     if (subcategory) {
       setTxFilterSubcategory(subcategory);
     } else {
-      setTxFilterSubcategory("");
+      setTxFilterSubcategory('');
     }
-    setTxFilterType("all");
-    setCurrentView("transactions");
+    setTxFilterType('all');
+    setCurrentView('transactions');
   };
 
   const filteredSubcategories = analysis?.allTransactions
-    ? Array.from(
+    ? (Array.from(
         new Set(
           analysis.allTransactions
             .filter((t: any) => !txFilterCategory || t._category === txFilterCategory)
@@ -889,11 +933,11 @@ export default function App() {
         )
       )
         .filter(Boolean)
-        .sort() as string[]
+        .sort() as string[])
     : [];
 
   const modalSubcategories = analysis?.allTransactions
-    ? Array.from(
+    ? (Array.from(
         new Set(
           analysis.allTransactions
             .filter((t: any) => t._category === editTxCategory)
@@ -901,7 +945,7 @@ export default function App() {
         )
       )
         .filter(Boolean)
-        .sort() as string[]
+        .sort() as string[])
     : [];
 
   if (isAuthenticated === null) {
@@ -920,12 +964,10 @@ export default function App() {
             <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-6">
               <FileSpreadsheet className="w-8 h-8 text-blue-600" />
             </div>
-            <h1 className="text-2xl font-bold text-slate-900 mb-2">
-              Transaction Analyzer
-            </h1>
+            <h1 className="text-2xl font-bold text-slate-900 mb-2">Transaction Analyzer</h1>
             <p className="text-slate-500 mb-8">
-              Connect your Google account to analyze and visualize your Google
-              Sheets transaction data.
+              Connect your Google account to analyze and visualize your Google Sheets transaction
+              data.
             </p>
 
             <button
@@ -985,19 +1027,17 @@ export default function App() {
               <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
                 <Activity className="w-5 h-5 text-white" />
               </div>
-              <h1 className="text-xl font-bold tracking-tight text-slate-900">
-                Analyzer
-              </h1>
+              <h1 className="text-xl font-bold tracking-tight text-slate-900">Analyzer</h1>
             </div>
-            
+
             {analysis && (
               <nav className="hidden md:flex items-center gap-1">
                 <button
-                  onClick={() => setCurrentView("dashboard")}
+                  onClick={() => setCurrentView('dashboard')}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${
-                    currentView === "dashboard"
-                      ? "bg-blue-50 text-blue-600"
-                      : "text-slate-500 hover:text-slate-900 hover:bg-slate-50"
+                    currentView === 'dashboard'
+                      ? 'bg-blue-50 text-blue-600'
+                      : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50'
                   }`}
                 >
                   <LayoutDashboard className="w-4 h-4" />
@@ -1006,42 +1046,42 @@ export default function App() {
                 <button
                   onClick={() => navigateToTransactions()}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${
-                    currentView === "transactions"
-                      ? "bg-blue-50 text-blue-600"
-                      : "text-slate-500 hover:text-slate-900 hover:bg-slate-50"
+                    currentView === 'transactions'
+                      ? 'bg-blue-50 text-blue-600'
+                      : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50'
                   }`}
                 >
                   <List className="w-4 h-4" />
                   Transactions
                 </button>
                 <button
-                  onClick={() => setCurrentView("budget")}
+                  onClick={() => setCurrentView('budget')}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${
-                    currentView === "budget"
-                      ? "bg-blue-50 text-blue-600"
-                      : "text-slate-500 hover:text-slate-900 hover:bg-slate-50"
+                    currentView === 'budget'
+                      ? 'bg-blue-50 text-blue-600'
+                      : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50'
                   }`}
                 >
                   <Wallet className="w-4 h-4" />
                   Budget
                 </button>
                 <button
-                  onClick={() => setCurrentView("categories")}
+                  onClick={() => setCurrentView('categories')}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${
-                    currentView === "categories"
-                      ? "bg-blue-50 text-blue-600"
-                      : "text-slate-500 hover:text-slate-900 hover:bg-slate-50"
+                    currentView === 'categories'
+                      ? 'bg-blue-50 text-blue-600'
+                      : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50'
                   }`}
                 >
                   <FolderTree className="w-4 h-4" />
                   Categories
                 </button>
                 <button
-                  onClick={() => setCurrentView("admin")}
+                  onClick={() => setCurrentView('admin')}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${
-                    currentView === "admin"
-                      ? "bg-blue-50 text-blue-600"
-                      : "text-slate-500 hover:text-slate-900 hover:bg-slate-50"
+                    currentView === 'admin'
+                      ? 'bg-blue-50 text-blue-600'
+                      : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50'
                   }`}
                 >
                   <Settings className="w-4 h-4" />
@@ -1081,17 +1121,26 @@ export default function App() {
 
         {/* Import Status Banner */}
         {importStatus && (
-          <div className={`p-4 rounded-xl flex items-center gap-3 animate-in fade-in slide-in-from-top-2 duration-300 ${
-            importStatus.type === 'loading' ? 'bg-blue-50 border border-blue-100 text-blue-700' :
-            importStatus.type === 'success' ? 'bg-green-50 border border-green-100 text-green-700' :
-            'bg-amber-50 border border-amber-100 text-amber-700'
-          }`}>
-            {importStatus.type === 'loading' && <Loader2 className="w-5 h-5 animate-spin shrink-0" />}
+          <div
+            className={`p-4 rounded-xl flex items-center gap-3 animate-in fade-in slide-in-from-top-2 duration-300 ${
+              importStatus.type === 'loading'
+                ? 'bg-blue-50 border border-blue-100 text-blue-700'
+                : importStatus.type === 'success'
+                  ? 'bg-green-50 border border-green-100 text-green-700'
+                  : 'bg-amber-50 border border-amber-100 text-amber-700'
+            }`}
+          >
+            {importStatus.type === 'loading' && (
+              <Loader2 className="w-5 h-5 animate-spin shrink-0" />
+            )}
             {importStatus.type === 'success' && <CheckCircle2 className="w-5 h-5 shrink-0" />}
             {importStatus.type === 'error' && <AlertTriangle className="w-5 h-5 shrink-0" />}
             <p className="text-sm font-medium flex-1 whitespace-pre-line">{importStatus.message}</p>
             {importStatus.type !== 'loading' && (
-              <button onClick={() => setImportStatus(null)} className="p-1 hover:bg-black/5 rounded-lg transition-colors">
+              <button
+                onClick={() => setImportStatus(null)}
+                className="p-1 hover:bg-black/5 rounded-lg transition-colors"
+              >
                 <X className="w-4 h-4" />
               </button>
             )}
@@ -1106,47 +1155,49 @@ export default function App() {
         )}
 
         {/* Review Queue and Import History - always visible regardless of filters */}
-        {isAuthenticated && currentView === "dashboard" && (
+        {isAuthenticated && currentView === 'dashboard' && (
           <>
-            <ReviewQueue 
-              transactions={analysis?.allTransactionsUnfiltered || []} 
+            <ReviewQueue
+              transactions={analysis?.allTransactionsUnfiltered || []}
               taxonomy={taxonomy}
               onApprove={async (id, category, subcategory) => {
-                const tx = (analysis?.allTransactionsUnfiltered || []).find((t: any) => t.id === id);
-                if (!tx) throw new Error("Transaction not found");
+                const tx = (analysis?.allTransactionsUnfiltered || []).find(
+                  (t: any) => t.id === id
+                );
+                if (!tx) throw new Error('Transaction not found');
 
-                const res = await fetch("/api/transaction/update", {
-                  method: "POST",
+                const res = await fetch('/api/transaction/update', {
+                  method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({
                     id,
                     amount: tx.Amount,
                     category,
                     subcategory,
-                    status: "reviewed"
-                  })
+                    status: 'reviewed',
+                  }),
                 });
-                if (!res.ok) throw new Error("Update failed");
+                if (!res.ok) throw new Error('Update failed');
                 await fetchSheetData();
-              }} 
+              }}
               onBulkApprove={async (updates) => {
-                const payload = updates.map(u => ({
+                const payload = updates.map((u) => ({
                   id: u.id,
                   category: u.category,
                   subcategory: u.subcategory,
-                  status: "reviewed"
+                  status: 'reviewed',
                 }));
-                const res = await fetch("/api/transaction/bulk-update", {
-                  method: "POST",
+                const res = await fetch('/api/transaction/bulk-update', {
+                  method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ updates: payload })
+                  body: JSON.stringify({ updates: payload }),
                 });
-                if (!res.ok) throw new Error("Bulk update failed");
+                if (!res.ok) throw new Error('Bulk update failed');
                 await fetchSheetData();
               }}
             />
-            
-            <ImportHistory 
+
+            <ImportHistory
               onRollbackComplete={fetchSheetData}
               refreshTrigger={importHistoryRefresh}
             />
@@ -1154,9 +1205,8 @@ export default function App() {
         )}
 
         {/* Analysis Results */}
-        {analysis && currentView === "dashboard" && (
+        {analysis && currentView === 'dashboard' && (
           <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-
             {/* Filter Bar */}
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
               <div>
@@ -1164,24 +1214,36 @@ export default function App() {
               </div>
               <div className="flex items-center gap-4">
                 <div className="flex items-center gap-2">
-                  <label htmlFor="year-select-dashboard" className="text-sm font-medium text-slate-700">Year:</label>
+                  <label
+                    htmlFor="year-select-dashboard"
+                    className="text-sm font-medium text-slate-700"
+                  >
+                    Year:
+                  </label>
                   <select
                     id="year-select-dashboard"
                     value={selectedYear}
                     onChange={(e) => {
                       setSelectedYear(e.target.value);
-                      setSelectedMonth("All Months");
+                      setSelectedMonth('All Months');
                     }}
                     className="bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2 transition-all hover:bg-white"
                   >
                     <option value="All">All</option>
-                    {availableYears.map(year => (
-                      <option key={year} value={year}>{year}</option>
+                    {availableYears.map((year) => (
+                      <option key={year} value={year}>
+                        {year}
+                      </option>
                     ))}
                   </select>
                 </div>
                 <div className="flex items-center gap-2">
-                  <label htmlFor="month-select-dashboard" className="text-sm font-medium text-slate-700">Month:</label>
+                  <label
+                    htmlFor="month-select-dashboard"
+                    className="text-sm font-medium text-slate-700"
+                  >
+                    Month:
+                  </label>
                   <select
                     id="month-select-dashboard"
                     value={selectedMonth}
@@ -1189,8 +1251,10 @@ export default function App() {
                     className="bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2 transition-all hover:bg-white"
                   >
                     <option value="All Months">All</option>
-                    {analysis.sortedMonths.map(month => (
-                      <option key={month} value={month}>{month.split(' ')[0]}</option>
+                    {analysis.sortedMonths.map((month) => (
+                      <option key={month} value={month}>
+                        {month.split(' ')[0]}
+                      </option>
                     ))}
                   </select>
                 </div>
@@ -1205,11 +1269,13 @@ export default function App() {
                     <TrendingUp className="w-6 h-6 text-emerald-600" />
                   </div>
                   <div>
-                    <p className="text-sm font-medium text-slate-500">
-                      Total Income
-                    </p>
+                    <p className="text-sm font-medium text-slate-500">Total Income</p>
                     <p className="text-2xl font-bold text-slate-900 whitespace-nowrap">
-                      ${analysis.totalIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      $
+                      {analysis.totalIncome.toLocaleString(undefined, {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
                     </p>
                   </div>
                 </div>
@@ -1221,11 +1287,13 @@ export default function App() {
                     <TrendingDown className="w-6 h-6 text-rose-600" />
                   </div>
                   <div>
-                    <p className="text-sm font-medium text-slate-500">
-                      Total Expenses
-                    </p>
+                    <p className="text-sm font-medium text-slate-500">Total Expenses</p>
                     <p className="text-2xl font-bold text-slate-900 whitespace-nowrap">
-                      ${analysis.totalExpense.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      $
+                      {analysis.totalExpense.toLocaleString(undefined, {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
                     </p>
                   </div>
                 </div>
@@ -1237,11 +1305,15 @@ export default function App() {
                     <DollarSign className="w-6 h-6 text-blue-600" />
                   </div>
                   <div>
-                    <p className="text-sm font-medium text-slate-500">
-                      Net Cash Flow
-                    </p>
-                    <p className={`text-2xl font-bold whitespace-nowrap ${analysis.net >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                      {analysis.net >= 0 ? '+' : '-'}${Math.abs(analysis.net).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    <p className="text-sm font-medium text-slate-500">Net Cash Flow</p>
+                    <p
+                      className={`text-2xl font-bold whitespace-nowrap ${analysis.net >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}
+                    >
+                      {analysis.net >= 0 ? '+' : '-'}$
+                      {Math.abs(analysis.net).toLocaleString(undefined, {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
                     </p>
                   </div>
                 </div>
@@ -1252,7 +1324,7 @@ export default function App() {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* Category Breakdown */}
               <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-                <div 
+                <div
                   className={`p-6 flex items-center justify-between cursor-pointer hover:bg-slate-50 transition-colors ${isTopExpensesExpanded ? 'border-b border-slate-100' : ''}`}
                   onClick={() => setIsTopExpensesExpanded(!isTopExpensesExpanded)}
                 >
@@ -1267,7 +1339,7 @@ export default function App() {
                   )}
                 </div>
                 {isTopExpensesExpanded && (
-                  <div 
+                  <div
                     className="p-6 flex flex-col md:flex-row items-start justify-center gap-8 animate-in slide-in-from-top-2 duration-200"
                     onMouseLeave={() => setHoveredCategory(null)}
                   >
@@ -1296,8 +1368,12 @@ export default function App() {
                             {analysis.categoryChartData.map((entry: any) => (
                               <Cell
                                 key={`cell-${entry.name}`}
-                                fill={getCategoryColor(entry.name) || "#cbd5e1"}
-                                opacity={hoveredCategory === null || hoveredCategory === entry.name ? 1 : 0.3}
+                                fill={getCategoryColor(entry.name) || '#cbd5e1'}
+                                opacity={
+                                  hoveredCategory === null || hoveredCategory === entry.name
+                                    ? 1
+                                    : 0.3
+                                }
                                 style={{ transition: 'opacity 0.2s ease' }}
                               />
                             ))}
@@ -1307,29 +1383,42 @@ export default function App() {
                     </div>
                     <div className="flex flex-col gap-2 w-full md:w-1/2">
                       {analysis.categoryChartData.map((item: any) => (
-                        <div 
-                          key={item.name} 
+                        <div
+                          key={item.name}
                           className="flex items-center justify-between text-sm cursor-pointer hover:bg-slate-50 p-1 rounded transition-all"
-                          style={{ opacity: hoveredCategory === null || hoveredCategory === item.name ? 1 : 0.3 }}
+                          style={{
+                            opacity:
+                              hoveredCategory === null || hoveredCategory === item.name ? 1 : 0.3,
+                          }}
                           onClick={() => navigateToTransactions(item.name)}
                           onMouseEnter={() => setHoveredCategory(item.name)}
                           onMouseLeave={() => setHoveredCategory(null)}
                         >
                           <div className="flex items-center gap-3">
-                            <div 
-                              className="w-3 h-3 rounded-full shrink-0" 
-                              style={{ backgroundColor: getCategoryColor(item.name) || "#cbd5e1" }}
+                            <div
+                              className="w-3 h-3 rounded-full shrink-0"
+                              style={{ backgroundColor: getCategoryColor(item.name) || '#cbd5e1' }}
                             />
-                            <span className="text-slate-600 font-medium truncate max-w-[150px]" title={item.name}>
+                            <span
+                              className="text-slate-600 font-medium truncate max-w-[150px]"
+                              title={item.name}
+                            >
                               {item.name}
                             </span>
                           </div>
                           <div className="flex items-center gap-2">
                             <span className="text-slate-400 text-xs">
-                              {analysis.totalExpense > 0 ? ((item.value / analysis.totalExpense) * 100).toFixed(1) : '0.0'}%
+                              {analysis.totalExpense > 0
+                                ? ((item.value / analysis.totalExpense) * 100).toFixed(1)
+                                : '0.0'}
+                              %
                             </span>
                             <span className="font-semibold text-slate-900">
-                              ${item.value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              $
+                              {item.value.toLocaleString(undefined, {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              })}
                             </span>
                           </div>
                         </div>
@@ -1338,12 +1427,11 @@ export default function App() {
                   </div>
                 )}
               </div>
-
             </div>
 
             {/* Category Table */}
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-              <div 
+              <div
                 className="p-6 flex items-center justify-between cursor-pointer border-b border-slate-100"
                 onClick={() => setIsCategoryTableExpanded(!isCategoryTableExpanded)}
               >
@@ -1352,8 +1440,8 @@ export default function App() {
                   All Expenses by Category
                 </h3>
                 <div className="flex items-center gap-6">
-                  {selectedMonth === "All Months" && (
-                    <label 
+                  {selectedMonth === 'All Months' && (
+                    <label
                       className="flex items-center gap-2 cursor-pointer group"
                       onClick={(e) => e.stopPropagation()}
                     >
@@ -1363,7 +1451,9 @@ export default function App() {
                         onChange={(e) => setShowTableTotals(e.target.checked)}
                         className="w-4 h-4 text-blue-600 bg-slate-100 border-slate-300 rounded focus:ring-blue-500 transition-colors"
                       />
-                      <span className="text-sm font-medium text-slate-600 group-hover:text-slate-900 transition-colors">Show Totals</span>
+                      <span className="text-sm font-medium text-slate-600 group-hover:text-slate-900 transition-colors">
+                        Show Totals
+                      </span>
                     </label>
                   )}
                   {isCategoryTableExpanded ? (
@@ -1378,25 +1468,31 @@ export default function App() {
                   <table className="w-full text-sm text-left border-separate border-spacing-0">
                     <thead className="text-xs text-slate-500 uppercase bg-slate-50 sticky top-0 z-20">
                       <tr>
-                        <th className="px-6 py-4 font-semibold sticky left-0 top-0 bg-slate-50 z-30 border-b border-slate-100">Category</th>
-                        <th className="px-6 py-4 font-semibold text-right border-b border-slate-100">%</th>
+                        <th className="px-6 py-4 font-semibold sticky left-0 top-0 bg-slate-50 z-30 border-b border-slate-100">
+                          Category
+                        </th>
+                        <th className="px-6 py-4 font-semibold text-right border-b border-slate-100">
+                          %
+                        </th>
                         {analysis.sortedMonths
-                          .filter(month => selectedMonth === "All Months" || month === selectedMonth)
+                          .filter(
+                            (month) => selectedMonth === 'All Months' || month === selectedMonth
+                          )
                           .map((month: string) => (
-                          <th 
-                            key={month} 
-                            className="px-6 py-4 font-semibold text-right whitespace-nowrap border-b border-slate-100 cursor-pointer hover:bg-slate-100 transition-colors"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setSelectedMonth(month);
-                            }}
-                          >
-                            {month}
-                          </th>
-                        ))}
-                        {showTableTotals && selectedMonth === "All Months" && (
+                            <th
+                              key={month}
+                              className="px-6 py-4 font-semibold text-right whitespace-nowrap border-b border-slate-100 cursor-pointer hover:bg-slate-100 transition-colors"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedMonth(month);
+                              }}
+                            >
+                              {month}
+                            </th>
+                          ))}
+                        {showTableTotals && selectedMonth === 'All Months' && (
                           <th className="px-6 py-4 font-semibold text-right whitespace-nowrap bg-slate-50 border-b border-slate-100">
-                            {selectedMonth === "All Months" ? "Total" : `${selectedMonth} Total`}
+                            {selectedMonth === 'All Months' ? 'Total' : `${selectedMonth} Total`}
                           </th>
                         )}
                       </tr>
@@ -1409,28 +1505,36 @@ export default function App() {
 
                         return (
                           <React.Fragment key={row.name}>
-                            <tr className="hover:bg-slate-50 transition-colors cursor-pointer group" onClick={() => navigateToTransactions(row.name)}>
+                            <tr
+                              className="hover:bg-slate-50 transition-colors cursor-pointer group"
+                              onClick={() => navigateToTransactions(row.name)}
+                            >
                               <td className="px-6 py-4 font-medium text-slate-900 sticky left-0 bg-white group-hover:bg-slate-50 z-10 border-r border-slate-50 border-b border-slate-100">
                                 <div className="flex items-center gap-2">
                                   <div className="w-6 flex-shrink-0 flex items-center justify-center">
                                     {hasSubcategories && (
-                                      <button 
+                                      <button
                                         onClick={(e) => {
                                           e.stopPropagation();
                                           const newExpanded = new Set(expandedCategories);
-                                          if (newExpanded.has(row.name)) newExpanded.delete(row.name);
+                                          if (newExpanded.has(row.name))
+                                            newExpanded.delete(row.name);
                                           else newExpanded.add(row.name);
                                           setExpandedCategories(newExpanded);
                                         }}
                                         className="p-1 hover:bg-slate-100 rounded transition-colors text-slate-400 hover:text-slate-600"
                                       >
-                                        {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                                        {isExpanded ? (
+                                          <ChevronUp className="w-4 h-4" />
+                                        ) : (
+                                          <ChevronDown className="w-4 h-4" />
+                                        )}
                                       </button>
                                     )}
                                   </div>
                                   {dotColor && (
-                                    <div 
-                                      className="w-2 h-2 rounded-full shrink-0" 
+                                    <div
+                                      className="w-2 h-2 rounded-full shrink-0"
                                       style={{ backgroundColor: dotColor }}
                                     />
                                   )}
@@ -1441,76 +1545,110 @@ export default function App() {
                                 {row.percentage.toFixed(1)}%
                               </td>
                               {analysis.sortedMonths
-                                .filter(month => selectedMonth === "All Months" || month === selectedMonth)
+                                .filter(
+                                  (month) =>
+                                    selectedMonth === 'All Months' || month === selectedMonth
+                                )
                                 .map((month: string) => (
-                                <td key={month} className="px-6 py-4 text-right text-slate-600 font-mono border-b border-slate-100">
-                                  {row.monthly[month] 
-                                    ? `$${row.monthly[month].toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                                    : "-"
-                                  }
-                                </td>
-                              ))}
-                              {showTableTotals && selectedMonth === "All Months" && (
+                                  <td
+                                    key={month}
+                                    className="px-6 py-4 text-right text-slate-600 font-mono border-b border-slate-100"
+                                  >
+                                    {row.monthly[month]
+                                      ? `$${row.monthly[month].toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                                      : '-'}
+                                  </td>
+                                ))}
+                              {showTableTotals && selectedMonth === 'All Months' && (
                                 <td className="px-6 py-4 text-right font-bold text-slate-900 bg-slate-50/50 font-mono border-b border-slate-100">
-                                  ${row.total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  $
+                                  {row.total.toLocaleString(undefined, {
+                                    minimumFractionDigits: 2,
+                                    maximumFractionDigits: 2,
+                                  })}
                                 </td>
                               )}
                             </tr>
-                            {isExpanded && row.subcategories.map((sub: any) => (
-                              <tr 
-                                key={`${row.name}-${sub.name}`} 
-                                className="bg-slate-50/30 text-xs hover:bg-slate-100 transition-colors cursor-pointer group/sub"
-                                onClick={() => navigateToTransactions(row.name, sub.name)}
-                              >
-                                <td className="pl-12 pr-6 py-2 text-slate-500 italic sticky left-0 bg-slate-50/30 group-hover/sub:bg-slate-100 z-10 border-r border-slate-50 border-b border-slate-100">
-                                  {sub.name}
-                                </td>
-                                <td className="px-6 py-2 text-right text-slate-400 border-b border-slate-100">
-                                  {((sub.total / row.total) * 100).toFixed(1)}%
-                                </td>
-                                {analysis.sortedMonths
-                                  .filter(month => selectedMonth === "All Months" || month === selectedMonth)
-                                  .map((month: string) => (
-                                  <td key={month} className="px-6 py-2 text-right text-slate-400 font-mono border-b border-slate-100">
-                                    {sub.monthly[month] 
-                                      ? `$${sub.monthly[month].toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                                      : "-"
-                                    }
+                            {isExpanded &&
+                              row.subcategories.map((sub: any) => (
+                                <tr
+                                  key={`${row.name}-${sub.name}`}
+                                  className="bg-slate-50/30 text-xs hover:bg-slate-100 transition-colors cursor-pointer group/sub"
+                                  onClick={() => navigateToTransactions(row.name, sub.name)}
+                                >
+                                  <td className="pl-12 pr-6 py-2 text-slate-500 italic sticky left-0 bg-slate-50/30 group-hover/sub:bg-slate-100 z-10 border-r border-slate-50 border-b border-slate-100">
+                                    {sub.name}
                                   </td>
-                                ))}
-                                {showTableTotals && selectedMonth === "All Months" && (
-                                  <td className="px-6 py-2 text-right font-medium text-slate-500 bg-slate-50/20 font-mono border-b border-slate-100">
-                                    ${sub.total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  <td className="px-6 py-2 text-right text-slate-400 border-b border-slate-100">
+                                    {((sub.total / row.total) * 100).toFixed(1)}%
                                   </td>
-                                )}
-                              </tr>
-                            ))}
+                                  {analysis.sortedMonths
+                                    .filter(
+                                      (month) =>
+                                        selectedMonth === 'All Months' || month === selectedMonth
+                                    )
+                                    .map((month: string) => (
+                                      <td
+                                        key={month}
+                                        className="px-6 py-2 text-right text-slate-400 font-mono border-b border-slate-100"
+                                      >
+                                        {sub.monthly[month]
+                                          ? `$${sub.monthly[month].toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                                          : '-'}
+                                      </td>
+                                    ))}
+                                  {showTableTotals && selectedMonth === 'All Months' && (
+                                    <td className="px-6 py-2 text-right font-medium text-slate-500 bg-slate-50/20 font-mono border-b border-slate-100">
+                                      $
+                                      {sub.total.toLocaleString(undefined, {
+                                        minimumFractionDigits: 2,
+                                        maximumFractionDigits: 2,
+                                      })}
+                                    </td>
+                                  )}
+                                </tr>
+                              ))}
                           </React.Fragment>
                         );
                       })}
                     </tbody>
-                    {(showTableTotals || selectedMonth !== "All Months") && (
+                    {(showTableTotals || selectedMonth !== 'All Months') && (
                       <tfoot className="bg-slate-50 font-bold border-t-2 border-slate-200 sticky bottom-0 z-20">
                         <tr>
                           <td className="px-6 py-4 sticky left-0 bottom-0 bg-slate-50 z-30 border-t border-slate-200">
-                            {selectedMonth === "All Months" ? "Total" : `${selectedMonth} Total`}
+                            {selectedMonth === 'All Months' ? 'Total' : `${selectedMonth} Total`}
                           </td>
-                          <td className="px-6 py-4 text-right text-slate-400 text-xs font-bold border-t border-slate-200">100%</td>
+                          <td className="px-6 py-4 text-right text-slate-400 text-xs font-bold border-t border-slate-200">
+                            100%
+                          </td>
                           {analysis.sortedMonths
-                            .filter(month => selectedMonth === "All Months" || month === selectedMonth)
+                            .filter(
+                              (month) => selectedMonth === 'All Months' || month === selectedMonth
+                            )
                             .map((month: string) => {
-                            const monthTotal = analysis.allTransactions
-                              .filter((t: any) => t._monthKey === month && t._isExpense)
-                              .reduce((sum: number, t: any) => sum + t._parsedAmount, 0);
-                            return (
-                              <td key={month} className="px-6 py-4 text-right font-mono border-t border-slate-200">
-                                ${monthTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                              </td>
-                            );
-                          })}
-                          {showTableTotals && selectedMonth === "All Months" && (
+                              const monthTotal = analysis.allTransactions
+                                .filter((t: any) => t._monthKey === month && t._isExpense)
+                                .reduce((sum: number, t: any) => sum + t._parsedAmount, 0);
+                              return (
+                                <td
+                                  key={month}
+                                  className="px-6 py-4 text-right font-mono border-t border-slate-200"
+                                >
+                                  $
+                                  {monthTotal.toLocaleString(undefined, {
+                                    minimumFractionDigits: 2,
+                                    maximumFractionDigits: 2,
+                                  })}
+                                </td>
+                              );
+                            })}
+                          {showTableTotals && selectedMonth === 'All Months' && (
                             <td className="px-6 py-4 text-right font-mono bg-slate-100 border-t border-slate-200">
-                              ${analysis.totalExpense.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              $
+                              {analysis.totalExpense.toLocaleString(undefined, {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              })}
                             </td>
                           )}
                         </tr>
@@ -1523,13 +1661,13 @@ export default function App() {
           </div>
         )}
 
-        {analysis && currentView === "budget" && (
+        {analysis && currentView === 'budget' && (
           <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
             {/* Filter Bar */}
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
               <div className="flex items-center gap-3">
                 <button
-                  onClick={() => setCurrentView("dashboard")}
+                  onClick={() => setCurrentView('dashboard')}
                   className="p-2 hover:bg-slate-100 rounded-lg transition-colors text-slate-500"
                 >
                   <ArrowLeft className="w-5 h-5" />
@@ -1538,24 +1676,36 @@ export default function App() {
               </div>
               <div className="flex items-center gap-4">
                 <div className="flex items-center gap-2">
-                  <label htmlFor="year-select-budget" className="text-sm font-medium text-slate-700">Year:</label>
+                  <label
+                    htmlFor="year-select-budget"
+                    className="text-sm font-medium text-slate-700"
+                  >
+                    Year:
+                  </label>
                   <select
                     id="year-select-budget"
                     value={selectedYear}
                     onChange={(e) => {
                       setSelectedYear(e.target.value);
-                      setSelectedMonth("All Months");
+                      setSelectedMonth('All Months');
                     }}
                     className="bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2 transition-all hover:bg-white"
                   >
                     <option value="All">All</option>
-                    {availableYears.map(year => (
-                      <option key={year} value={year}>{year}</option>
+                    {availableYears.map((year) => (
+                      <option key={year} value={year}>
+                        {year}
+                      </option>
                     ))}
                   </select>
                 </div>
                 <div className="flex items-center gap-2">
-                  <label htmlFor="month-select-budget" className="text-sm font-medium text-slate-700">Month:</label>
+                  <label
+                    htmlFor="month-select-budget"
+                    className="text-sm font-medium text-slate-700"
+                  >
+                    Month:
+                  </label>
                   <select
                     id="month-select-budget"
                     value={selectedMonth}
@@ -1563,27 +1713,29 @@ export default function App() {
                     className="bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2 transition-all hover:bg-white"
                   >
                     <option value="All Months">All</option>
-                    {analysis.sortedMonths.map(month => (
-                      <option key={month} value={month}>{month.split(' ')[0]}</option>
+                    {analysis.sortedMonths.map((month) => (
+                      <option key={month} value={month}>
+                        {month.split(' ')[0]}
+                      </option>
                     ))}
                   </select>
                 </div>
                 <button
                   onClick={() => setShowBudgetAverage(!showBudgetAverage)}
                   className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-all text-xs font-bold uppercase tracking-wider ${
-                    showBudgetAverage 
-                      ? "bg-slate-900 border-slate-900 text-white shadow-sm" 
-                      : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
+                    showBudgetAverage
+                      ? 'bg-slate-900 border-slate-900 text-white shadow-sm'
+                      : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
                   }`}
                 >
                   <BarChart3 className="w-3.5 h-3.5" />
-                  {showBudgetAverage ? "Hide Average" : "Show Average"}
+                  {showBudgetAverage ? 'Hide Average' : 'Show Average'}
                 </button>
               </div>
             </div>
 
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-              <div 
+              <div
                 className="p-6 border-b border-slate-100 flex items-center justify-between cursor-pointer hover:bg-slate-50 transition-colors"
                 onClick={() => setIsBudgetExpensesExpanded(!isBudgetExpensesExpanded)}
               >
@@ -1591,7 +1743,8 @@ export default function App() {
                   <TrendingDown className="w-5 h-5 text-red-500" />
                   <div>
                     <h3 className="text-lg font-bold text-slate-900">
-                      Expenses: Actual vs. Budgeted {analysis.periodMonths > 1 && `(${analysis.periodMonths} Months)`}
+                      Expenses: Actual vs. Budgeted{' '}
+                      {analysis.periodMonths > 1 && `(${analysis.periodMonths} Months)`}
                     </h3>
                   </div>
                 </div>
@@ -1599,31 +1752,82 @@ export default function App() {
                   {!isBudgetExpensesExpanded && (
                     <div className="flex items-center gap-6 text-sm font-mono">
                       <div className="text-right">
-                        <div className="text-[10px] uppercase text-slate-400 font-sans font-bold">Budgeted</div>
-                        <div className="text-slate-900">${Math.round(analysis.budgetAnalysis.reduce((sum: number, r: any) => sum + r.actual, 0)).toLocaleString()}</div>
+                        <div className="text-[10px] uppercase text-slate-400 font-sans font-bold">
+                          Budgeted
+                        </div>
+                        <div className="text-slate-900">
+                          $
+                          {Math.round(
+                            analysis.budgetAnalysis.reduce(
+                              (sum: number, r: any) => sum + r.actual,
+                              0
+                            )
+                          ).toLocaleString()}
+                        </div>
                       </div>
                       {showBudgetAverage && (
                         <div className="text-right">
-                          <div className="text-[10px] uppercase text-slate-400 font-sans font-bold">Average</div>
-                          <div className="text-slate-900">${Math.round(analysis.budgetAnalysis.reduce((sum: number, r: any) => sum + r.monthlyAverage, 0)).toLocaleString()}</div>
+                          <div className="text-[10px] uppercase text-slate-400 font-sans font-bold">
+                            Average
+                          </div>
+                          <div className="text-slate-900">
+                            $
+                            {Math.round(
+                              analysis.budgetAnalysis.reduce(
+                                (sum: number, r: any) => sum + r.monthlyAverage,
+                                0
+                              )
+                            ).toLocaleString()}
+                          </div>
                         </div>
                       )}
                       <div className="text-right">
-                        <div className="text-[10px] uppercase text-slate-400 font-sans font-bold">Budgeted</div>
-                        <div className="text-slate-900">${Math.round(analysis.budgetAnalysis.reduce((sum: number, r: any) => sum + r.budget, 0)).toLocaleString()}</div>
+                        <div className="text-[10px] uppercase text-slate-400 font-sans font-bold">
+                          Budgeted
+                        </div>
+                        <div className="text-slate-900">
+                          $
+                          {Math.round(
+                            analysis.budgetAnalysis.reduce(
+                              (sum: number, r: any) => sum + r.budget,
+                              0
+                            )
+                          ).toLocaleString()}
+                        </div>
                       </div>
                       <div className="text-right">
-                        <div className="text-[10px] uppercase text-slate-400 font-sans font-bold">Diff</div>
-                        <div className={analysis.budgetAnalysis.reduce((sum: number, r: any) => sum + r.diff, 0) > 0 ? "text-red-600" : "text-emerald-600"}>
+                        <div className="text-[10px] uppercase text-slate-400 font-sans font-bold">
+                          Diff
+                        </div>
+                        <div
+                          className={
+                            analysis.budgetAnalysis.reduce(
+                              (sum: number, r: any) => sum + r.diff,
+                              0
+                            ) > 0
+                              ? 'text-red-600'
+                              : 'text-emerald-600'
+                          }
+                        >
                           {(() => {
-                            const totalDiff = analysis.budgetAnalysis.reduce((sum: number, r: any) => sum + r.diff, 0);
-                            return (totalDiff > 0 ? "+$" : (totalDiff < 0 ? "-$" : "$")) + Math.abs(Math.round(totalDiff)).toLocaleString();
+                            const totalDiff = analysis.budgetAnalysis.reduce(
+                              (sum: number, r: any) => sum + r.diff,
+                              0
+                            );
+                            return (
+                              (totalDiff > 0 ? '+$' : totalDiff < 0 ? '-$' : '$') +
+                              Math.abs(Math.round(totalDiff)).toLocaleString()
+                            );
                           })()}
                         </div>
                       </div>
                     </div>
                   )}
-                  {isBudgetExpensesExpanded ? <ChevronUp className="w-5 h-5 text-slate-400" /> : <ChevronDown className="w-5 h-5 text-slate-400" />}
+                  {isBudgetExpensesExpanded ? (
+                    <ChevronUp className="w-5 h-5 text-slate-400" />
+                  ) : (
+                    <ChevronDown className="w-5 h-5 text-slate-400" />
+                  )}
                 </div>
               </div>
               {isBudgetExpensesExpanded && (
@@ -1631,14 +1835,26 @@ export default function App() {
                   <table className="w-full text-sm text-left border-separate border-spacing-0">
                     <thead className="text-xs text-slate-500 uppercase bg-slate-50 sticky top-0 z-20">
                       <tr>
-                        <th className="px-6 py-4 font-semibold border-b border-slate-100 sticky top-0 bg-slate-50 z-10">Category</th>
-                        <th className="px-6 py-4 font-semibold text-right border-b border-slate-100 sticky top-0 bg-slate-50 z-10">Actual</th>
+                        <th className="px-6 py-4 font-semibold border-b border-slate-100 sticky top-0 bg-slate-50 z-10">
+                          Category
+                        </th>
+                        <th className="px-6 py-4 font-semibold text-right border-b border-slate-100 sticky top-0 bg-slate-50 z-10">
+                          Actual
+                        </th>
                         {showBudgetAverage && (
-                          <th className="px-6 py-4 font-semibold text-right border-b border-slate-100 sticky top-0 bg-slate-50 z-10">Average</th>
+                          <th className="px-6 py-4 font-semibold text-right border-b border-slate-100 sticky top-0 bg-slate-50 z-10">
+                            Average
+                          </th>
                         )}
-                        <th className="px-6 py-4 font-semibold text-right border-b border-slate-100 sticky top-0 bg-slate-50 z-10">Budgeted</th>
-                        <th className="px-6 py-4 font-semibold text-right border-b border-slate-100 sticky top-0 bg-slate-50 z-10">Difference</th>
-                        <th className="px-6 py-4 font-semibold text-center border-b border-slate-100 sticky top-0 bg-slate-50 z-10">Status</th>
+                        <th className="px-6 py-4 font-semibold text-right border-b border-slate-100 sticky top-0 bg-slate-50 z-10">
+                          Budgeted
+                        </th>
+                        <th className="px-6 py-4 font-semibold text-right border-b border-slate-100 sticky top-0 bg-slate-50 z-10">
+                          Difference
+                        </th>
+                        <th className="px-6 py-4 font-semibold text-center border-b border-slate-100 sticky top-0 bg-slate-50 z-10">
+                          Status
+                        </th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -1646,14 +1862,16 @@ export default function App() {
                         const isWithinTenDollars = row.budget > 0 && Math.abs(row.diff) < 10;
                         const isOverBudget = row.budget > 0 && row.diff >= 10;
                         const isUnderBudget = row.budget > 0 && row.diff <= -10;
-                        
+
                         return (
                           <tr key={row.name} className="hover:bg-slate-50 transition-colors">
                             <td className="px-6 py-4 font-medium text-slate-900 border-b border-slate-100">
                               <div className="flex items-center gap-2">
-                                <div 
-                                  className="w-2 h-2 rounded-full shrink-0" 
-                                  style={{ backgroundColor: getCategoryColor(row.name) || "#cbd5e1" }}
+                                <div
+                                  className="w-2 h-2 rounded-full shrink-0"
+                                  style={{
+                                    backgroundColor: getCategoryColor(row.name) || '#cbd5e1',
+                                  }}
                                 />
                                 {row.name}
                               </div>
@@ -1666,7 +1884,7 @@ export default function App() {
                                 ${Math.round(row.monthlyAverage).toLocaleString()}
                               </td>
                             )}
-                            <td 
+                            <td
                               className="px-6 py-4 text-right text-slate-600 font-mono border-b border-slate-100 cursor-pointer hover:bg-slate-100 transition-colors group"
                               onClick={() => {
                                 setEditingBudget({
@@ -1675,31 +1893,40 @@ export default function App() {
                                   average: row.monthlyAverage,
                                   unscaledAverage: row.unscaledAverage,
                                   current: row.budget,
-                                  monthlyBudget: row.monthlyBudget
+                                  monthlyBudget: row.monthlyBudget,
                                 });
-                                setNewBudgetValue(row.monthlyBudget > 0 ? row.monthlyBudget.toString() : "0");
+                                setNewBudgetValue(
+                                  row.monthlyBudget > 0 ? row.monthlyBudget.toString() : '0'
+                                );
                                 setIsBudgetModalOpen(true);
                               }}
                             >
                               <div className="flex items-center justify-end relative">
-                                {row.budget > 0 
-                                  ? `$${Math.round(row.budget).toLocaleString()}`
-                                  : <span className="text-slate-300 italic text-xs">Not set</span>
-                                }
+                                {row.budget > 0 ? (
+                                  `$${Math.round(row.budget).toLocaleString()}`
+                                ) : (
+                                  <span className="text-slate-300 italic text-xs">Not set</span>
+                                )}
                                 <Settings className="w-3 h-3 text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity absolute -right-5" />
                               </div>
                             </td>
-                            <td className={`px-6 py-4 text-right font-mono border-b border-slate-100 ${
-                              row.budget > 0 
-                                ? (isWithinTenDollars ? "text-slate-500" : (row.diff > 0 ? "text-red-600" : "text-emerald-600"))
-                                : "text-slate-400"
-                            }`}>
-                              {row.budget > 0 
-                                ? (isWithinTenDollars 
-                                    ? "$" + Math.abs(Math.round(row.diff)).toLocaleString()
-                                    : (row.diff > 0 ? "+$" : (row.diff < 0 ? "-$" : "$")) + Math.abs(Math.round(row.diff)).toLocaleString())
-                                : "-"
-                              }
+                            <td
+                              className={`px-6 py-4 text-right font-mono border-b border-slate-100 ${
+                                row.budget > 0
+                                  ? isWithinTenDollars
+                                    ? 'text-slate-500'
+                                    : row.diff > 0
+                                      ? 'text-red-600'
+                                      : 'text-emerald-600'
+                                  : 'text-slate-400'
+                              }`}
+                            >
+                              {row.budget > 0
+                                ? isWithinTenDollars
+                                  ? '$' + Math.abs(Math.round(row.diff)).toLocaleString()
+                                  : (row.diff > 0 ? '+$' : row.diff < 0 ? '-$' : '$') +
+                                    Math.abs(Math.round(row.diff)).toLocaleString()
+                                : '-'}
                             </td>
                             <td className="px-6 py-4 text-center border-b border-slate-100">
                               {row.budget > 0 ? (
@@ -1708,12 +1935,14 @@ export default function App() {
                                     On Budget
                                   </span>
                                 ) : (
-                                  <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                                    isOverBudget 
-                                      ? "bg-red-100 text-red-700" 
-                                      : "bg-emerald-100 text-emerald-700"
-                                  }`}>
-                                    {isOverBudget ? "Over" : "Under"}
+                                  <span
+                                    className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                                      isOverBudget
+                                        ? 'bg-red-100 text-red-700'
+                                        : 'bg-emerald-100 text-emerald-700'
+                                    }`}
+                                  >
+                                    {isOverBudget ? 'Over' : 'Under'}
                                   </span>
                                 )
                               ) : (
@@ -1728,24 +1957,57 @@ export default function App() {
                     </tbody>
                     <tfoot className="bg-slate-50 font-bold">
                       <tr>
-                        <td className="px-6 py-4 text-slate-900 border-t border-slate-200">TOTAL</td>
+                        <td className="px-6 py-4 text-slate-900 border-t border-slate-200">
+                          TOTAL
+                        </td>
                         <td className="px-6 py-4 text-right text-slate-900 font-mono border-t border-slate-200">
-                          ${Math.round(analysis.budgetAnalysis.reduce((sum: number, r: any) => sum + r.actual, 0)).toLocaleString()}
+                          $
+                          {Math.round(
+                            analysis.budgetAnalysis.reduce(
+                              (sum: number, r: any) => sum + r.actual,
+                              0
+                            )
+                          ).toLocaleString()}
                         </td>
                         {showBudgetAverage && (
                           <td className="px-6 py-4 text-right text-slate-900 font-mono border-t border-slate-200">
-                            ${Math.round(analysis.budgetAnalysis.reduce((sum: number, r: any) => sum + r.monthlyAverage, 0)).toLocaleString()}
+                            $
+                            {Math.round(
+                              analysis.budgetAnalysis.reduce(
+                                (sum: number, r: any) => sum + r.monthlyAverage,
+                                0
+                              )
+                            ).toLocaleString()}
                           </td>
                         )}
                         <td className="px-6 py-4 text-right text-slate-900 font-mono border-t border-slate-200">
-                          ${Math.round(analysis.budgetAnalysis.reduce((sum: number, r: any) => sum + r.budget, 0)).toLocaleString()}
+                          $
+                          {Math.round(
+                            analysis.budgetAnalysis.reduce(
+                              (sum: number, r: any) => sum + r.budget,
+                              0
+                            )
+                          ).toLocaleString()}
                         </td>
-                        <td className={`px-6 py-4 text-right font-mono border-t border-slate-200 ${
-                          analysis.budgetAnalysis.reduce((sum: number, r: any) => sum + r.diff, 0) > 0 ? "text-red-600" : "text-emerald-600"
-                        }`}>
+                        <td
+                          className={`px-6 py-4 text-right font-mono border-t border-slate-200 ${
+                            analysis.budgetAnalysis.reduce(
+                              (sum: number, r: any) => sum + r.diff,
+                              0
+                            ) > 0
+                              ? 'text-red-600'
+                              : 'text-emerald-600'
+                          }`}
+                        >
                           {(() => {
-                            const totalDiff = analysis.budgetAnalysis.reduce((sum: number, r: any) => sum + r.diff, 0);
-                            return (totalDiff > 0 ? "+$" : (totalDiff < 0 ? "-$" : "$")) + Math.abs(Math.round(totalDiff)).toLocaleString();
+                            const totalDiff = analysis.budgetAnalysis.reduce(
+                              (sum: number, r: any) => sum + r.diff,
+                              0
+                            );
+                            return (
+                              (totalDiff > 0 ? '+$' : totalDiff < 0 ? '-$' : '$') +
+                              Math.abs(Math.round(totalDiff)).toLocaleString()
+                            );
                           })()}
                         </td>
                         <td className="px-6 py-4 border-t border-slate-200"></td>
@@ -1757,7 +2019,7 @@ export default function App() {
             </div>
 
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-              <div 
+              <div
                 className="p-6 border-b border-slate-100 flex items-center justify-between cursor-pointer hover:bg-slate-50 transition-colors"
                 onClick={() => setIsBudgetIncomeExpanded(!isBudgetIncomeExpanded)}
               >
@@ -1765,7 +2027,8 @@ export default function App() {
                   <TrendingUp className="w-5 h-5 text-emerald-500" />
                   <div>
                     <h3 className="text-lg font-bold text-slate-900">
-                      Income: Actual vs. Budgeted {analysis.periodMonths > 1 && `(${analysis.periodMonths} Months)`}
+                      Income: Actual vs. Budgeted{' '}
+                      {analysis.periodMonths > 1 && `(${analysis.periodMonths} Months)`}
                     </h3>
                   </div>
                 </div>
@@ -1773,31 +2036,82 @@ export default function App() {
                   {!isBudgetIncomeExpanded && (
                     <div className="flex items-center gap-6 text-sm font-mono">
                       <div className="text-right">
-                        <div className="text-[10px] uppercase text-slate-400 font-sans font-bold">Actual</div>
-                        <div className="text-slate-900">${Math.round(analysis.incomeAnalysis.reduce((sum: number, r: any) => sum + r.actual, 0)).toLocaleString()}</div>
+                        <div className="text-[10px] uppercase text-slate-400 font-sans font-bold">
+                          Actual
+                        </div>
+                        <div className="text-slate-900">
+                          $
+                          {Math.round(
+                            analysis.incomeAnalysis.reduce(
+                              (sum: number, r: any) => sum + r.actual,
+                              0
+                            )
+                          ).toLocaleString()}
+                        </div>
                       </div>
                       {showBudgetAverage && (
                         <div className="text-right">
-                          <div className="text-[10px] uppercase text-slate-400 font-sans font-bold">Average</div>
-                          <div className="text-slate-900">${Math.round(analysis.incomeAnalysis.reduce((sum: number, r: any) => sum + r.monthlyAverage, 0)).toLocaleString()}</div>
+                          <div className="text-[10px] uppercase text-slate-400 font-sans font-bold">
+                            Average
+                          </div>
+                          <div className="text-slate-900">
+                            $
+                            {Math.round(
+                              analysis.incomeAnalysis.reduce(
+                                (sum: number, r: any) => sum + r.monthlyAverage,
+                                0
+                              )
+                            ).toLocaleString()}
+                          </div>
                         </div>
                       )}
                       <div className="text-right">
-                        <div className="text-[10px] uppercase text-slate-400 font-sans font-bold">Budgeted</div>
-                        <div className="text-slate-900">${Math.round(analysis.incomeAnalysis.reduce((sum: number, r: any) => sum + r.budget, 0)).toLocaleString()}</div>
+                        <div className="text-[10px] uppercase text-slate-400 font-sans font-bold">
+                          Budgeted
+                        </div>
+                        <div className="text-slate-900">
+                          $
+                          {Math.round(
+                            analysis.incomeAnalysis.reduce(
+                              (sum: number, r: any) => sum + r.budget,
+                              0
+                            )
+                          ).toLocaleString()}
+                        </div>
                       </div>
                       <div className="text-right">
-                        <div className="text-[10px] uppercase text-slate-400 font-sans font-bold">Diff</div>
-                        <div className={analysis.incomeAnalysis.reduce((sum: number, r: any) => sum + r.diff, 0) > 0 ? "text-emerald-600" : "text-red-600"}>
+                        <div className="text-[10px] uppercase text-slate-400 font-sans font-bold">
+                          Diff
+                        </div>
+                        <div
+                          className={
+                            analysis.incomeAnalysis.reduce(
+                              (sum: number, r: any) => sum + r.diff,
+                              0
+                            ) > 0
+                              ? 'text-emerald-600'
+                              : 'text-red-600'
+                          }
+                        >
                           {(() => {
-                            const totalDiff = analysis.incomeAnalysis.reduce((sum: number, r: any) => sum + r.diff, 0);
-                            return (totalDiff > 0 ? "+$" : (totalDiff < 0 ? "-$" : "$")) + Math.abs(Math.round(totalDiff)).toLocaleString();
+                            const totalDiff = analysis.incomeAnalysis.reduce(
+                              (sum: number, r: any) => sum + r.diff,
+                              0
+                            );
+                            return (
+                              (totalDiff > 0 ? '+$' : totalDiff < 0 ? '-$' : '$') +
+                              Math.abs(Math.round(totalDiff)).toLocaleString()
+                            );
                           })()}
                         </div>
                       </div>
                     </div>
                   )}
-                  {isBudgetIncomeExpanded ? <ChevronUp className="w-5 h-5 text-slate-400" /> : <ChevronDown className="w-5 h-5 text-slate-400" />}
+                  {isBudgetIncomeExpanded ? (
+                    <ChevronUp className="w-5 h-5 text-slate-400" />
+                  ) : (
+                    <ChevronDown className="w-5 h-5 text-slate-400" />
+                  )}
                 </div>
               </div>
               {isBudgetIncomeExpanded && (
@@ -1805,14 +2119,26 @@ export default function App() {
                   <table className="w-full text-sm text-left border-separate border-spacing-0">
                     <thead className="text-xs text-slate-500 uppercase bg-slate-50 sticky top-0 z-20">
                       <tr>
-                        <th className="px-6 py-4 font-semibold border-b border-slate-100 sticky top-0 bg-slate-50 z-10">Category</th>
-                        <th className="px-6 py-4 font-semibold text-right border-b border-slate-100 sticky top-0 bg-slate-50 z-10">Actual</th>
+                        <th className="px-6 py-4 font-semibold border-b border-slate-100 sticky top-0 bg-slate-50 z-10">
+                          Category
+                        </th>
+                        <th className="px-6 py-4 font-semibold text-right border-b border-slate-100 sticky top-0 bg-slate-50 z-10">
+                          Actual
+                        </th>
                         {showBudgetAverage && (
-                          <th className="px-6 py-4 font-semibold text-right border-b border-slate-100 sticky top-0 bg-slate-50 z-10">Average</th>
+                          <th className="px-6 py-4 font-semibold text-right border-b border-slate-100 sticky top-0 bg-slate-50 z-10">
+                            Average
+                          </th>
                         )}
-                        <th className="px-6 py-4 font-semibold text-right border-b border-slate-100 sticky top-0 bg-slate-50 z-10">Budgeted</th>
-                        <th className="px-6 py-4 font-semibold text-right border-b border-slate-100 sticky top-0 bg-slate-50 z-10">Difference</th>
-                        <th className="px-6 py-4 font-semibold text-center border-b border-slate-100 sticky top-0 bg-slate-50 z-10">Status</th>
+                        <th className="px-6 py-4 font-semibold text-right border-b border-slate-100 sticky top-0 bg-slate-50 z-10">
+                          Budgeted
+                        </th>
+                        <th className="px-6 py-4 font-semibold text-right border-b border-slate-100 sticky top-0 bg-slate-50 z-10">
+                          Difference
+                        </th>
+                        <th className="px-6 py-4 font-semibold text-center border-b border-slate-100 sticky top-0 bg-slate-50 z-10">
+                          Status
+                        </th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -1820,14 +2146,16 @@ export default function App() {
                         const isWithinTenDollars = row.budget > 0 && Math.abs(row.diff) < 10;
                         const isOverBudget = row.budget > 0 && row.diff >= 10; // Earned more
                         const isUnderBudget = row.budget > 0 && row.diff <= -10; // Earned less
-                        
+
                         return (
                           <tr key={row.name} className="hover:bg-slate-50 transition-colors">
                             <td className="px-6 py-4 font-medium text-slate-900 border-b border-slate-100">
                               <div className="flex items-center gap-2">
-                                <div 
-                                  className="w-2 h-2 rounded-full shrink-0" 
-                                  style={{ backgroundColor: getCategoryColor(row.name) || "#cbd5e1" }}
+                                <div
+                                  className="w-2 h-2 rounded-full shrink-0"
+                                  style={{
+                                    backgroundColor: getCategoryColor(row.name) || '#cbd5e1',
+                                  }}
                                 />
                                 {row.name}
                               </div>
@@ -1840,7 +2168,7 @@ export default function App() {
                                 ${Math.round(row.monthlyAverage).toLocaleString()}
                               </td>
                             )}
-                            <td 
+                            <td
                               className="px-6 py-4 text-right text-slate-600 font-mono border-b border-slate-100 cursor-pointer hover:bg-slate-100 transition-colors group"
                               onClick={() => {
                                 setEditingBudget({
@@ -1849,31 +2177,40 @@ export default function App() {
                                   average: row.monthlyAverage,
                                   unscaledAverage: row.unscaledAverage,
                                   current: row.budget,
-                                  monthlyBudget: row.monthlyBudget
+                                  monthlyBudget: row.monthlyBudget,
                                 });
-                                setNewBudgetValue(row.monthlyBudget > 0 ? row.monthlyBudget.toString() : "0");
+                                setNewBudgetValue(
+                                  row.monthlyBudget > 0 ? row.monthlyBudget.toString() : '0'
+                                );
                                 setIsBudgetModalOpen(true);
                               }}
                             >
                               <div className="flex items-center justify-end relative">
-                                {row.budget > 0 
-                                  ? `$${Math.round(row.budget).toLocaleString()}`
-                                  : <span className="text-slate-300 italic text-xs">Not set</span>
-                                }
+                                {row.budget > 0 ? (
+                                  `$${Math.round(row.budget).toLocaleString()}`
+                                ) : (
+                                  <span className="text-slate-300 italic text-xs">Not set</span>
+                                )}
                                 <Settings className="w-3 h-3 text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity absolute -right-5" />
                               </div>
                             </td>
-                            <td className={`px-6 py-4 text-right font-mono border-b border-slate-100 ${
-                              row.budget > 0 
-                                ? (isWithinTenDollars ? "text-slate-500" : (row.diff > 0 ? "text-emerald-600" : "text-red-600"))
-                                : "text-slate-400"
-                            }`}>
-                              {row.budget > 0 
-                                ? (isWithinTenDollars 
-                                    ? "$" + Math.abs(Math.round(row.diff)).toLocaleString()
-                                    : (row.diff > 0 ? "+$" : (row.diff < 0 ? "-$" : "$")) + Math.abs(Math.round(row.diff)).toLocaleString())
-                                : "-"
-                              }
+                            <td
+                              className={`px-6 py-4 text-right font-mono border-b border-slate-100 ${
+                                row.budget > 0
+                                  ? isWithinTenDollars
+                                    ? 'text-slate-500'
+                                    : row.diff > 0
+                                      ? 'text-emerald-600'
+                                      : 'text-red-600'
+                                  : 'text-slate-400'
+                              }`}
+                            >
+                              {row.budget > 0
+                                ? isWithinTenDollars
+                                  ? '$' + Math.abs(Math.round(row.diff)).toLocaleString()
+                                  : (row.diff > 0 ? '+$' : row.diff < 0 ? '-$' : '$') +
+                                    Math.abs(Math.round(row.diff)).toLocaleString()
+                                : '-'}
                             </td>
                             <td className="px-6 py-4 text-center border-b border-slate-100">
                               {row.budget > 0 ? (
@@ -1882,12 +2219,14 @@ export default function App() {
                                     On Budget
                                   </span>
                                 ) : (
-                                  <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                                    isOverBudget 
-                                      ? "bg-emerald-100 text-emerald-700" 
-                                      : "bg-red-100 text-red-700"
-                                  }`}>
-                                    {isOverBudget ? "Over" : "Under"}
+                                  <span
+                                    className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                                      isOverBudget
+                                        ? 'bg-emerald-100 text-emerald-700'
+                                        : 'bg-red-100 text-red-700'
+                                    }`}
+                                  >
+                                    {isOverBudget ? 'Over' : 'Under'}
                                   </span>
                                 )
                               ) : (
@@ -1902,24 +2241,57 @@ export default function App() {
                     </tbody>
                     <tfoot className="bg-slate-50 font-bold">
                       <tr>
-                        <td className="px-6 py-4 text-slate-900 border-t border-slate-200">TOTAL</td>
+                        <td className="px-6 py-4 text-slate-900 border-t border-slate-200">
+                          TOTAL
+                        </td>
                         <td className="px-6 py-4 text-right text-slate-900 font-mono border-t border-slate-200">
-                          ${Math.round(analysis.incomeAnalysis.reduce((sum: number, r: any) => sum + r.actual, 0)).toLocaleString()}
+                          $
+                          {Math.round(
+                            analysis.incomeAnalysis.reduce(
+                              (sum: number, r: any) => sum + r.actual,
+                              0
+                            )
+                          ).toLocaleString()}
                         </td>
                         {showBudgetAverage && (
                           <td className="px-6 py-4 text-right text-slate-900 font-mono border-t border-slate-200">
-                            ${Math.round(analysis.incomeAnalysis.reduce((sum: number, r: any) => sum + r.monthlyAverage, 0)).toLocaleString()}
+                            $
+                            {Math.round(
+                              analysis.incomeAnalysis.reduce(
+                                (sum: number, r: any) => sum + r.monthlyAverage,
+                                0
+                              )
+                            ).toLocaleString()}
                           </td>
                         )}
                         <td className="px-6 py-4 text-right text-slate-900 font-mono border-t border-slate-200">
-                          ${Math.round(analysis.incomeAnalysis.reduce((sum: number, r: any) => sum + r.budget, 0)).toLocaleString()}
+                          $
+                          {Math.round(
+                            analysis.incomeAnalysis.reduce(
+                              (sum: number, r: any) => sum + r.budget,
+                              0
+                            )
+                          ).toLocaleString()}
                         </td>
-                        <td className={`px-6 py-4 text-right font-mono border-t border-slate-200 ${
-                          analysis.incomeAnalysis.reduce((sum: number, r: any) => sum + r.diff, 0) > 0 ? "text-emerald-600" : "text-red-600"
-                        }`}>
+                        <td
+                          className={`px-6 py-4 text-right font-mono border-t border-slate-200 ${
+                            analysis.incomeAnalysis.reduce(
+                              (sum: number, r: any) => sum + r.diff,
+                              0
+                            ) > 0
+                              ? 'text-emerald-600'
+                              : 'text-red-600'
+                          }`}
+                        >
                           {(() => {
-                            const totalDiff = analysis.incomeAnalysis.reduce((sum: number, r: any) => sum + r.diff, 0);
-                            return (totalDiff > 0 ? "+$" : (totalDiff < 0 ? "-$" : "$")) + Math.abs(Math.round(totalDiff)).toLocaleString();
+                            const totalDiff = analysis.incomeAnalysis.reduce(
+                              (sum: number, r: any) => sum + r.diff,
+                              0
+                            );
+                            return (
+                              (totalDiff > 0 ? '+$' : totalDiff < 0 ? '-$' : '$') +
+                              Math.abs(Math.round(totalDiff)).toLocaleString()
+                            );
                           })()}
                         </td>
                         <td className="px-6 py-4 border-t border-slate-200"></td>
@@ -1933,26 +2305,26 @@ export default function App() {
         )}
 
         {/* Categories View */}
-        {isAuthenticated && currentView === "categories" && (
-          <CategoriesView 
-            taxonomy={taxonomy} 
+        {isAuthenticated && currentView === 'categories' && (
+          <CategoriesView
+            taxonomy={taxonomy}
             transactions={analysis?.allTransactionsUnfiltered || []}
-            onUpdate={fetchTaxonomy} 
+            onUpdate={fetchTaxonomy}
             onCategorySelect={(cat, subcat) => {
               setTxFilterCategory(cat);
-              setTxFilterSubcategory(subcat || "");
-              setSelectedYear("All");
-              setSelectedMonth("All Months");
-              setCurrentView("transactions");
+              setTxFilterSubcategory(subcat || '');
+              setSelectedYear('All');
+              setSelectedMonth('All Months');
+              setCurrentView('transactions');
             }}
           />
         )}
 
-        {analysis && currentView === "transactions" && (
+        {analysis && currentView === 'transactions' && (
           <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
             <div className="flex items-center justify-between">
               <button
-                onClick={() => setCurrentView("dashboard")}
+                onClick={() => setCurrentView('dashboard')}
                 className="flex items-center gap-2 text-sm font-medium text-slate-500 hover:text-slate-900 transition-colors"
               >
                 <ArrowLeft className="w-4 h-4" />
@@ -1966,7 +2338,9 @@ export default function App() {
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
               <div className="grid grid-cols-1 md:grid-cols-7 gap-4">
                 <div className="col-span-1 md:col-span-2">
-                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">Search</label>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">
+                    Search
+                  </label>
                   <div className="relative">
                     <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-400">
                       <Search className="w-4 h-4" />
@@ -1981,58 +2355,72 @@ export default function App() {
                   </div>
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">Year</label>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">
+                    Year
+                  </label>
                   <select
                     value={selectedYear}
                     onChange={(e) => {
                       setSelectedYear(e.target.value);
-                      setSelectedMonth("All Months");
+                      setSelectedMonth('All Months');
                     }}
                     className="w-full bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
                   >
                     <option value="All">All</option>
-                    {availableYears.map(year => (
-                      <option key={year} value={year}>{year}</option>
+                    {availableYears.map((year) => (
+                      <option key={year} value={year}>
+                        {year}
+                      </option>
                     ))}
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">Month</label>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">
+                    Month
+                  </label>
                   <select
                     value={selectedMonth}
                     onChange={(e) => setSelectedMonth(e.target.value)}
                     className="w-full bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
                   >
                     <option value="All Months">All</option>
-                    {analysis.sortedMonths.map(month => (
-                      <option key={month} value={month}>{month.split(' ')[0]}</option>
+                    {analysis.sortedMonths.map((month) => (
+                      <option key={month} value={month}>
+                        {month.split(' ')[0]}
+                      </option>
                     ))}
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">Category</label>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">
+                    Category
+                  </label>
                   <select
                     value={txFilterCategory}
                     onChange={(e) => {
                       setTxFilterCategory(e.target.value);
-                      setTxFilterSubcategory("");
+                      setTxFilterSubcategory('');
                     }}
                     className="w-full bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
                   >
                     <option value="">All</option>
                     {analysis.categories.map((cat: string) => (
-                      <option key={cat} value={cat}>{cat}</option>
+                      <option key={cat} value={cat}>
+                        {cat}
+                      </option>
                     ))}
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">Subcategory</label>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">
+                    Subcategory
+                  </label>
                   <select
                     value={txFilterSubcategory}
                     onChange={(e) => setTxFilterSubcategory(e.target.value)}
                     disabled={!txFilterCategory}
                     className={`w-full bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 ${
-                      !txFilterCategory ? "opacity-50 cursor-not-allowed" : ""
+                      !txFilterCategory ? 'opacity-50 cursor-not-allowed' : ''
                     }`}
                   >
                     <option value="">All</option>
@@ -2044,7 +2432,9 @@ export default function App() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">Type</label>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">
+                    Type
+                  </label>
                   <select
                     value={txFilterType}
                     onChange={(e) => setTxFilterType(e.target.value as any)}
@@ -2063,15 +2453,17 @@ export default function App() {
                       onChange={(e) => setShowTxTotals(e.target.checked)}
                       className="w-4 h-4 text-blue-600 bg-slate-100 border-slate-300 rounded focus:ring-blue-500 transition-colors"
                     />
-                    <span className="text-sm font-medium text-slate-600 group-hover:text-slate-900 transition-colors whitespace-nowrap">Totals</span>
+                    <span className="text-sm font-medium text-slate-600 group-hover:text-slate-900 transition-colors whitespace-nowrap">
+                      Totals
+                    </span>
                   </label>
                   <button
                     onClick={() => {
-                      setTxFilterCategory("");
-                      setTxFilterSubcategory("");
-                      setTxFilterType("all");
-                      setSelectedYear("All");
-                      setSelectedMonth("All Months");
+                      setTxFilterCategory('');
+                      setTxFilterSubcategory('');
+                      setTxFilterType('all');
+                      setSelectedYear('All');
+                      setSelectedMonth('All Months');
                     }}
                     className="mb-1 text-xs font-semibold text-blue-600 hover:text-blue-800 transition-colors uppercase tracking-wider"
                   >
@@ -2084,84 +2476,118 @@ export default function App() {
             {/* Bulk Edit Banner */}
             {selectedTxIds.size > 0 && (
               <div className="bg-slate-900 rounded-lg p-3 mb-4 flex items-center justify-between text-white shadow-md animate-in fade-in slide-in-from-top-2">
-                <span className="text-sm font-medium">{selectedTxIds.size} transactions selected</span>
+                <span className="text-sm font-medium">
+                  {selectedTxIds.size} transactions selected
+                </span>
                 {isBulkEditingTx ? (
                   <div className="flex items-center gap-2">
                     <select
                       value={bulkEditTxCategory}
-                      onChange={e => { setBulkEditTxCategory(e.target.value); setBulkEditTxSubcategory(""); }}
+                      onChange={(e) => {
+                        setBulkEditTxCategory(e.target.value);
+                        setBulkEditTxSubcategory('');
+                      }}
                       className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-sm text-white"
                     >
                       <option value="">Category...</option>
-                      {Object.keys(taxonomy).sort().map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                      {Object.keys(taxonomy)
+                        .sort()
+                        .map((cat) => (
+                          <option key={cat} value={cat}>
+                            {cat}
+                          </option>
+                        ))}
                     </select>
                     <select
                       value={bulkEditTxSubcategory}
-                      onChange={e => setBulkEditTxSubcategory(e.target.value)}
+                      onChange={(e) => setBulkEditTxSubcategory(e.target.value)}
                       disabled={!bulkEditTxCategory}
                       className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-sm text-white disabled:opacity-50"
                     >
                       <option value="">Subcategory...</option>
-                      {bulkEditTxCategory && taxonomy[bulkEditTxCategory]?.map(sub => <option key={sub} value={sub}>{sub}</option>)}
+                      {bulkEditTxCategory &&
+                        taxonomy[bulkEditTxCategory]?.map((sub) => (
+                          <option key={sub} value={sub}>
+                            {sub}
+                          </option>
+                        ))}
                     </select>
-                    <button 
+                    <button
                       onClick={() => {
                         const updates = Array.from(selectedTxIds)
-                          .map(id => analysis.allTransactions.find((t: any) => t.id === id))
-                          .filter(tx => tx !== undefined)
-                          .map(tx => ({
+                          .map((id) => analysis.allTransactions.find((t: any) => t.id === id))
+                          .filter((tx) => tx !== undefined)
+                          .map((tx) => ({
                             id: tx.id,
                             category: bulkEditTxCategory,
-                            subcategory: bulkEditTxSubcategory
+                            subcategory: bulkEditTxSubcategory,
                           }));
                         handleBulkTxUpdate(updates);
-                      }} 
-                      disabled={isBulkUpdatingTx} 
+                      }}
+                      disabled={isBulkUpdatingTx}
                       className="px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-500 flex items-center gap-1"
                     >
-                      {isBulkUpdatingTx ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />} Apply
+                      {isBulkUpdatingTx ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Check className="w-3.5 h-3.5" />
+                      )}{' '}
+                      Apply
                     </button>
-                    <button onClick={() => setIsBulkEditingTx(false)} className="px-2 py-1 text-slate-400 hover:text-white text-sm">Cancel</button>
+                    <button
+                      onClick={() => setIsBulkEditingTx(false)}
+                      className="px-2 py-1 text-slate-400 hover:text-white text-sm"
+                    >
+                      Cancel
+                    </button>
                   </div>
                 ) : (
                   <div className="flex items-center gap-2">
-                    <button 
+                    <button
                       onClick={() => {
                         const selectedTxs = Array.from(selectedTxIds)
-                          .map(id => analysis.allTransactions.find((t: any) => t.id === id))
-                          .filter(tx => tx && tx._category);
-                        
-                        let bestCat = "";
-                        let bestSubcat = "";
-                        
+                          .map((id) => analysis.allTransactions.find((t: any) => t.id === id))
+                          .filter((tx) => tx && tx._category);
+
+                        let bestCat = '';
+                        let bestSubcat = '';
+
                         if (selectedTxs.length > 0) {
                           const counts: Record<string, number> = {};
                           let maxCount = 0;
-                          selectedTxs.forEach(tx => {
-                            const key = `${tx._category}||${tx._subcategory || ""}`;
+                          selectedTxs.forEach((tx) => {
+                            const key = `${tx._category}||${tx._subcategory || ''}`;
                             counts[key] = (counts[key] || 0) + 1;
                             if (counts[key] > maxCount) {
                               maxCount = counts[key];
                               bestCat = tx._category;
-                              bestSubcat = tx._subcategory || "";
+                              bestSubcat = tx._subcategory || '';
                             }
                           });
                         }
-                        
+
                         setBulkEditTxCategory(bestCat);
                         setBulkEditTxSubcategory(bestSubcat);
                         setIsBulkEditingTx(true);
-                      }} 
+                      }}
                       className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-white text-sm rounded flex items-center gap-1"
                     >
                       <Edit3 className="w-4 h-4" /> Bulk Edit Category
                     </button>
-                    <button 
+                    <button
                       onClick={() => {
-                        if (!confirm(`Are you sure you want to archive ${selectedTxIds.size} transactions? They will be removed from all calculations.`)) return;
-                        const updates = Array.from(selectedTxIds).map((id: string) => ({ id, status: 'archived' }));
+                        if (
+                          !confirm(
+                            `Are you sure you want to archive ${selectedTxIds.size} transactions? They will be removed from all calculations.`
+                          )
+                        )
+                          return;
+                        const updates = Array.from(selectedTxIds).map((id: string) => ({
+                          id,
+                          status: 'archived',
+                        }));
                         handleBulkTxUpdate(updates);
-                      }} 
+                      }}
                       className="px-3 py-1.5 bg-red-900/40 hover:bg-red-800/60 text-red-200 text-sm rounded flex items-center gap-1 border border-red-800/50"
                     >
                       <Archive className="w-4 h-4" /> Archive Selected
@@ -2175,28 +2601,34 @@ export default function App() {
             {(() => {
               const filteredAndSortedTransactions = analysis.allTransactions
                 .filter((tx: any) => {
-                  if (selectedMonth !== "All Months" && tx._monthKey !== selectedMonth) return false;
+                  if (selectedMonth !== 'All Months' && tx._monthKey !== selectedMonth)
+                    return false;
                   if (txFilterCategory && tx._category !== txFilterCategory) return false;
                   if (txFilterSubcategory && tx._subcategory !== txFilterSubcategory) return false;
-                  if (txFilterType === "income" && tx._isExpense) return false;
-                  if (txFilterType === "expense" && !tx._isExpense) return false;
+                  if (txFilterType === 'income' && tx._isExpense) return false;
+                  if (txFilterType === 'expense' && !tx._isExpense) return false;
                   if (txSearchText) {
                     const searchLower = txSearchText.toLowerCase();
-                    const matchesDesc = tx.Description && tx.Description.toLowerCase().includes(searchLower);
-                    const matchesCat = tx._category && tx._category.toLowerCase().includes(searchLower);
-                    const matchesSubcat = tx._subcategory && tx._subcategory.toLowerCase().includes(searchLower);
-                    const matchesAmount = tx.Amount && String(tx.Amount).toLowerCase().includes(searchLower);
-                    if (!matchesDesc && !matchesCat && !matchesSubcat && !matchesAmount) return false;
+                    const matchesDesc =
+                      tx.Description && tx.Description.toLowerCase().includes(searchLower);
+                    const matchesCat =
+                      tx._category && tx._category.toLowerCase().includes(searchLower);
+                    const matchesSubcat =
+                      tx._subcategory && tx._subcategory.toLowerCase().includes(searchLower);
+                    const matchesAmount =
+                      tx.Amount && String(tx.Amount).toLowerCase().includes(searchLower);
+                    if (!matchesDesc && !matchesCat && !matchesSubcat && !matchesAmount)
+                      return false;
                   }
                   return true;
                 })
                 .sort((a: any, b: any) => {
                   if (!txSortConfig) return 0;
                   const { key, direction } = txSortConfig;
-                  
+
                   let valA = a[key];
                   let valB = b[key];
-                  
+
                   // Special cases for sorting
                   if (key === analysis.columnsIdentified.amount) {
                     valA = a._parsedAmount;
@@ -2205,196 +2637,255 @@ export default function App() {
                     valA = new Date(a._date).getTime();
                     valB = new Date(b._date).getTime();
                   } else {
-                    valA = String(valA || "").toLowerCase();
-                    valB = String(valB || "").toLowerCase();
+                    valA = String(valA || '').toLowerCase();
+                    valB = String(valB || '').toLowerCase();
                   }
 
-                  if (valA < valB) return direction === "asc" ? -1 : 1;
-                  if (valA > valB) return direction === "asc" ? 1 : -1;
+                  if (valA < valB) return direction === 'asc' ? -1 : 1;
+                  if (valA > valB) return direction === 'asc' ? 1 : -1;
                   return 0;
                 });
 
               return (
                 <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-              <div className="overflow-x-auto max-h-[700px]">
-                <table className="w-full text-sm text-left border-separate border-spacing-0">
-                  <thead className="text-xs text-slate-500 uppercase bg-slate-50 sticky top-0 z-20">
-                    <tr>
-                      <th className="px-4 py-4 font-semibold border-b border-slate-100 bg-slate-50 w-10 text-center">
-                        <input 
-                          type="checkbox"
-                          checked={
-                            filteredAndSortedTransactions.length > 0 && 
-                            selectedTxIds.size === filteredAndSortedTransactions.length
-                          }
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setSelectedTxIds(new Set(filteredAndSortedTransactions.map((t: any) => t.id)));
-                            } else {
-                              setSelectedTxIds(new Set());
-                            }
-                          }}
-                          className="rounded border-slate-300 bg-white"
-                        />
-                      </th>
-                      {headers.filter(h => !/year|month|notes|type|balance|status|importid/i.test(h)).map((header) => {
-                        const isAmount = header === analysis.columnsIdentified.amount;
-                        const isCategory = header === analysis.columnsIdentified.category;
-                        const isSubcategory = header === analysis.columnsIdentified.subcategory;
-                        const isDescription = header === analysis.columnsIdentified.description;
-                        
-                        let widthClass = 'whitespace-nowrap';
-                        if (isCategory || isSubcategory) widthClass = 'min-w-[100px] max-w-[150px] break-words';
-                        if (isDescription) widthClass = 'min-w-[200px] break-words';
-
-                        return (
-                          <th 
-                            key={header} 
-                            className={`px-6 py-4 font-semibold border-b border-slate-100 bg-slate-50 cursor-pointer hover:bg-slate-200 transition-colors ${widthClass}`}
-                            onClick={() => {
-                              setTxSortConfig(current => ({
-                                key: header,
-                                direction: current?.key === header && current.direction === 'asc' ? 'desc' : 'asc'
-                              }));
-                            }}
-                          >
-                            <div className="flex items-center gap-1">
-                              {header}
-                              {txSortConfig?.key === header && (
-                                <span className="text-slate-400">
-                                  {txSortConfig.direction === 'asc' ? '↑' : '↓'}
-                                </span>
-                              )}
-                            </div>
-                          </th>
-                        );
-                      })}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {filteredAndSortedTransactions
-                      .map((tx: any, idx: number) => (
-                        <tr 
-                          key={idx} 
-                          className={`hover:bg-slate-50 transition-colors group ${selectedTxIds.has(tx.id) ? 'bg-blue-50/50' : ''}`}
-                        >
-                          <td className="px-4 py-4 border-b border-slate-100 text-center" onClick={(e) => e.stopPropagation()}>
-                            <input 
+                  <div className="overflow-x-auto max-h-[700px]">
+                    <table className="w-full text-sm text-left border-separate border-spacing-0">
+                      <thead className="text-xs text-slate-500 uppercase bg-slate-50 sticky top-0 z-20">
+                        <tr>
+                          <th className="px-4 py-4 font-semibold border-b border-slate-100 bg-slate-50 w-10 text-center">
+                            <input
                               type="checkbox"
-                              checked={selectedTxIds.has(tx.id)}
+                              checked={
+                                filteredAndSortedTransactions.length > 0 &&
+                                selectedTxIds.size === filteredAndSortedTransactions.length
+                              }
                               onChange={(e) => {
-                                const next = new Set(selectedTxIds);
-                                if (next.has(tx.id)) next.delete(tx.id);
-                                else next.add(tx.id);
-                                setSelectedTxIds(next);
+                                if (e.target.checked) {
+                                  setSelectedTxIds(
+                                    new Set(filteredAndSortedTransactions.map((t: any) => t.id))
+                                  );
+                                } else {
+                                  setSelectedTxIds(new Set());
+                                }
                               }}
                               className="rounded border-slate-300 bg-white"
                             />
-                          </td>
-                          {headers.filter(h => !/year|month|notes|type|balance|status|importid/i.test(h)).map((header) => {
-                            const val = tx[header];
-                            const isAmount = header === analysis.columnsIdentified.amount;
-                            const isCategory = header === analysis.columnsIdentified.category;
-                            const isSubcategory = header === analysis.columnsIdentified.subcategory;
-                            const isDescription = header === analysis.columnsIdentified.description;
-                            const isDate = header === analysis.columnsIdentified.date;
-                            
-                            let dotColor = null;
-                            if (isCategory) {
-                              dotColor = getCategoryColor(String(val));
-                            }
-                            
-                            let cellClass = 'whitespace-nowrap';
-                            if (isAmount) cellClass = 'font-mono text-right whitespace-nowrap';
-                            if (isCategory || isSubcategory) cellClass = 'break-words min-w-[100px] max-w-[150px]';
-                            if (isDescription) cellClass = 'break-words min-w-[200px]';
+                          </th>
+                          {headers
+                            .filter(
+                              (h) => !/year|month|notes|type|balance|status|importid/i.test(h)
+                            )
+                            .map((header) => {
+                              const isAmount = header === analysis.columnsIdentified.amount;
+                              const isCategory = header === analysis.columnsIdentified.category;
+                              const isSubcategory =
+                                header === analysis.columnsIdentified.subcategory;
+                              const isDescription =
+                                header === analysis.columnsIdentified.description;
 
-                            return (
-                                <td 
-                                  key={header} 
-                                  className={`px-6 py-4 border-b border-slate-100 ${cellClass} ${(isCategory || isSubcategory) ? 'hover:underline cursor-pointer font-medium' : 'cursor-pointer'}`}
-                                  onClick={(e) => {
-                                    if (isCategory || isSubcategory) {
-                                      e.stopPropagation();
-                                      if (isCategory) setTxFilterCategory(String(val));
-                                      if (isSubcategory) setTxFilterSubcategory(String(val));
-                                    } else {
-                                      // Default row click action
-                                      setEditingTx(tx);
-                                      setEditTxAmount(tx._parsedAmount.toFixed(2));
-                                      const d = new Date(tx._date);
-                                      if (!isNaN(d.getTime())) {
-                                        const y = d.getFullYear();
-                                        const m = String(d.getMonth() + 1).padStart(2, '0');
-                                        const day = String(d.getDate()).padStart(2, '0');
-                                        setEditTxDate(`${y}-${m}-${day}`);
-                                      } else {
-                                        setEditTxDate("");
-                                      }
-                                      setEditTxCategory(tx._category);
-                                      setEditTxSubcategory(tx._subcategory);
-                                      setIsTxModalOpen(true);
-                                    }
+                              let widthClass = 'whitespace-nowrap';
+                              if (isCategory || isSubcategory)
+                                widthClass = 'min-w-[100px] max-w-[150px] break-words';
+                              if (isDescription) widthClass = 'min-w-[200px] break-words';
+
+                              return (
+                                <th
+                                  key={header}
+                                  className={`px-6 py-4 font-semibold border-b border-slate-100 bg-slate-50 cursor-pointer hover:bg-slate-200 transition-colors ${widthClass}`}
+                                  onClick={() => {
+                                    setTxSortConfig((current) => ({
+                                      key: header,
+                                      direction:
+                                        current?.key === header && current.direction === 'asc'
+                                          ? 'desc'
+                                          : 'asc',
+                                    }));
                                   }}
                                 >
-                                {isAmount ? (
-                                  <span className={tx._isExpense ? 'text-slate-900' : 'text-emerald-600 font-bold'}>
-                                    ${tx._parsedAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                  </span>
-                                ) : isCategory ? (
-                                  <div className="flex items-center gap-2">
-                                    {dotColor && (
-                                      <div 
-                                        className="w-2 h-2 rounded-full shrink-0" 
-                                        style={{ backgroundColor: dotColor }}
-                                      />
+                                  <div className="flex items-center gap-1">
+                                    {header}
+                                    {txSortConfig?.key === header && (
+                                      <span className="text-slate-400">
+                                        {txSortConfig.direction === 'asc' ? '↑' : '↓'}
+                                      </span>
                                     )}
-                                    {String(val)}
                                   </div>
-                                ) : isDate ? (
-                                  tx._date instanceof Date && !isNaN(tx._date.getTime())
-                                    ? `${tx._date.getMonth() + 1}/${tx._date.getDate()}/${tx._date.getFullYear()}`
-                                    : val
-                                ) : (
-                                  val
-                                )}
-                              </td>
-                            );
-                          })}
+                                </th>
+                              );
+                            })}
                         </tr>
-                      ))}
-                  </tbody>
-                  {showTxTotals && (
-                    <tfoot className="bg-slate-50 font-bold border-t-2 border-slate-200 sticky bottom-0 z-20">
-                      <tr>
-                        {headers.filter(h => !/year|month|notes/i.test(h)).map((header, idx) => {
-                          const isAmount = header === analysis.columnsIdentified.amount;
-                          if (idx === 0) return <td key={header} className="px-6 py-4 border-t border-slate-200">Total</td>;
-                          if (isAmount) {
-                            const total = filteredAndSortedTransactions.reduce((sum: number, tx: any) => sum + (tx._isExpense ? -tx._parsedAmount : tx._parsedAmount), 0);
-                            return (
-                              <td key={header} className={`px-6 py-4 text-right font-mono border-t border-slate-200 whitespace-nowrap ${total >= 0 ? 'text-emerald-600' : 'text-slate-900'}`}>
-                                ${Math.abs(total).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                              </td>
-                            );
-                          }
-                          return <td key={header} className="px-6 py-4 border-t border-slate-200"></td>;
-                        })}
-                      </tr>
-                    </tfoot>
-                  )}
-                </table>
-              </div>
-            </div>
-            );
-          })()}
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {filteredAndSortedTransactions.map((tx: any, idx: number) => (
+                          <tr
+                            key={idx}
+                            className={`hover:bg-slate-50 transition-colors group ${selectedTxIds.has(tx.id) ? 'bg-blue-50/50' : ''}`}
+                          >
+                            <td
+                              className="px-4 py-4 border-b border-slate-100 text-center"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={selectedTxIds.has(tx.id)}
+                                onChange={(e) => {
+                                  const next = new Set(selectedTxIds);
+                                  if (next.has(tx.id)) next.delete(tx.id);
+                                  else next.add(tx.id);
+                                  setSelectedTxIds(next);
+                                }}
+                                className="rounded border-slate-300 bg-white"
+                              />
+                            </td>
+                            {headers
+                              .filter(
+                                (h) => !/year|month|notes|type|balance|status|importid/i.test(h)
+                              )
+                              .map((header) => {
+                                const val = tx[header];
+                                const isAmount = header === analysis.columnsIdentified.amount;
+                                const isCategory = header === analysis.columnsIdentified.category;
+                                const isSubcategory =
+                                  header === analysis.columnsIdentified.subcategory;
+                                const isDescription =
+                                  header === analysis.columnsIdentified.description;
+                                const isDate = header === analysis.columnsIdentified.date;
+
+                                let dotColor = null;
+                                if (isCategory) {
+                                  dotColor = getCategoryColor(String(val));
+                                }
+
+                                let cellClass = 'whitespace-nowrap';
+                                if (isAmount) cellClass = 'font-mono text-right whitespace-nowrap';
+                                if (isCategory || isSubcategory)
+                                  cellClass = 'break-words min-w-[100px] max-w-[150px]';
+                                if (isDescription) cellClass = 'break-words min-w-[200px]';
+
+                                return (
+                                  <td
+                                    key={header}
+                                    className={`px-6 py-4 border-b border-slate-100 ${cellClass} ${isCategory || isSubcategory ? 'hover:underline cursor-pointer font-medium' : 'cursor-pointer'}`}
+                                    onClick={(e) => {
+                                      if (isCategory || isSubcategory) {
+                                        e.stopPropagation();
+                                        if (isCategory) setTxFilterCategory(String(val));
+                                        if (isSubcategory) setTxFilterSubcategory(String(val));
+                                      } else {
+                                        // Default row click action
+                                        setEditingTx(tx);
+                                        setEditTxAmount(tx._parsedAmount.toFixed(2));
+                                        const d = new Date(tx._date);
+                                        if (!isNaN(d.getTime())) {
+                                          const y = d.getFullYear();
+                                          const m = String(d.getMonth() + 1).padStart(2, '0');
+                                          const day = String(d.getDate()).padStart(2, '0');
+                                          setEditTxDate(`${y}-${m}-${day}`);
+                                        } else {
+                                          setEditTxDate('');
+                                        }
+                                        setEditTxCategory(tx._category);
+                                        setEditTxSubcategory(tx._subcategory);
+                                        setIsTxModalOpen(true);
+                                      }
+                                    }}
+                                  >
+                                    {isAmount ? (
+                                      <span
+                                        className={
+                                          tx._isExpense
+                                            ? 'text-slate-900'
+                                            : 'text-emerald-600 font-bold'
+                                        }
+                                      >
+                                        $
+                                        {tx._parsedAmount.toLocaleString(undefined, {
+                                          minimumFractionDigits: 2,
+                                          maximumFractionDigits: 2,
+                                        })}
+                                      </span>
+                                    ) : isCategory ? (
+                                      <div className="flex items-center gap-2">
+                                        {dotColor && (
+                                          <div
+                                            className="w-2 h-2 rounded-full shrink-0"
+                                            style={{ backgroundColor: dotColor }}
+                                          />
+                                        )}
+                                        {String(val)}
+                                      </div>
+                                    ) : isDate ? (
+                                      tx._date instanceof Date && !isNaN(tx._date.getTime()) ? (
+                                        `${tx._date.getMonth() + 1}/${tx._date.getDate()}/${tx._date.getFullYear()}`
+                                      ) : (
+                                        val
+                                      )
+                                    ) : (
+                                      val
+                                    )}
+                                  </td>
+                                );
+                              })}
+                          </tr>
+                        ))}
+                      </tbody>
+                      {showTxTotals && (
+                        <tfoot className="bg-slate-50 font-bold border-t-2 border-slate-200 sticky bottom-0 z-20">
+                          <tr>
+                            {headers
+                              .filter((h) => !/year|month|notes/i.test(h))
+                              .map((header, idx) => {
+                                const isAmount = header === analysis.columnsIdentified.amount;
+                                if (idx === 0)
+                                  return (
+                                    <td
+                                      key={header}
+                                      className="px-6 py-4 border-t border-slate-200"
+                                    >
+                                      Total
+                                    </td>
+                                  );
+                                if (isAmount) {
+                                  const total = filteredAndSortedTransactions.reduce(
+                                    (sum: number, tx: any) =>
+                                      sum + (tx._isExpense ? -tx._parsedAmount : tx._parsedAmount),
+                                    0
+                                  );
+                                  return (
+                                    <td
+                                      key={header}
+                                      className={`px-6 py-4 text-right font-mono border-t border-slate-200 whitespace-nowrap ${total >= 0 ? 'text-emerald-600' : 'text-slate-900'}`}
+                                    >
+                                      $
+                                      {Math.abs(total).toLocaleString(undefined, {
+                                        minimumFractionDigits: 2,
+                                        maximumFractionDigits: 2,
+                                      })}
+                                    </td>
+                                  );
+                                }
+                                return (
+                                  <td
+                                    key={header}
+                                    className="px-6 py-4 border-t border-slate-200"
+                                  ></td>
+                                );
+                              })}
+                          </tr>
+                        </tfoot>
+                      )}
+                    </table>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         )}
-        
-        {currentView === "admin" && (
-          <AdminView 
-            onDataChanged={fetchSheetData} 
-            transactions={analysis?.allTransactionsUnfiltered || []} 
+
+        {currentView === 'admin' && (
+          <AdminView
+            onDataChanged={fetchSheetData}
+            transactions={analysis?.allTransactionsUnfiltered || []}
           />
         )}
       </main>
@@ -2404,18 +2895,24 @@ export default function App() {
           <div className="bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
             <div className="p-6 border-b border-slate-100">
               <h3 className="text-lg font-bold text-slate-900">Edit Budget</h3>
-              <p className="text-sm text-slate-500 mt-1">Update monthly budget for {editingBudget.category}</p>
+              <p className="text-sm text-slate-500 mt-1">
+                Update monthly budget for {editingBudget.category}
+              </p>
             </div>
             <div className="p-6 space-y-6">
               <div className="grid grid-cols-2 gap-4">
                 <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Monthly Average</label>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                    Monthly Average
+                  </label>
                   <div className="text-lg font-mono font-bold text-slate-700">
                     ${Math.round(editingBudget.unscaledAverage).toLocaleString()}
                   </div>
                 </div>
                 <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Monthly Budget</label>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                    Monthly Budget
+                  </label>
                   <div className="text-lg font-mono font-bold text-slate-700">
                     ${Math.round(editingBudget.monthlyBudget).toLocaleString()}
                   </div>
@@ -2423,9 +2920,13 @@ export default function App() {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">New Monthly Budget</label>
+                <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">
+                  New Monthly Budget
+                </label>
                 <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-mono">$</span>
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-mono">
+                    $
+                  </span>
                   <input
                     type="number"
                     value={newBudgetValue}
@@ -2459,7 +2960,7 @@ export default function App() {
                 disabled={isUpdatingBudget}
                 className="px-6 py-2 bg-slate-900 hover:bg-slate-800 text-white text-sm font-bold rounded-lg shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-wider"
               >
-                {isUpdatingBudget ? "Updating..." : "OK"}
+                {isUpdatingBudget ? 'Updating...' : 'OK'}
               </button>
             </div>
           </div>
@@ -2471,7 +2972,7 @@ export default function App() {
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
             <div className="p-6 border-b border-slate-100 flex items-center justify-between">
               <h3 className="text-xl font-bold text-slate-900">Edit Transaction</h3>
-              <button 
+              <button
                 onClick={() => setIsTxModalOpen(false)}
                 className="text-slate-400 hover:text-slate-600 transition-colors"
               >
@@ -2492,7 +2993,9 @@ export default function App() {
               <div>
                 <label className="block text-sm font-semibold text-slate-700 mb-2">Amount</label>
                 <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-mono">$</span>
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-mono">
+                    $
+                  </span>
                   <input
                     type="number"
                     step="0.01"
@@ -2515,19 +3018,25 @@ export default function App() {
                   value={editTxCategory}
                   onChange={(e) => {
                     setEditTxCategory(e.target.value);
-                    setEditTxSubcategory("");
+                    setEditTxSubcategory('');
                   }}
                   className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
                 >
                   <option value="">Select Category</option>
-                  {Object.keys(taxonomy).sort().map((cat: string) => (
-                    <option key={cat} value={cat}>{cat}</option>
-                  ))}
+                  {Object.keys(taxonomy)
+                    .sort()
+                    .map((cat: string) => (
+                      <option key={cat} value={cat}>
+                        {cat}
+                      </option>
+                    ))}
                 </select>
               </div>
 
               <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-2">Subcategory</label>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">
+                  Subcategory
+                </label>
                 <select
                   value={editTxSubcategory}
                   onChange={(e) => setEditTxSubcategory(e.target.value)}
@@ -2535,16 +3044,24 @@ export default function App() {
                   disabled={!editTxCategory}
                 >
                   <option value="">None</option>
-                  {editTxCategory && taxonomy[editTxCategory]?.map((sub: string) => (
-                    <option key={sub} value={sub}>{sub}</option>
-                  ))}
+                  {editTxCategory &&
+                    taxonomy[editTxCategory]?.map((sub: string) => (
+                      <option key={sub} value={sub}>
+                        {sub}
+                      </option>
+                    ))}
                 </select>
               </div>
             </div>
             <div className="p-6 bg-slate-50 flex gap-3">
               <button
                 onClick={() => {
-                  if (!confirm("Are you sure you want to archive this transaction? It will be removed from all calculations.")) return;
+                  if (
+                    !confirm(
+                      'Are you sure you want to archive this transaction? It will be removed from all calculations.'
+                    )
+                  )
+                    return;
                   handleBulkTxUpdate([{ id: editingTx.id, status: 'archived' }]);
                   setIsTxModalOpen(false);
                 }}
@@ -2569,7 +3086,7 @@ export default function App() {
                     Saving...
                   </>
                 ) : (
-                  "OK"
+                  'OK'
                 )}
               </button>
             </div>
@@ -2578,14 +3095,20 @@ export default function App() {
       )}
 
       {/* Modals */}
-      <ImportModal 
-        isOpen={isImportModalOpen} 
-        onClose={() => setIsImportModalOpen(false)} 
+      <ImportModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
         onImportStarted={(txCount) => {
-          setImportStatus({ type: 'loading', message: `Processing: 3 concurrent batches\nImported: 0 / ${txCount}\nRemaining: ${txCount}` });
+          setImportStatus({
+            type: 'loading',
+            message: `Processing: 3 concurrent batches\nImported: 0 / ${txCount}\nRemaining: ${txCount}`,
+          });
         }}
         onImportProgress={(processed, total) => {
-          setImportStatus({ type: 'loading', message: `Processing: 3 concurrent batches\nImported: ${processed} / ${total}\nRemaining: ${total - processed}` });
+          setImportStatus({
+            type: 'loading',
+            message: `Processing: 3 concurrent batches\nImported: ${processed} / ${total}\nRemaining: ${total - processed}`,
+          });
         }}
         onImportComplete={(result) => {
           if (result.success) {
@@ -2597,7 +3120,7 @@ export default function App() {
               setImportStatus({ type: 'success', message: msg });
             }
             fetchSheetData();
-            setImportHistoryRefresh(prev => prev + 1);
+            setImportHistoryRefresh((prev) => prev + 1);
             // Auto-dismiss after 10s
             setTimeout(() => setImportStatus(null), 10000);
           } else {

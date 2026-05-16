@@ -7,6 +7,14 @@ interface ImportHistoryProps {
   refreshTrigger?: number;
 }
 
+/**
+ * ImportHistory Component.
+ * Displays a list of recent imports and AI reclassifications.
+ * Allows users to review recent actions and rollback (undo) them if necessary.
+ *
+ * @param props.onRollbackComplete - Callback triggered when a rollback completes successfully.
+ * @param props.refreshTrigger - A dependency value used to trigger a data refresh from the parent.
+ */
 export function ImportHistory({ onRollbackComplete, refreshTrigger = 0 }: ImportHistoryProps) {
   const [imports, setImports] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -21,7 +29,7 @@ export function ImportHistory({ onRollbackComplete, refreshTrigger = 0 }: Import
         setImports(data.imports || []);
       }
     } catch (err) {
-      console.error("Failed to fetch imports:", err);
+      console.error('Failed to fetch imports:', err);
     } finally {
       setIsLoading(false);
     }
@@ -32,10 +40,11 @@ export function ImportHistory({ onRollbackComplete, refreshTrigger = 0 }: Import
   }, [refreshTrigger]);
 
   const handleRollback = async (importId: string, isReclassification: boolean = false) => {
-    const msg = isReclassification 
+    // Show appropriate warning depending on whether it's an import or a reclassification
+    const msg = isReclassification
       ? "Are you sure you want to rollback this AI reclassification? This will revert all associated transactions back to 'Uncategorized'."
-      : "Are you sure you want to rollback this import? This will permanently delete all transactions associated with it.";
-      
+      : 'Are you sure you want to rollback this import? This will permanently delete all transactions associated with it.';
+
     if (!window.confirm(msg)) {
       return;
     }
@@ -45,16 +54,16 @@ export function ImportHistory({ onRollbackComplete, refreshTrigger = 0 }: Import
       const res = await fetch('/api/import/rollback', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ importId })
+        body: JSON.stringify({ importId }),
       });
-      
-      if (!res.ok) throw new Error("Rollback failed");
-      
+
+      if (!res.ok) throw new Error('Rollback failed');
+
       await fetchImports();
       onRollbackComplete();
     } catch (err) {
       console.error(err);
-      alert("Failed to rollback import.");
+      alert('Failed to rollback import.');
     } finally {
       setRollingBackId(null);
     }
@@ -62,21 +71,25 @@ export function ImportHistory({ onRollbackComplete, refreshTrigger = 0 }: Import
 
   const handleMarkOk = async (importId: string) => {
     try {
-      const res = await fetch("/api/import/ok", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ importId })
+      const res = await fetch('/api/import/ok', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ importId }),
       });
-      if (!res.ok) throw new Error("Failed to mark OK");
-      setImports(imports.filter(imp => imp.importId !== importId));
+      if (!res.ok) throw new Error('Failed to mark OK');
+      setImports(imports.filter((imp) => imp.importId !== importId));
     } catch (err) {
       console.error(err);
-      alert("Failed to mark OK");
+      alert('Failed to mark OK');
     }
   };
 
   if (isLoading) {
-    return <div className="flex justify-center p-8"><Loader2 className="animate-spin text-blue-500" /></div>;
+    return (
+      <div className="flex justify-center p-8">
+        <Loader2 className="animate-spin text-blue-500" />
+      </div>
+    );
   }
 
   if (imports.length === 0) {
@@ -95,7 +108,10 @@ export function ImportHistory({ onRollbackComplete, refreshTrigger = 0 }: Import
       <div className="p-4">
         <div className="space-y-3">
           {imports.map((imp) => (
-            <div key={imp.importId} className="flex items-center justify-between bg-slate-800 p-4 rounded-lg border border-slate-700">
+            <div
+              key={imp.importId}
+              className="flex items-center justify-between bg-slate-800 p-4 rounded-lg border border-slate-700"
+            >
               <div>
                 <p className="text-white font-medium">{imp.filename}</p>
                 <p className="text-slate-400 text-sm mt-1">

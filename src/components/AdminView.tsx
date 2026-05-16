@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Loader2, RefreshCw, ArchiveRestore, Archive } from 'lucide-react';
+import { Loader2, RefreshCw, ArchiveRestore, Archive, Upload } from 'lucide-react';
 import { format } from 'date-fns';
+import Papa from 'papaparse';
 
 /**
  * AdminView Component.
@@ -39,6 +40,9 @@ export function AdminView({
     count: number;
     date: string | null;
   }>({ exists: false, count: 0, date: null });
+
+  const [isBackfilling, setIsBackfilling] = useState(false);
+  const [backfillFile, setBackfillFile] = useState<File | null>(null);
 
   const uncategorizedTxs = transactions.filter(
     (t) => !t._category || t._category === 'Uncategorized'
@@ -255,6 +259,53 @@ export function AdminView({
     }
   };
 
+  const handleBackfill = async () => {
+    if (!backfillFile) return;
+    setIsBackfilling(true);
+
+    Papa.parse(backfillFile, {
+      header: true,
+      skipEmptyLines: true,
+      complete: async (results) => {
+        try {
+          const transactions = results.data.map((row: any) => ({
+            Date: row['Posting Date'] || row['Date'] || '',
+            Description: row['Description'] || '',
+            Amount: parseFloat(row['Amount']) || 0,
+            Balance: row['Balance']
+              ? parseFloat(row['Balance'].toString().replace(/[^0-9.-]+/g, ''))
+              : undefined,
+          }));
+
+          const res = await fetch('/api/admin/backfill-and-reconcile', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ transactions }),
+          });
+
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Failed to backfill balances');
+
+          alert(
+            `Success! Successfully updated ${data.updatedBalances} balances and generated ${data.discrepanciesGenerated} discrepancies.`
+          );
+          setBackfillFile(null);
+          onDataChanged?.();
+          fetchData();
+        } catch (err: any) {
+          console.error(err);
+          alert('Error during backfill: ' + err.message);
+        } finally {
+          setIsBackfilling(false);
+        }
+      },
+      error: (error) => {
+        alert('CSV Parsing error: ' + error.message);
+        setIsBackfilling(false);
+      },
+    });
+  };
+
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[400px] gap-4">
@@ -372,6 +423,43 @@ export function AdminView({
                 <ArchiveRestore className="w-4 h-4" />
               )}
               {isSavingMapping ? 'Saving...' : 'Save Dictionary'}
+            </button>
+          </div>
+
+          <div className="flex items-center justify-between p-4 bg-slate-50 border border-slate-100 rounded-xl">
+            <div className="flex-1 mr-8">
+              <h4 className="font-semibold text-slate-700">Database Reconciliation & Backfill</h4>
+              <p className="text-sm text-slate-500 mt-1 mb-3">
+                Upload a CSV bank export to backfill historical balances and automatically generate
+                System Reconciliation Discrepancies for any detected mathematical gaps.
+              </p>
+              <input
+                type="file"
+                accept=".csv"
+                id="backfill-upload"
+                className="hidden"
+                onChange={(e) => setBackfillFile(e.target.files?.[0] || null)}
+              />
+              <label
+                htmlFor="backfill-upload"
+                className="inline-flex items-center gap-2 px-3 py-1.5 bg-white border border-slate-300 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-50 cursor-pointer transition-colors"
+                aria-label="Upload Backfill CSV"
+              >
+                <Upload className="w-4 h-4" />
+                {backfillFile ? backfillFile.name : 'Select CSV File'}
+              </label>
+            </div>
+            <button
+              onClick={handleBackfill}
+              disabled={isBackfilling || !backfillFile}
+              className="shrink-0 flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+            >
+              {isBackfilling ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <RefreshCw className="w-4 h-4" />
+              )}
+              {isBackfilling ? 'Processing...' : 'Process Backfill'}
             </button>
           </div>
         </div>

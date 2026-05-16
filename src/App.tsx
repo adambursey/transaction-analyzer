@@ -882,6 +882,37 @@ export default function App() {
       })
       .sort((a, b) => b.actual - a.actual);
 
+    // Calculate Balance History
+    const balanceHistory: { date: string; balance: number }[] = [];
+    let currentBalance: number | null = null;
+
+    // Sort all unfiltered transactions chronologically for balance math
+    const chronoSorted = [...parsedDataUnfiltered].sort((a, b) => {
+      const dateA = a[dateCol] ? new Date(a[dateCol]).getTime() : 0;
+      const dateB = b[dateCol] ? new Date(b[dateCol]).getTime() : 0;
+      return dateA - dateB;
+    });
+
+    for (const tx of chronoSorted) {
+      const hasValidBalance = tx.Balance !== undefined && tx.Balance !== null && tx.Balance !== '';
+
+      if (hasValidBalance) {
+        currentBalance = Number(tx.Balance);
+      } else if (currentBalance !== null) {
+        currentBalance = Number((currentBalance + (tx._parsedAmount || 0)).toFixed(2));
+      }
+
+      if (currentBalance !== null && tx[dateCol]) {
+        const d = new Date(tx[dateCol]);
+        if (!isNaN(d.getTime())) {
+          balanceHistory.push({
+            date: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`,
+            balance: currentBalance,
+          });
+        }
+      }
+    }
+
     setAnalysis({
       totalIncome: displayIncome,
       totalExpense: displayExpense,
@@ -897,6 +928,8 @@ export default function App() {
       budgetAnalysis,
       incomeAnalysis,
       periodMonths,
+      currentBalance,
+      balanceHistory,
       columnsIdentified: {
         date: dateCol,
         amount: amountCol,
@@ -1264,7 +1297,28 @@ export default function App() {
             </div>
 
             {/* KPI Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
+                    <Wallet className="w-6 h-6 text-blue-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-slate-500">Current Balance</p>
+                    <p className="text-2xl font-bold text-slate-900 whitespace-nowrap">
+                      {analysis.currentBalance !== null ? (
+                        `$${analysis.currentBalance.toLocaleString(undefined, {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}`
+                      ) : (
+                        <span className="text-slate-400 text-lg">No data</span>
+                      )}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
               <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
                 <div className="flex items-center gap-4">
                   <div className="w-12 h-12 bg-emerald-100 rounded-full flex items-center justify-center">
@@ -1428,6 +1482,67 @@ export default function App() {
                     </div>
                   </div>
                 )}
+              </div>
+
+              {/* Balance History Chart */}
+              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                <div className="p-6 flex items-center justify-between border-b border-slate-100">
+                  <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                    <Activity className="w-5 h-5 text-slate-400" />
+                    Account Balance History
+                  </h3>
+                </div>
+                <div className="p-6 h-64 w-full">
+                  {analysis.balanceHistory.length > 0 ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart
+                        data={analysis.balanceHistory}
+                        margin={{ top: 5, right: 20, bottom: 5, left: 0 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                        <XAxis
+                          dataKey="date"
+                          tickFormatter={(val) =>
+                            new Date(val).toLocaleDateString(undefined, {
+                              month: 'short',
+                              day: 'numeric',
+                            })
+                          }
+                          tick={{ fill: '#64748b', fontSize: 12 }}
+                          tickMargin={10}
+                          minTickGap={30}
+                        />
+                        <YAxis
+                          tickFormatter={(val) => `$${val}`}
+                          tick={{ fill: '#64748b', fontSize: 12 }}
+                          axisLine={false}
+                          tickLine={false}
+                        />
+                        <Tooltip
+                          formatter={(value: number) => [`$${value.toFixed(2)}`, 'Balance']}
+                          labelFormatter={(label) => new Date(label).toLocaleDateString()}
+                          contentStyle={{
+                            borderRadius: '8px',
+                            border: 'none',
+                            boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)',
+                          }}
+                        />
+                        <Line
+                          type="monotone"
+                          dataKey="balance"
+                          stroke="#2563eb"
+                          strokeWidth={3}
+                          dot={false}
+                          activeDot={{ r: 6, fill: '#2563eb', stroke: '#fff', strokeWidth: 2 }}
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div className="flex items-center justify-center h-full text-slate-400">
+                      No balance data available
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -2721,7 +2836,13 @@ export default function App() {
                         {filteredAndSortedTransactions.map((tx: any, idx: number) => (
                           <tr
                             key={idx}
-                            className={`hover:bg-slate-50 transition-colors group ${selectedTxIds.has(tx.id) ? 'bg-blue-50/50' : ''}`}
+                            className={`hover:bg-slate-50 transition-colors group ${
+                              selectedTxIds.has(tx.id)
+                                ? 'bg-blue-50/50'
+                                : tx._category === 'Reconciliation Discrepancy'
+                                  ? 'bg-red-50/50'
+                                  : ''
+                            }`}
                           >
                             <td
                               className="px-4 py-4 border-b border-slate-100 text-center"

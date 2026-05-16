@@ -78,4 +78,45 @@ describe('AdminView Component', () => {
       expect(window.alert).toHaveBeenCalledWith(expect.stringContaining('Moved 2 duplicate'));
     });
   });
+
+  it('handles backfill balances click', async () => {
+    (global.fetch as jest.Mock)
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ transactions: [] }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ imports: [] }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ count: 0 }) }) // Initial load
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ exists: false }) }) // Mapping status
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ success: true, updatedBalances: 1, discrepanciesGenerated: 1 }),
+      }) // Backfill action
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ transactions: [] }) }) // Reload
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ imports: [] }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ count: 0 }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ exists: false }) });
+
+    render(<AdminView />);
+    await waitFor(() => expect(screen.getByText('Admin Controls')).toBeInTheDocument());
+
+    const fileInput = screen.getByLabelText(/Upload Backfill CSV/i);
+    const file = new File(
+      ['Date,Description,Amount,Balance\n2026-05-01,Test,100,500'],
+      'backfill.csv',
+      { type: 'text/csv' }
+    );
+    await userEvent.upload(fileInput, file);
+
+    const backfillBtn = screen.getByRole('button', { name: /Process Backfill/i });
+    await userEvent.click(backfillBtn);
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      '/api/admin/backfill-and-reconcile',
+      expect.objectContaining({ method: 'POST' })
+    );
+
+    await waitFor(() => {
+      expect(window.alert).toHaveBeenCalledWith(
+        expect.stringContaining('Successfully updated 1 balances and generated 1 discrepancies')
+      );
+    });
+  });
 });

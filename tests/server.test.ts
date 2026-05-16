@@ -252,4 +252,88 @@ describe('Backend API Endpoints (Hermetic)', () => {
       expect(mockBatchCommit).toHaveBeenCalled();
     });
   });
+
+  describe('POST /api/admin/backfill-and-reconcile', () => {
+    it('should update existing balances and generate discrepancy transactions', async () => {
+      // Mock existing transactions:
+      // tx1: Date 1, Amount 100, Balance 100 (Anchor)
+      // tx2: Date 2, Amount 50 (no balance) -> Expected: 150
+      // tx3: Date 3, Amount 20, Balance 200 -> Expected 170. Gap = 30.
+      const mockDoc1 = {
+        id: 'doc1',
+        data: () => ({
+          Date: { toDate: () => new Date('2026-05-01') },
+          Amount: 100,
+          Balance: 100,
+          _signature: 'sig1',
+        }),
+      };
+      const mockDoc2 = {
+        id: 'doc2',
+        data: () => ({
+          Date: { toDate: () => new Date('2026-05-02') },
+          Amount: 50,
+          _signature: 'sig2',
+        }),
+      };
+      const mockDoc3 = {
+        id: 'doc3',
+        data: () => ({
+          Date: { toDate: () => new Date('2026-05-03') },
+          Amount: 20,
+          Balance: 200,
+          _signature: 'sig3',
+        }),
+      };
+
+      const mockGet = jest.fn().mockResolvedValue({
+        docs: [mockDoc1, mockDoc2, mockDoc3],
+      });
+
+      mockDbCollection.mockReturnValue({
+        where: jest.fn().mockReturnThis(),
+        get: mockGet,
+        doc: jest.fn().mockReturnValue({ id: 'new-discrepancy-id' }),
+      });
+
+      const mockBatchUpdate = jest.fn();
+      const mockBatchSet = jest.fn();
+      const mockBatchDelete = jest.fn();
+      const mockBatchCommit = jest.fn().mockResolvedValue([]);
+      mockDbBatch.mockReturnValue({
+        update: mockBatchUpdate,
+        set: mockBatchSet,
+        delete: mockBatchDelete,
+        commit: mockBatchCommit,
+      });
+
+      const payload = {
+        transactions: [
+          // Sending backfill for doc2
+          { Date: '2026-05-02', Description: 'Tx 2', Amount: 50, Balance: 150 },
+        ],
+      };
+
+      const response = await request(app)
+        .post('/api/admin/backfill-and-reconcile')
+        .set('Cookie', ['google_tokens={"refresh_token":"mock"}'])
+        .send(payload);
+
+      expect(response.status).toBe(200);
+
+      // Batch should commit
+      expect(mockBatchCommit).toHaveBeenCalled();
+
+      // Batch set should have been called to insert the reconciliation discrepancy (Gap = 30)
+      // Wait, if doc2 gets balance 150, current_balance at doc2 is 150.
+      // At doc3, current_balance + 20 = 170. But doc3 Balance = 200. Gap = 30.
+      expect(mockBatchSet).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          Amount: 30,
+          _category: 'Reconciliation Discrepancy',
+        })
+      );
+    });
+  });
 });

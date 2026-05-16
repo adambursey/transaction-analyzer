@@ -1445,6 +1445,118 @@ ${JSON.stringify(uniqueDescs)}
     }
   });
 
+  app.post('/api/admin/backfill-and-reconcile', async (req, res) => {
+    try {
+      const { transactions } = req.body;
+      if (!transactions || !Array.isArray(transactions)) {
+        return res.status(400).json({ error: 'Missing or invalid transactions payload' });
+      }
+
+      const firestore = new Firestore({ projectId: 'tx-analyzer-1777844550' });
+      const txCollection = firestore.collection(process.env.FIRESTORE_COLLECTION || 'transactions');
+
+      // Step 1: Backfill imported balances
+      let batch = firestore.batch();
+      let opCount = 0;
+      let updateCount = 0;
+      const batchSize = 400;
+
+      const commitBatch = async () => {
+        if (opCount > 0) {
+          await batch.commit();
+          batch = firestore.batch();
+          opCount = 0;
+        }
+      };
+
+      for (const tx of transactions) {
+        if (tx.Balance !== undefined && tx.Balance !== null) {
+          const sig = generateSignature(tx);
+          const existingQuery = await txCollection.where('_signature', '==', sig).get();
+          if (!existingQuery.empty) {
+            existingQuery.docs.forEach((doc) => {
+              batch.update(doc.ref, { Balance: tx.Balance });
+              opCount++;
+              updateCount++;
+            });
+            if (opCount >= batchSize) await commitBatch();
+          }
+        }
+      }
+      await commitBatch();
+
+      // Step 2 & 3 & 4: Reconcile Timeline
+      const allTxQuery = await txCollection.get();
+      const allDocs = allTxQuery.docs;
+
+      // Sort chronologically
+      const allData = allDocs.map((d) => ({ id: d.id, ref: d.ref, data: d.data() as any }));
+      allData.sort((a, b) => {
+        const dateA = a.data.Date && a.data.Date.toDate ? a.data.Date.toDate().getTime() : 0;
+        const dateB = b.data.Date && b.data.Date.toDate ? b.data.Date.toDate().getTime() : 0;
+        return dateA - dateB;
+      });
+
+      // Clear old discrepancies
+      for (const item of allData) {
+        if (item.data._category === 'Reconciliation Discrepancy') {
+          batch.delete(item.ref);
+          opCount++;
+          if (opCount >= batchSize) await commitBatch();
+        }
+      }
+
+      // Reconcile and create new ones
+      let currentBalance: number | null = null;
+      let discrepanciesAdded = 0;
+
+      for (const item of allData) {
+        if (item.data._category === 'Reconciliation Discrepancy') continue; // Skip those we are deleting
+
+        if (currentBalance === null) {
+          if (item.data.Balance !== undefined && item.data.Balance !== null) {
+            currentBalance = item.data.Balance;
+          }
+        } else {
+          currentBalance = Number((currentBalance + (item.data.Amount || 0)).toFixed(2));
+          if (item.data.Balance !== undefined && item.data.Balance !== null) {
+            const rowBalance = Number(item.data.Balance);
+            if (Math.abs(rowBalance - currentBalance) > 0.01) {
+              const gap = Number((rowBalance - currentBalance).toFixed(2));
+
+              // Create a new discrepancy transaction right before this one
+              const newRef = txCollection.doc();
+              batch.set(newRef, {
+                Date: item.data.Date,
+                Description: 'System Reconciliation Adjustment',
+                Amount: gap,
+                _category: 'Reconciliation Discrepancy',
+                Type: 'Adjustment',
+                status: 'reviewed',
+                importId: 'system_reconciliation',
+              });
+              opCount++;
+              discrepanciesAdded++;
+
+              if (opCount >= batchSize) await commitBatch();
+              currentBalance = rowBalance;
+            }
+          }
+        }
+      }
+      await commitBatch();
+
+      res.json({
+        success: true,
+        updatedBalances: updateCount,
+        discrepanciesGenerated: discrepanciesAdded,
+      });
+    } catch (err: any) {
+      console.error('Reconciliation error:', err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.get('/api/admin/migrate-dates', async (req, res) => {
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.setHeader('Cache-Control', 'no-cache');

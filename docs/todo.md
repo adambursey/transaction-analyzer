@@ -1,7 +1,4 @@
-- allow editing of transaction dates
-- duplication detection is not working for dates formatted differntly.  so 2/9/2026 and 2/10/2026 are correctly identified as different dates.  fix this for future imports and the run a one-time process to fix existing transactions and remove duplicates due to this bug
-- when importing, inform the user if there are duplicate transactions and if so, how many were skipped
-- remove the subcategory counts from the category view
+
 - set up ESLint/TSLint
 - set up Prettier
 - set up Husky to lint and format code before commits

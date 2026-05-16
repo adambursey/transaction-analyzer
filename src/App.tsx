@@ -43,12 +43,14 @@ import {
   FolderTree,
   Check,
   Edit3,
+  Archive,
 } from "lucide-react";
 import { format, parseISO, isValid, parse } from "date-fns";
 import { ImportModal } from "./components/ImportModal";
 import { ReviewQueue } from "./components/ReviewQueue";
 import { ImportHistory } from "./components/ImportHistory";
 import { CategoriesView } from "./components/CategoriesView";
+import { AdminView } from "./components/AdminView";
 
 const CATEGORY_COLORS = [
   "#3377FF",
@@ -104,7 +106,7 @@ export default function App() {
   const [showTableTotals, setShowTableTotals] = useState(false);
   const [budgetData, setBudgetData] = useState<any[]>([]);
   const [budgetHeaders, setBudgetHeaders] = useState<string[]>([]);
-  const [currentView, setCurrentView] = useState<"dashboard" | "transactions" | "budget" | "categories">("dashboard");
+  const [currentView, setCurrentView] = useState<"dashboard" | "transactions" | "budget" | "categories" | "admin">("dashboard");
   const [taxonomy, setTaxonomy] = useState<Record<string, string[]>>({});
   const [txFilterCategory, setTxFilterCategory] = useState("");
   const [txFilterSubcategory, setTxFilterSubcategory] = useState("");
@@ -125,6 +127,7 @@ export default function App() {
   const [isTxModalOpen, setIsTxModalOpen] = useState(false);
   const [editingTx, setEditingTx] = useState<any>(null);
   const [editTxAmount, setEditTxAmount] = useState("");
+  const [editTxDate, setEditTxDate] = useState("");
   const [editTxCategory, setEditTxCategory] = useState("");
   const [editTxSubcategory, setEditTxSubcategory] = useState("");
   const [isUpdatingTx, setIsUpdatingTx] = useState(false);
@@ -136,6 +139,8 @@ export default function App() {
   const [isBulkEditingTx, setIsBulkEditingTx] = useState(false);
   const [bulkEditTxCategory, setBulkEditTxCategory] = useState("");
   const [bulkEditTxSubcategory, setBulkEditTxSubcategory] = useState("");
+  const [txSearchText, setTxSearchText] = useState("");
+  const [txSortConfig, setTxSortConfig] = useState<{ key: string, direction: 'asc'|'desc' }>({ key: 'Date', direction: 'desc' });
   const [isBulkUpdatingTx, setIsBulkUpdatingTx] = useState(false);
 
   useEffect(() => {
@@ -315,13 +320,14 @@ export default function App() {
     }
   };
 
-  const handleBulkTxUpdate = async (updates: {id: string, category: string, subcategory: string}[]) => {
+  const handleBulkTxUpdate = async (updates: {id: string, category?: string, subcategory?: string, status?: string}[]) => {
     setIsBulkUpdatingTx(true);
     try {
       const payload = updates.map(u => ({
         id: u.id,
-        category: u.category,
-        subcategory: u.subcategory
+        ...(u.category !== undefined && { category: u.category }),
+        ...(u.subcategory !== undefined && { subcategory: u.subcategory }),
+        ...(u.status !== undefined && { status: u.status })
       }));
       const res = await fetch("/api/transaction/bulk-update", {
         method: "POST",
@@ -369,6 +375,7 @@ export default function App() {
         headers: fetchHeaders,
         body: JSON.stringify({
           id: editingTx.id,
+          date: editTxDate || undefined,
           amount: signedAmount,
           category: editTxCategory,
           subcategory: editTxSubcategory,
@@ -527,6 +534,22 @@ export default function App() {
     const monthlyTotals: Record<string, { income: number; expense: number }> =
       {};
 
+    const parsedDataUnfiltered = preParsedData
+      .map((row) => {
+        const rawAmount = row[amountCol];
+        if (!rawAmount) return null;
+        let amount = Number(String(rawAmount).replace(/[^0-9.-]+/g, ""));
+        if (isNaN(amount)) return null;
+
+        return {
+          ...row,
+          _parsedAmount: amount,
+          _category: row[categoryCol] || "Uncategorized",
+          _subcategory: subcategoryCol ? (row[subcategoryCol] || "") : ""
+        };
+      })
+      .filter((tx): tx is any => tx !== null);
+
         const parsedData = filteredData
           .map((row) => {
             const rawAmount = row[amountCol];
@@ -631,7 +654,7 @@ export default function App() {
     const sortedMonths = Array.from(monthsSet).sort((a, b) => {
       const dateA = parse(a, "MMM yyyy", new Date());
       const dateB = parse(b, "MMM yyyy", new Date());
-      return dateA.getTime() - dateB.getTime();
+      return dateB.getTime() - dateA.getTime();
     });
 
     // Auto-select logic: If selectedMonth is not in the current data set, pick the best default
@@ -641,9 +664,9 @@ export default function App() {
         setSelectedMonth(currentMonthStr);
         return;
       }
-      // 2. Try the latest available month in this year
+      // 2. Try the latest available month in this year (now at index 0)
       if (sortedMonths.length > 0) {
-        setSelectedMonth(sortedMonths[sortedMonths.length - 1]);
+        setSelectedMonth(sortedMonths[0]);
         return;
       }
       // 3. Fallback to All Months if no months found for this year
@@ -825,6 +848,8 @@ export default function App() {
       sortedMonths,
       transactionCount: parsedData.length,
       allTransactions: parsedData,
+      allTransactionsUnfiltered: parsedDataUnfiltered,
+      rawTransactions: preParsedData,
       budgetAnalysis,
       incomeAnalysis,
       periodMonths,
@@ -1010,6 +1035,17 @@ export default function App() {
                 >
                   <FolderTree className="w-4 h-4" />
                   Categories
+                </button>
+                <button
+                  onClick={() => setCurrentView("admin")}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${
+                    currentView === "admin"
+                      ? "bg-blue-50 text-blue-600"
+                      : "text-slate-500 hover:text-slate-900 hover:bg-slate-50"
+                  }`}
+                >
+                  <Settings className="w-4 h-4" />
+                  Admin
                 </button>
               </nav>
             )}
@@ -1900,7 +1936,7 @@ export default function App() {
         {isAuthenticated && currentView === "categories" && (
           <CategoriesView 
             taxonomy={taxonomy} 
-            transactions={analysis?.allTransactions || []}
+            transactions={analysis?.allTransactionsUnfiltered || []}
             onUpdate={fetchTaxonomy} 
             onCategorySelect={(cat, subcat) => {
               setTxFilterCategory(cat);
@@ -1928,7 +1964,22 @@ export default function App() {
 
             {/* Filters */}
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-              <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-7 gap-4">
+                <div className="col-span-1 md:col-span-2">
+                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">Search</label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-400">
+                      <Search className="w-4 h-4" />
+                    </div>
+                    <input
+                      type="text"
+                      className="bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full pl-9 p-2.5"
+                      placeholder="Search description, amount..."
+                      value={txSearchText}
+                      onChange={(e) => setTxSearchText(e.target.value)}
+                    />
+                  </div>
+                </div>
                 <div>
                   <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">Year</label>
                   <select
@@ -2105,13 +2156,66 @@ export default function App() {
                     >
                       <Edit3 className="w-4 h-4" /> Bulk Edit Category
                     </button>
+                    <button 
+                      onClick={() => {
+                        if (!confirm(`Are you sure you want to archive ${selectedTxIds.size} transactions? They will be removed from all calculations.`)) return;
+                        const updates = Array.from(selectedTxIds).map((id: string) => ({ id, status: 'archived' }));
+                        handleBulkTxUpdate(updates);
+                      }} 
+                      className="px-3 py-1.5 bg-red-900/40 hover:bg-red-800/60 text-red-200 text-sm rounded flex items-center gap-1 border border-red-800/50"
+                    >
+                      <Archive className="w-4 h-4" /> Archive Selected
+                    </button>
                   </div>
                 )}
               </div>
             )}
 
             {/* Transaction Table */}
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+            {(() => {
+              const filteredAndSortedTransactions = analysis.allTransactions
+                .filter((tx: any) => {
+                  if (selectedMonth !== "All Months" && tx._monthKey !== selectedMonth) return false;
+                  if (txFilterCategory && tx._category !== txFilterCategory) return false;
+                  if (txFilterSubcategory && tx._subcategory !== txFilterSubcategory) return false;
+                  if (txFilterType === "income" && tx._isExpense) return false;
+                  if (txFilterType === "expense" && !tx._isExpense) return false;
+                  if (txSearchText) {
+                    const searchLower = txSearchText.toLowerCase();
+                    const matchesDesc = tx.Description && tx.Description.toLowerCase().includes(searchLower);
+                    const matchesCat = tx._category && tx._category.toLowerCase().includes(searchLower);
+                    const matchesSubcat = tx._subcategory && tx._subcategory.toLowerCase().includes(searchLower);
+                    const matchesAmount = tx.Amount && String(tx.Amount).toLowerCase().includes(searchLower);
+                    if (!matchesDesc && !matchesCat && !matchesSubcat && !matchesAmount) return false;
+                  }
+                  return true;
+                })
+                .sort((a: any, b: any) => {
+                  if (!txSortConfig) return 0;
+                  const { key, direction } = txSortConfig;
+                  
+                  let valA = a[key];
+                  let valB = b[key];
+                  
+                  // Special cases for sorting
+                  if (key === analysis.columnsIdentified.amount) {
+                    valA = a._parsedAmount;
+                    valB = b._parsedAmount;
+                  } else if (key === analysis.columnsIdentified.date) {
+                    valA = new Date(a._date).getTime();
+                    valB = new Date(b._date).getTime();
+                  } else {
+                    valA = String(valA || "").toLowerCase();
+                    valB = String(valB || "").toLowerCase();
+                  }
+
+                  if (valA < valB) return direction === "asc" ? -1 : 1;
+                  if (valA > valB) return direction === "asc" ? 1 : -1;
+                  return 0;
+                });
+
+              return (
+                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
               <div className="overflow-x-auto max-h-[700px]">
                 <table className="w-full text-sm text-left border-separate border-spacing-0">
                   <thead className="text-xs text-slate-500 uppercase bg-slate-50 sticky top-0 z-20">
@@ -2120,34 +2224,12 @@ export default function App() {
                         <input 
                           type="checkbox"
                           checked={
-                            analysis.allTransactions.filter((tx: any) => {
-                              if (selectedMonth !== "All Months" && tx._monthKey !== selectedMonth) return false;
-                              if (txFilterCategory && tx._category !== txFilterCategory) return false;
-                              if (txFilterSubcategory && tx._subcategory !== txFilterSubcategory) return false;
-                              if (txFilterType === "income" && tx._isExpense) return false;
-                              if (txFilterType === "expense" && !tx._isExpense) return false;
-                              return true;
-                            }).length > 0 && 
-                            selectedTxIds.size === analysis.allTransactions.filter((tx: any) => {
-                              if (selectedMonth !== "All Months" && tx._monthKey !== selectedMonth) return false;
-                              if (txFilterCategory && tx._category !== txFilterCategory) return false;
-                              if (txFilterSubcategory && tx._subcategory !== txFilterSubcategory) return false;
-                              if (txFilterType === "income" && tx._isExpense) return false;
-                              if (txFilterType === "expense" && !tx._isExpense) return false;
-                              return true;
-                            }).length
+                            filteredAndSortedTransactions.length > 0 && 
+                            selectedTxIds.size === filteredAndSortedTransactions.length
                           }
                           onChange={(e) => {
                             if (e.target.checked) {
-                              const filtered = analysis.allTransactions.filter((tx: any) => {
-                                if (selectedMonth !== "All Months" && tx._monthKey !== selectedMonth) return false;
-                                if (txFilterCategory && tx._category !== txFilterCategory) return false;
-                                if (txFilterSubcategory && tx._subcategory !== txFilterSubcategory) return false;
-                                if (txFilterType === "income" && tx._isExpense) return false;
-                                if (txFilterType === "expense" && !tx._isExpense) return false;
-                                return true;
-                              });
-                              setSelectedTxIds(new Set(filtered.map((t: any) => t.id)));
+                              setSelectedTxIds(new Set(filteredAndSortedTransactions.map((t: any) => t.id)));
                             } else {
                               setSelectedTxIds(new Set());
                             }
@@ -2166,23 +2248,31 @@ export default function App() {
                         if (isDescription) widthClass = 'min-w-[200px] break-words';
 
                         return (
-                          <th key={header} className={`px-6 py-4 font-semibold border-b border-slate-100 bg-slate-50 ${widthClass}`}>
-                            {header}
+                          <th 
+                            key={header} 
+                            className={`px-6 py-4 font-semibold border-b border-slate-100 bg-slate-50 cursor-pointer hover:bg-slate-200 transition-colors ${widthClass}`}
+                            onClick={() => {
+                              setTxSortConfig(current => ({
+                                key: header,
+                                direction: current?.key === header && current.direction === 'asc' ? 'desc' : 'asc'
+                              }));
+                            }}
+                          >
+                            <div className="flex items-center gap-1">
+                              {header}
+                              {txSortConfig?.key === header && (
+                                <span className="text-slate-400">
+                                  {txSortConfig.direction === 'asc' ? '↑' : '↓'}
+                                </span>
+                              )}
+                            </div>
                           </th>
                         );
                       })}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {analysis.allTransactions
-                      .filter((tx: any) => {
-                        if (selectedMonth !== "All Months" && tx._monthKey !== selectedMonth) return false;
-                        if (txFilterCategory && tx._category !== txFilterCategory) return false;
-                        if (txFilterSubcategory && tx._subcategory !== txFilterSubcategory) return false;
-                        if (txFilterType === "income" && tx._isExpense) return false;
-                        if (txFilterType === "expense" && !tx._isExpense) return false;
-                        return true;
-                      })
+                    {filteredAndSortedTransactions
                       .map((tx: any, idx: number) => (
                         <tr 
                           key={idx} 
@@ -2207,6 +2297,7 @@ export default function App() {
                             const isCategory = header === analysis.columnsIdentified.category;
                             const isSubcategory = header === analysis.columnsIdentified.subcategory;
                             const isDescription = header === analysis.columnsIdentified.description;
+                            const isDate = header === analysis.columnsIdentified.date;
                             
                             let dotColor = null;
                             if (isCategory) {
@@ -2231,6 +2322,15 @@ export default function App() {
                                       // Default row click action
                                       setEditingTx(tx);
                                       setEditTxAmount(tx._parsedAmount.toFixed(2));
+                                      const d = new Date(tx._date);
+                                      if (!isNaN(d.getTime())) {
+                                        const y = d.getFullYear();
+                                        const m = String(d.getMonth() + 1).padStart(2, '0');
+                                        const day = String(d.getDate()).padStart(2, '0');
+                                        setEditTxDate(`${y}-${m}-${day}`);
+                                      } else {
+                                        setEditTxDate("");
+                                      }
                                       setEditTxCategory(tx._category);
                                       setEditTxSubcategory(tx._subcategory);
                                       setIsTxModalOpen(true);
@@ -2251,6 +2351,10 @@ export default function App() {
                                     )}
                                     {String(val)}
                                   </div>
+                                ) : isDate ? (
+                                  tx._date instanceof Date && !isNaN(tx._date.getTime())
+                                    ? `${tx._date.getMonth() + 1}/${tx._date.getDate()}/${tx._date.getFullYear()}`
+                                    : val
                                 ) : (
                                   val
                                 )}
@@ -2267,15 +2371,7 @@ export default function App() {
                           const isAmount = header === analysis.columnsIdentified.amount;
                           if (idx === 0) return <td key={header} className="px-6 py-4 border-t border-slate-200">Total</td>;
                           if (isAmount) {
-                            const filtered = analysis.allTransactions.filter((tx: any) => {
-                              if (selectedMonth !== "All Months" && tx._monthKey !== selectedMonth) return false;
-                              if (txFilterCategory && tx._category !== txFilterCategory) return false;
-                              if (txFilterSubcategory && tx._subcategory !== txFilterSubcategory) return false;
-                              if (txFilterType === "income" && tx._isExpense) return false;
-                              if (txFilterType === "expense" && !tx._isExpense) return false;
-                              return true;
-                            });
-                            const total = filtered.reduce((sum: number, tx: any) => sum + (tx._isExpense ? -tx._parsedAmount : tx._parsedAmount), 0);
+                            const total = filteredAndSortedTransactions.reduce((sum: number, tx: any) => sum + (tx._isExpense ? -tx._parsedAmount : tx._parsedAmount), 0);
                             return (
                               <td key={header} className={`px-6 py-4 text-right font-mono border-t border-slate-200 whitespace-nowrap ${total >= 0 ? 'text-emerald-600' : 'text-slate-900'}`}>
                                 ${Math.abs(total).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -2290,8 +2386,12 @@ export default function App() {
                 </table>
               </div>
             </div>
+            );
+          })()}
           </div>
         )}
+        
+        {currentView === "admin" && <AdminView onDataChanged={fetchSheetData} />}
       </main>
       {/* Budget Modal */}
       {isBudgetModalOpen && editingBudget && (
@@ -2375,6 +2475,16 @@ export default function App() {
             </div>
             <div className="p-6 space-y-6">
               <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">Date</label>
+                <input
+                  type="date"
+                  value={editTxDate}
+                  onChange={(e) => setEditTxDate(e.target.value)}
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all font-mono text-slate-900"
+                />
+              </div>
+
+              <div>
                 <label className="block text-sm font-semibold text-slate-700 mb-2">Amount</label>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-mono">$</span>
@@ -2427,6 +2537,16 @@ export default function App() {
               </div>
             </div>
             <div className="p-6 bg-slate-50 flex gap-3">
+              <button
+                onClick={() => {
+                  if (!confirm("Are you sure you want to archive this transaction? It will be removed from all calculations.")) return;
+                  handleBulkTxUpdate([{ id: editingTx.id, status: 'archived' }]);
+                  setIsTxModalOpen(false);
+                }}
+                className="flex-[0.5] px-4 py-3 bg-red-100 text-red-700 font-bold rounded-xl hover:bg-red-200 transition-all flex items-center justify-center gap-2"
+              >
+                <Archive className="w-4 h-4" />
+              </button>
               <button
                 onClick={() => setIsTxModalOpen(false)}
                 className="flex-1 px-4 py-3 border border-slate-200 text-slate-600 font-bold rounded-xl hover:bg-white transition-all"

@@ -214,7 +214,6 @@ export function CategoriesView({ taxonomy, transactions, onUpdate, onCategorySel
                         onClick={() => onCategorySelect && onCategorySelect(cat)}
                       >
                         {cat}
-                        <span className="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full" title="Number of subcategories">{taxonomy[cat].length}</span>
                         <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full" title="Number of transactions">
                           {transactions.filter(t => t._category === cat).length} tx
                         </span>
@@ -243,9 +242,6 @@ export function CategoriesView({ taxonomy, transactions, onUpdate, onCategorySel
                               onClick={() => onCategorySelect && onCategorySelect(cat, "")}
                             >
                               No Subcategory
-                              <span className="text-xs bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded-full ml-2">
-                                {transactions.filter(t => t._category === cat && !t._subcategory).length}
-                              </span>
                             </span>
                           </li>
                         )}
@@ -266,9 +262,6 @@ export function CategoriesView({ taxonomy, transactions, onUpdate, onCategorySel
                                     onClick={() => onCategorySelect && onCategorySelect(cat, subcat)}
                                   >
                                     {subcat}
-                                    <span className="text-xs bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded-full ml-2">
-                                      {transactions.filter(t => t._category === cat && t._subcategory === subcat).length}
-                                    </span>
                                   </span>
                                   <div className="flex items-center gap-1 opacity-0 group-hover/sub:opacity-100 transition-opacity">
                                     <button onClick={() => setEditingSubcategory({ cat, old: subcat, new: subcat })} className="p-1 text-slate-400 hover:text-blue-600 rounded">

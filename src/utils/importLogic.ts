@@ -1,8 +1,42 @@
 export function generateSignature(transaction: any): string {
-  const date = transaction.Date || "";
+  let dateStr = "";
+  const rawDate = transaction.Date;
+  
+  if (rawDate) {
+    let d: Date | null = null;
+    if (rawDate instanceof Date) {
+      d = rawDate;
+    } else if (typeof rawDate.toDate === 'function') {
+      d = rawDate.toDate();
+    } else if (typeof rawDate === 'object' && rawDate._seconds) {
+      d = new Date(rawDate._seconds * 1000);
+    } else {
+      const fallback = new Date(rawDate);
+      if (!isNaN(fallback.getTime())) {
+        d = fallback;
+      }
+    }
+
+    if (d) {
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      dateStr = `${year}-${month}-${day}`;
+    } else {
+      dateStr = String(rawDate).trim();
+    }
+  }
+
   const desc = transaction.Description || "";
-  const amount = transaction.Amount !== undefined ? transaction.Amount : "";
-  return `${date}|${desc}|${amount}`;
+  let parsedAmount = 0;
+  if (typeof transaction.Amount === 'number') {
+    parsedAmount = transaction.Amount;
+  } else if (typeof transaction.Amount === 'string') {
+    parsedAmount = Number(transaction.Amount.replace(/[^0-9.-]+/g, ""));
+  }
+  const amount = isNaN(parsedAmount) ? "" : parsedAmount;
+
+  return `${dateStr}|${desc}|${amount}`;
 }
 
 export function deduplicateTransactions(incoming: any[], existingSignatures: Set<string>): any[] {

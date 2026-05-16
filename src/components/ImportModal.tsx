@@ -56,6 +56,7 @@ export function ImportModal({ isOpen, onClose, onImportComplete, onImportStarted
           let processed = 0;
           let exactMatchesCount = 0;
           let pendingReviewCount = 0;
+          let skippedCountTotal = 0;
           let hasGeminiError = false;
           let lastGeminiError = "";
           const importId = `import_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
@@ -125,6 +126,10 @@ export function ImportModal({ isOpen, onClose, onImportComplete, onImportStarted
                 if (pendingMatch) pendingReviewCount += parseInt(pendingMatch[1], 10);
               }
               
+              if (data.skippedCount) {
+                skippedCountTotal += data.skippedCount;
+              }
+              
               if (data.geminiError) {
                 hasGeminiError = true;
                 lastGeminiError = data.geminiError;
@@ -139,8 +144,11 @@ export function ImportModal({ isOpen, onClose, onImportComplete, onImportStarted
             next();
           });
 
-          console.log(`[ImportModal] Finished all chunks. Final processed count: ${processed}. Exact: ${exactMatchesCount}, Pending: ${pendingReviewCount}`);
-          const finalMessage = `Imported ${total} transactions. ${exactMatchesCount} auto-categorized, ${pendingReviewCount} pending review.`;
+          console.log(`[ImportModal] Finished all chunks. Final processed count: ${processed}. Exact: ${exactMatchesCount}, Pending: ${pendingReviewCount}, Skipped: ${skippedCountTotal}`);
+          let finalMessage = `Imported ${total - skippedCountTotal} transactions. ${exactMatchesCount} auto-categorized, ${pendingReviewCount} pending review.`;
+          if (skippedCountTotal > 0) {
+            finalMessage += ` Skipped ${skippedCountTotal} duplicates.`;
+          }
           
           onImportComplete({ 
             success: true, 

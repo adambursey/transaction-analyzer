@@ -4,11 +4,54 @@ import cookieParser from "cookie-parser";
 import { google } from "googleapis";
 import path from "path";
 import dotenv from "dotenv";
-import { Firestore, FieldValue } from "@google-cloud/firestore";
+import { Firestore, FieldValue, Timestamp } from "@google-cloud/firestore";
 import { GoogleGenAI } from "@google/genai";
 import { deduplicateTransactions, exactMatchTransactions, generateSignature } from "./src/utils/importLogic.js";
 
 dotenv.config();
+
+function parseStrictDate(dateStr: any): Date | null {
+  if (!dateStr) return null;
+  if (dateStr instanceof Date) return new Date(dateStr.getFullYear(), dateStr.getMonth(), dateStr.getDate(), 12, 0, 0, 0);
+  if (typeof dateStr.toDate === 'function') {
+    const d = dateStr.toDate();
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12, 0, 0, 0);
+  }
+  if (dateStr._seconds) {
+    const d = new Date(dateStr._seconds * 1000);
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12, 0, 0, 0);
+  }
+
+  const str = String(dateStr).trim();
+  // If it's already a YYYY-MM-DD string
+  if (str.match(/^\d{4}-\d{2}-\d{2}$/)) {
+    const [y, m, d] = str.split('-');
+    return new Date(parseInt(y), parseInt(m) - 1, parseInt(d), 12, 0, 0, 0);
+  }
+  // If it's a MM/DD/YYYY string
+  const parts = str.split(/[\/\-]/);
+  if (parts.length === 3) {
+    let year, month, day;
+    if (parts[0].length === 4) { // YYYY/MM/DD
+      year = parseInt(parts[0]);
+      month = parseInt(parts[1]) - 1;
+      day = parseInt(parts[2]);
+    } else { // MM/DD/YYYY
+      month = parseInt(parts[0]) - 1;
+      day = parseInt(parts[1]);
+      year = parseInt(parts[2]);
+      if (year < 100) year += 2000;
+    }
+    const d = new Date(year, month, day, 12, 0, 0, 0);
+    if (!isNaN(d.getTime())) return d;
+  }
+  
+  const fallback = new Date(str);
+  if (!isNaN(fallback.getTime())) {
+    return new Date(fallback.getFullYear(), fallback.getMonth(), fallback.getDate(), 12, 0, 0, 0);
+  }
+  return null;
+}
 
 function indexToColumn(index: number): string {
   let column = "";
@@ -200,6 +243,14 @@ async function startServer() {
       const transactionsCollection = firestore.collection("transactions");
       const importsCollection = firestore.collection("imports");
 
+      const parsedTransactions = transactions.map((tx: any) => {
+        const d = parseStrictDate(tx.Date);
+        return {
+          ...tx,
+          Date: d ? Timestamp.fromDate(d) : null
+        };
+      });
+
       // 1. Fetch existing transactions to build deduplication set and exact match dictionary
       const snapshot = await transactionsCollection.get();
       const existingSignatures = new Set<string>();
@@ -217,10 +268,10 @@ async function startServer() {
       });
 
       // 2. Deduplicate incoming
-      const uniqueIncoming = deduplicateTransactions(transactions, existingSignatures);
+      const uniqueIncoming = deduplicateTransactions(parsedTransactions, existingSignatures);
 
       if (uniqueIncoming.length === 0) {
-        res.json({ success: true, message: "No new transactions to import. All were duplicates." });
+        res.json({ success: true, message: "No new transactions to import. All were duplicates.", importedCount: 0, skippedCount: parsedTransactions.length });
         return;
       }
 
@@ -346,9 +397,12 @@ ${JSON.stringify(uniqueFuzzyDescs)}
         await batch.commit();
       }
 
+      const skippedCount = parsedTransactions.length - uniqueIncoming.length;
       const responsePayload: any = { 
         success: true, 
-        message: `Imported ${allToInsert.length} transactions. ${exactMatches.length} auto-categorized, ${finalFuzzyMatches.length} pending review.` 
+        message: `Imported ${allToInsert.length} transactions. ${exactMatches.length} auto-categorized, ${finalFuzzyMatches.length} pending review. Skipped ${skippedCount} duplicates.`,
+        importedCount: allToInsert.length,
+        skippedCount: skippedCount
       };
       if (geminiErrorMessage) {
         responsePayload.geminiError = `Gemini categorization was skipped: ${geminiErrorMessage}`;
@@ -466,9 +520,16 @@ ${JSON.stringify(uniqueFuzzyDescs)}
       const transactionsSnapshot = await transactionsCollection.get();
       const data = transactionsSnapshot.docs.map(doc => {
         const raw = doc.data();
-        return {
-          id: doc.id,
-          Date: raw['Date'] || raw['Posting Date'] || raw['date'] || '',
+          let dateVal = raw['Date'] || raw['Posting Date'] || raw['date'] || '';
+          if (dateVal && typeof dateVal.toDate === 'function') {
+            dateVal = dateVal.toDate().toISOString();
+          } else if (dateVal && dateVal._seconds) {
+            dateVal = new Date(dateVal._seconds * 1000).toISOString();
+          }
+          
+          return {
+            id: doc.id,
+            Date: dateVal,
           Description: raw['Description'] || raw['description'] || '',
           Amount: raw['Amount'] !== undefined ? raw['Amount'] : (raw['amount'] || 0),
           Type: raw['Type'] || raw['type'] || '',
@@ -478,7 +539,7 @@ ${JSON.stringify(uniqueFuzzyDescs)}
           status: raw['status'] || 'reviewed', // default to reviewed if missing
           importId: raw['importId'] || ''
         };
-      });
+      }).filter(tx => tx.status !== 'archived');
 
       let headers = ['Date', 'Description', 'Amount', 'Type', 'Balance', 'Category', 'Subcategory', 'status'];
 
@@ -679,7 +740,7 @@ ${JSON.stringify(uniqueFuzzyDescs)}
       return;
     }
 
-    const { id, amount, category, subcategory, status } = req.body;
+    const { id, amount, category, subcategory, status, date } = req.body;
     if (!id || amount === undefined || !category) {
       res.status(400).json({ error: "Missing required fields" });
       return;
@@ -695,6 +756,19 @@ ${JSON.stringify(uniqueFuzzyDescs)}
       }
       if (status !== undefined) {
         updatesObj.status = status;
+      }
+      if (date !== undefined) {
+        const d = parseStrictDate(date);
+        const newDateVal = d ? Timestamp.fromDate(d) : null;
+        updatesObj.Date = newDateVal;
+        
+        // Regenerate the signature so it doesn't accidentally trigger duplicate checks using the old date
+        const docSnap = await transactionsCollection.doc(id).get();
+        if (docSnap.exists) {
+          const data = docSnap.data();
+          const newSignature = generateSignature({ ...data, Date: newDateVal });
+          updatesObj.signature = newSignature;
+        }
       }
 
       await transactionsCollection.doc(id).update(updatesObj);
@@ -839,6 +913,152 @@ ${JSON.stringify(uniqueFuzzyDescs)}
       res.json({ inUse: !snapshot.empty });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
+    }
+  });
+  app.get("/api/admin/archived-transactions", async (req, res) => {
+    const authHeader = req.headers.authorization;
+    let tokensCookie = req.cookies.google_tokens;
+    if (authHeader && authHeader.startsWith("Bearer ")) tokensCookie = decodeURIComponent(authHeader.split(" ")[1]);
+    if (!tokensCookie) return res.status(401).json({ error: "Not authenticated" });
+
+    try {
+      const firestore = new Firestore({ projectId: "tx-analyzer-1777844550" });
+      const snapshot = await firestore.collection("transactions").where("status", "==", "archived").get();
+      const transactions = snapshot.docs.map(doc => {
+        const raw = doc.data();
+        let dateVal = raw['Date'] || raw['Posting Date'] || raw['date'] || '';
+        if (dateVal && typeof dateVal.toDate === 'function') {
+          dateVal = dateVal.toDate().toISOString();
+        } else if (dateVal && dateVal._seconds) {
+          dateVal = new Date(dateVal._seconds * 1000).toISOString();
+        }
+        return {
+          id: doc.id,
+          ...raw,
+          Date: dateVal,
+          Amount: raw['Amount'] !== undefined ? raw['Amount'] : (raw['amount'] || 0)
+        };
+      });
+      res.json({ transactions });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/admin/all-imports", async (req, res) => {
+    const authHeader = req.headers.authorization;
+    let tokensCookie = req.cookies.google_tokens;
+    if (authHeader && authHeader.startsWith("Bearer ")) tokensCookie = decodeURIComponent(authHeader.split(" ")[1]);
+    if (!tokensCookie) return res.status(401).json({ error: "Not authenticated" });
+
+    try {
+      const firestore = new Firestore({ projectId: "tx-analyzer-1777844550" });
+      const snapshot = await firestore.collection("imports").orderBy("date", "desc").get();
+      const imports = snapshot.docs.map(doc => doc.data());
+      res.json({ imports });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+  app.post("/api/admin/unarchive-import", async (req, res) => {
+    const authHeader = req.headers.authorization;
+    let tokensCookie = req.cookies.google_tokens;
+    if (authHeader && authHeader.startsWith("Bearer ")) tokensCookie = decodeURIComponent(authHeader.split(" ")[1]);
+    if (!tokensCookie) return res.status(401).json({ error: "Not authenticated" });
+
+    try {
+      const { importId } = req.body;
+      const firestore = new Firestore({ projectId: "tx-analyzer-1777844550" });
+      await firestore.collection("imports").doc(importId).update({ archived: false });
+      
+      const txSnapshot = await firestore.collection("transactions").where("importId", "==", importId).get();
+      const batch = firestore.batch();
+      txSnapshot.docs.forEach((doc) => {
+        batch.update(doc.ref, { status: 'reviewed' });
+      });
+      await batch.commit();
+
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/admin/migrate-dates", async (req, res) => {
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    
+    const sendEvent = (msg: string) => {
+      res.write(`${msg}\n`);
+    };
+
+    try {
+      sendEvent("Starting date migration and duplicate cleanup...");
+      const firestore = new Firestore({ projectId: "tx-analyzer-1777844550" });
+      const snapshot = await firestore.collection("transactions").get();
+      const seenSignatures = new Set<string>();
+      
+      let deletedCount = 0;
+      let updatedCount = 0;
+      let batch = firestore.batch();
+      let opsInBatch = 0;
+      let totalProcessed = 0;
+      const totalDocs = snapshot.docs.length;
+
+      sendEvent(`Found ${totalDocs} transactions to process.`);
+
+      for (const doc of snapshot.docs) {
+        const data = doc.data();
+        
+        const rawDate = data.Date || data['Posting Date'] || data.date;
+        let newDateVal = rawDate !== undefined ? rawDate : null;
+        const d = parseStrictDate(rawDate);
+        if (d) {
+          newDateVal = Timestamp.fromDate(d);
+        } else if (newDateVal === undefined) {
+          newDateVal = null;
+        }
+
+        // Clean up old aliases if they exist
+        const updates: any = { Date: newDateVal };
+        if (data['Posting Date'] !== undefined) updates['Posting Date'] = FieldValue.delete();
+        if (data.date !== undefined) updates.date = FieldValue.delete();
+
+        const newSig = generateSignature({ ...data, Date: newDateVal });
+        updates.signature = newSig;
+
+        if (seenSignatures.has(newSig)) {
+          batch.delete(doc.ref);
+          deletedCount++;
+          opsInBatch++;
+        } else {
+          seenSignatures.add(newSig);
+          batch.update(doc.ref, updates);
+          updatedCount++;
+          opsInBatch++;
+        }
+
+        totalProcessed++;
+
+        if (opsInBatch >= 400) {
+          await batch.commit();
+          batch = firestore.batch();
+          opsInBatch = 0;
+          sendEvent(`Processed ${totalProcessed}/${totalDocs} transactions...`);
+        }
+      }
+      
+      if (opsInBatch > 0) {
+        await batch.commit();
+      }
+      
+      sendEvent(`Migration complete! Deleted ${deletedCount} duplicates, migrated ${updatedCount} transactions.`);
+      res.end();
+    } catch (error: any) {
+      console.error("[Server] Error migrating dates:", error);
+      sendEvent(`Error: ${error.message}`);
+      res.end();
     }
   });
 

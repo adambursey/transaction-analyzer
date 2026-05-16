@@ -9,11 +9,13 @@ SERVICE_NAME="transaction-analyzer"
 # Allowed emails for access control
 ALLOWED_EMAILS="abursey@gmail.com,annb1015@gmail.com"
 
-# TODO: Please fill in your secrets before running this script!
-GOOGLE_CLIENT_ID="489644758279-10834amjc0k3moguamitr22msih1qu59.apps.googleusercontent.com"
-GOOGLE_CLIENT_SECRET="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"
-SHEET_URL="https://docs.google.com/spreadsheets/d/1BcpK8KVnEHMQdBXSeV2tdcU7_5ch0fthAmbzGteXX-Y/edit?gid=2121452751#gid=2121452751"
-GEMINI_API_KEY="AQ.Ab8RN6LDY98LySzNkVds6E47FSZ4slFP1qNoVDCTZuOOPL5WXQ"
+# Load secrets from .env file
+if [ -f .env ]; then
+  export $(grep -v '^#' .env | xargs)
+else
+  echo "Error: .env file not found. Please create it and add your secrets."
+  exit 1
+fi
 
 echo "Deploying to Google Cloud Run ($PROJECT_ID)..."
 

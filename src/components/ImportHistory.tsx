@@ -113,7 +113,12 @@ export function ImportHistory({ onRollbackComplete, refreshTrigger = 0 }: Import
               className="flex items-center justify-between bg-slate-800 p-4 rounded-lg border border-slate-700"
             >
               <div>
-                <p className="text-white font-medium">{imp.filename}</p>
+                <p className="text-white font-medium flex items-center gap-3">
+                  {imp.filename}
+                  <span className="text-xs font-semibold px-2 py-0.5 rounded-md bg-blue-500/20 text-blue-300 border border-blue-500/30">
+                    {imp.account || 'Checking'}
+                  </span>
+                </p>
                 <p className="text-slate-400 text-sm mt-1">
                   {format(new Date(imp.date), "MMM d, yyyy 'at' h:mm a")} • {imp.count} transactions
                 </p>

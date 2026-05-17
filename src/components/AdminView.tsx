@@ -22,6 +22,7 @@ export function AdminView({
   onDataChanged?: () => void;
   transactions?: any[];
 }) {
+  const [selectedAccount, setSelectedAccount] = useState<'Checking' | 'Savings'>('Checking');
   const [loading, setLoading] = useState(true);
   const [archivedTxs, setArchivedTxs] = useState<any[]>([]);
   const [allImports, setAllImports] = useState<any[]>([]);
@@ -112,9 +113,9 @@ export function AdminView({
     setLoading(true);
     try {
       const [txRes, importsRes, dupRes, mappingRes] = await Promise.all([
-        fetch('/api/admin/archived-transactions'),
-        fetch('/api/admin/all-imports'),
-        fetch('/api/admin/duplicate-stats'),
+        fetch(`/api/admin/archived-transactions?account=${selectedAccount}`),
+        fetch(`/api/admin/all-imports`),
+        fetch(`/api/admin/duplicate-stats?account=${selectedAccount}`),
         fetch('/api/admin/saved-mapping-status'),
       ]);
       const txData = await txRes.json();
@@ -159,7 +160,7 @@ export function AdminView({
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [selectedAccount]);
 
   const handleRestoreTxs = async () => {
     if (selectedTxIds.size === 0) return;
@@ -303,7 +304,11 @@ export function AdminView({
 
     setIsDeduplicating(true);
     try {
-      const res = await fetch('/api/admin/deduplicate', { method: 'POST' });
+      const res = await fetch('/api/admin/deduplicate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account: selectedAccount }),
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to deduplicate');
 
@@ -322,7 +327,11 @@ export function AdminView({
   const handleScanPotentialDuplicates = async () => {
     setIsScanningDupes(true);
     try {
-      const res = await fetch('/api/admin/scan-potential-duplicates', { method: 'POST' });
+      const res = await fetch('/api/admin/scan-potential-duplicates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account: selectedAccount }),
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to scan');
 
@@ -362,7 +371,7 @@ export function AdminView({
           const res = await fetch('/api/admin/backfill-and-reconcile', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ transactions }),
+            body: JSON.stringify({ transactions, account: selectedAccount }),
           });
 
           const data = await res.json();
@@ -401,12 +410,28 @@ export function AdminView({
     <div className="space-y-8 animate-in fade-in duration-500">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold text-slate-900">Admin Controls</h2>
-        <button
-          onClick={fetchData}
-          className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
-        >
-          <RefreshCw className="w-4 h-4" /> Refresh Data
-        </button>
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            <label htmlFor="admin-account-select" className="text-sm font-medium text-slate-700">
+              Account:
+            </label>
+            <select
+              id="admin-account-select"
+              value={selectedAccount}
+              onChange={(e) => setSelectedAccount(e.target.value as any)}
+              className="bg-white border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2 transition-all shadow-sm"
+            >
+              <option value="Checking">Checking</option>
+              <option value="Savings">Savings</option>
+            </select>
+          </div>
+          <button
+            onClick={fetchData}
+            className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors shadow-sm"
+          >
+            <RefreshCw className="w-4 h-4" /> Refresh Data
+          </button>
+        </div>
       </div>
 
       <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 mb-8">
@@ -858,6 +883,9 @@ export function AdminView({
                     <div className="flex items-center gap-2 mb-1">
                       <span className="font-mono text-xs font-semibold text-slate-500 bg-white px-2 py-0.5 rounded border border-slate-200">
                         {imp.id}
+                      </span>
+                      <span className="font-mono text-xs font-semibold px-2 py-0.5 rounded border bg-blue-50 text-blue-600 border-blue-200">
+                        {imp.account || 'Checking'}
                       </span>
                       {imp.archived && (
                         <span className="text-[10px] font-bold uppercase tracking-wider text-red-600 bg-red-100 px-2 py-0.5 rounded">

@@ -108,6 +108,9 @@ export default function App() {
   const [showTableTotals, setShowTableTotals] = useState(false);
   const [budgetData, setBudgetData] = useState<any[]>([]);
   const [budgetHeaders, setBudgetHeaders] = useState<string[]>([]);
+  const [selectedAccount, setSelectedAccount] = useState<'All' | 'Checking' | 'Savings'>(
+    'Checking'
+  );
 
   const [currentView, setCurrentView] = useState<
     'dashboard' | 'transactions' | 'budget' | 'categories' | 'admin'
@@ -202,7 +205,7 @@ export default function App() {
       analyzeData(data, headers);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedYear, selectedMonth, data, headers, budgetData]);
+  }, [selectedYear, selectedMonth, data, headers, budgetData, selectedAccount]);
 
   async function fetchTaxonomy() {
     try {
@@ -538,11 +541,12 @@ export default function App() {
       return;
     }
 
-    // Filter data by selected year
-    const filteredData =
-      selectedYear === 'All'
-        ? preParsedData
-        : preParsedData.filter((row) => row._year === selectedYear);
+    // Filter data by selected year and account
+    const filteredData = preParsedData.filter((row) => {
+      const yearMatch = selectedYear === 'All' || row._year === selectedYear;
+      const accountMatch = selectedAccount === 'All' || row.Account === selectedAccount;
+      return yearMatch && accountMatch;
+    });
 
     // Clean and parse data
     let totalIncome = 0;
@@ -572,7 +576,10 @@ export default function App() {
           _effectiveDateStr: row._effectiveDateStr,
         };
       })
-      .filter((tx): tx is any => tx !== null);
+      .filter(
+        (tx): tx is any =>
+          tx !== null && (selectedAccount === 'All' || tx.Account === selectedAccount)
+      );
 
     const parsedData = filteredData
       .map((row) => {
@@ -1244,6 +1251,24 @@ export default function App() {
                 <h2 className="text-lg font-bold text-slate-900">Financial Overview</h2>
               </div>
               <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2">
+                  <label
+                    htmlFor="account-select-dashboard"
+                    className="text-sm font-medium text-slate-700"
+                  >
+                    Account:
+                  </label>
+                  <select
+                    id="account-select-dashboard"
+                    value={selectedAccount}
+                    onChange={(e) => setSelectedAccount(e.target.value as any)}
+                    className="bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2 transition-all hover:bg-white"
+                  >
+                    <option value="All">All Accounts</option>
+                    <option value="Checking">Checking</option>
+                    <option value="Savings">Savings</option>
+                  </select>
+                </div>
                 <div className="flex items-center gap-2">
                   <label
                     htmlFor="year-select-dashboard"
@@ -2472,6 +2497,24 @@ export default function App() {
                   </div>
                 </div>
                 <div>
+                  <label
+                    htmlFor="transactions-account-select"
+                    className="block text-xs font-semibold text-slate-500 uppercase mb-2"
+                  >
+                    Account
+                  </label>
+                  <select
+                    id="transactions-account-select"
+                    value={selectedAccount}
+                    onChange={(e) => setSelectedAccount(e.target.value as any)}
+                    className="w-full bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
+                  >
+                    <option value="All">All Accounts</option>
+                    <option value="Checking">Checking</option>
+                    <option value="Savings">Savings</option>
+                  </select>
+                </div>
+                <div>
                   <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">
                     Year
                   </label>
@@ -3285,6 +3328,9 @@ export default function App() {
               setImportStatus({ type: 'error', message: msg });
             } else {
               setImportStatus({ type: 'success', message: msg });
+            }
+            if (result.targetAccount) {
+              setSelectedAccount(result.targetAccount as any);
             }
             fetchSheetData();
             setImportHistoryRefresh((prev) => prev + 1);

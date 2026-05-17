@@ -259,9 +259,16 @@ export async function createApp() {
       return;
     }
 
-    const { transactions, filename, importId: clientImportId, useSavedMapping } = req.body;
+    const {
+      transactions,
+      filename,
+      importId: clientImportId,
+      useSavedMapping,
+      account: targetAccount,
+    } = req.body;
+    const accountStr = targetAccount || 'Checking';
     console.log(
-      `[Server] Import request for file: ${filename}, payload size: ${transactions?.length} transactions`
+      `[Server] Import request for file: ${filename}, payload size: ${transactions?.length} transactions, account: ${accountStr}`
     );
 
     if (!transactions || !Array.isArray(transactions)) {
@@ -307,6 +314,7 @@ export async function createApp() {
           Date: d ? Timestamp.fromDate(d) : null,
           Amount: isNaN(parsedAmount) ? 0 : parsedAmount,
           Balance: isNaN(parsedBalance as number) ? undefined : parsedBalance,
+          Account: accountStr,
         };
       });
 
@@ -329,10 +337,10 @@ export async function createApp() {
         const sig = generateSignature(data);
         existingSignatures.add(sig);
 
-        // Map Date+Amount to document ID and description for potential duplicate checking
+        // Map Account+Date+Amount to document ID and description for potential duplicate checking
         const parts = sig.split('|');
-        if (parts.length >= 3) {
-          const dateAmountKey = `${parts[0]}|${parts[2]}`;
+        if (parts.length >= 4) {
+          const dateAmountKey = `${parts[0]}|${parts[1]}|${parts[3]}`;
           // If there are multiple identical date+amount txs, this just stores the last one.
           // That's acceptable for a "potential duplicate" flag anchor.
           existingDateAmountMap.set(dateAmountKey, {
@@ -374,8 +382,8 @@ export async function createApp() {
       for (const tx of uniqueIncoming) {
         const sig = generateSignature(tx);
         const parts = sig.split('|');
-        if (parts.length >= 3) {
-          const dateAmountKey = `${parts[0]}|${parts[2]}`;
+        if (parts.length >= 4) {
+          const dateAmountKey = `${parts[0]}|${parts[1]}|${parts[3]}`;
           const existingMatch = existingDateAmountMap.get(dateAmountKey);
 
           let isPotentialDupe = false;
@@ -517,6 +525,7 @@ ${JSON.stringify(uniqueFuzzyDescs)}
           importId,
           date: new Date().toISOString(),
           filename: filename || 'Unknown file',
+          account: accountStr,
           count: FieldValue.increment(allToInsert.length),
         },
         { merge: true }
@@ -637,7 +646,8 @@ ${JSON.stringify(uniqueFuzzyDescs)}
 
     try {
       const firestore = new Firestore({ projectId: 'tx-analyzer-1777844550' });
-      const snapshot = await firestore.collection('imports').orderBy('date', 'desc').get();
+      const query: any = firestore.collection('imports');
+      const snapshot = await query.orderBy('date', 'desc').get();
       const imports = snapshot.docs.map((doc) => doc.data()).filter((imp) => !imp.archived);
       res.json({ imports });
     } catch (err: any) {
@@ -708,6 +718,7 @@ ${JSON.stringify(uniqueFuzzyDescs)}
             status: raw['status'] || 'reviewed', // default to reviewed if missing
             importId: raw['importId'] || '',
             duplicateOfId: raw['duplicateOfId'] || undefined,
+            Account: raw['Account'] || 'Checking',
           };
         })
         .filter((tx) => tx.status !== 'archived');
@@ -1352,10 +1363,11 @@ ${JSON.stringify(uniqueDescs)}
 
     try {
       const firestore = new Firestore({ projectId: 'tx-analyzer-1777844550' });
-      const snapshot = await firestore
-        .collection('transactions')
-        .where('status', '==', 'archived')
-        .get();
+      let query: any = firestore.collection('transactions').where('status', '==', 'archived');
+      if (req.query.account && req.query.account !== 'All') {
+        query = query.where('Account', '==', req.query.account as string);
+      }
+      const snapshot = await query.get();
       const transactions = snapshot.docs.map((doc) => {
         const raw = doc.data();
         let dateVal = raw['Date'] || raw['Posting Date'] || raw['date'] || '';
@@ -1386,7 +1398,8 @@ ${JSON.stringify(uniqueDescs)}
 
     try {
       const firestore = new Firestore({ projectId: 'tx-analyzer-1777844550' });
-      const snapshot = await firestore.collection('imports').orderBy('date', 'desc').get();
+      const query: any = firestore.collection('imports');
+      const snapshot = await query.orderBy('date', 'desc').get();
       const imports = snapshot.docs.map((doc) => doc.data());
       res.json({ imports });
     } catch (err: any) {
@@ -1430,7 +1443,11 @@ ${JSON.stringify(uniqueDescs)}
 
     try {
       const firestore = new Firestore({ projectId: 'tx-analyzer-1777844550' });
-      const snapshot = await firestore.collection('transactions').get();
+      let query: any = firestore.collection('transactions');
+      if (req.query.account && req.query.account !== 'All') {
+        query = query.where('Account', '==', req.query.account as string);
+      }
+      const snapshot = await query.get();
 
       const sigMap = new Map<string, number>();
       let duplicateCount = 0;
@@ -1458,8 +1475,13 @@ ${JSON.stringify(uniqueDescs)}
     if (!tokensCookie) return res.status(401).json({ error: 'Not authenticated' });
 
     try {
+      const targetAccount = req.query.account || req.body.account;
       const firestore = new Firestore({ projectId: 'tx-analyzer-1777844550' });
-      const snapshot = await firestore.collection('transactions').get();
+      let query: any = firestore.collection('transactions');
+      if (targetAccount && targetAccount !== 'All') {
+        query = query.where('Account', '==', targetAccount);
+      }
+      const snapshot = await query.get();
 
       const groups = new Map<string, Array<{ id: string; ref: any; data: any }>>();
 
@@ -1530,8 +1552,13 @@ ${JSON.stringify(uniqueDescs)}
     if (!tokensCookie) return res.status(401).json({ error: 'Not authenticated' });
 
     try {
+      const targetAccount = req.query.account || req.body.account;
       const firestore = new Firestore({ projectId: 'tx-analyzer-1777844550' });
-      const snapshot = await firestore.collection('transactions').get();
+      let query: any = firestore.collection('transactions');
+      if (targetAccount && targetAccount !== 'All') {
+        query = query.where('Account', '==', targetAccount);
+      }
+      const snapshot = await query.get();
 
       // Group by Date + Amount
       const groups = new Map<string, Array<{ id: string; ref: any; data: any }>>();
@@ -1671,12 +1698,16 @@ ${JSON.stringify(uniqueDescs)}
 
   app.post('/api/admin/backfill-and-reconcile', async (req, res) => {
     try {
-      const { transactions } = req.body;
+      const { transactions, account } = req.body;
       if (!transactions || !Array.isArray(transactions)) {
         return res.status(400).json({ error: 'Missing or invalid transactions payload' });
       }
 
       const firestore = new Firestore({ projectId: 'tx-analyzer-1777844550' });
+      let txQuery: any = firestore.collection(process.env.FIRESTORE_COLLECTION || 'transactions');
+      if (account && account !== 'All') {
+        txQuery = txQuery.where('Account', '==', account);
+      }
       const txCollection = firestore.collection(process.env.FIRESTORE_COLLECTION || 'transactions');
 
       // Step 1: Backfill imported balances
@@ -1694,15 +1725,19 @@ ${JSON.stringify(uniqueDescs)}
       };
 
       // Step 1: Fetch all data ONCE to avoid multiple reads
-      const allTxQuery = await txCollection.get();
-      const allData = allTxQuery.docs.map((d) => ({ id: d.id, ref: d.ref, data: d.data() as any }));
+      const allTxQuery = await txQuery.get();
+      const allData = allTxQuery.docs.map((d: any) => ({
+        id: d.id,
+        ref: d.ref,
+        data: d.data() as any,
+      }));
 
       // Build a map of Date+Amount -> array of transactions for fast lookup
       const dbDateAmountMap = new Map<string, { ref: any; data: any }[]>();
       allData.forEach((item) => {
         const sigParts = generateSignature(item.data).split('|');
-        if (sigParts.length >= 3) {
-          const key = `${sigParts[0]}|${sigParts[2]}`;
+        if (sigParts.length >= 4) {
+          const key = `${sigParts[0]}|${sigParts[1]}|${sigParts[3]}`;
           if (!dbDateAmountMap.has(key)) dbDateAmountMap.set(key, []);
           dbDateAmountMap.get(key)!.push(item);
         }
@@ -1802,6 +1837,7 @@ ${JSON.stringify(uniqueDescs)}
                 Type: 'Adjustment',
                 status: 'reviewed',
                 importId: 'system_reconciliation',
+                Account: account && account !== 'All' ? account : 'Checking',
               });
               opCount++;
               discrepanciesAdded++;
@@ -1821,6 +1857,47 @@ ${JSON.stringify(uniqueDescs)}
       });
     } catch (err: any) {
       console.error('Reconciliation error:', err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/admin/migrate-to-checking', async (req, res) => {
+    try {
+      const firestore = new Firestore({ projectId: 'tx-analyzer-1777844550' });
+      const transactionsCollection = firestore.collection('transactions');
+
+      // Note: Firestore doesn't have an 'exists' or 'is undefined' query operator.
+      // Since this is a one-time migration and the dataset is likely small enough,
+      // we'll fetch all transactions and update the ones missing the Account field.
+      const snapshot = await transactionsCollection.get();
+      let count = 0;
+
+      const batchSize = 400;
+      let batch = firestore.batch();
+      let operationsInBatch = 0;
+
+      for (const doc of snapshot.docs) {
+        const data = doc.data();
+        if (!data.Account) {
+          batch.update(doc.ref, { Account: 'Checking' });
+          operationsInBatch++;
+          count++;
+
+          if (operationsInBatch >= batchSize) {
+            await batch.commit();
+            batch = firestore.batch();
+            operationsInBatch = 0;
+          }
+        }
+      }
+
+      if (operationsInBatch > 0) {
+        await batch.commit();
+      }
+
+      res.json({ success: true, updatedCount: count });
+    } catch (err: any) {
+      console.error('Migration failed:', err);
       res.status(500).json({ error: err.message });
     }
   });

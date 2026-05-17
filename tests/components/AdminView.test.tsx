@@ -77,7 +77,13 @@ describe('AdminView Component', () => {
     await userEvent.click(dedupeBtn);
 
     expect(window.confirm).toHaveBeenCalled();
-    expect(global.fetch).toHaveBeenCalledWith('/api/admin/deduplicate', { method: 'POST' });
+    expect(global.fetch).toHaveBeenCalledWith(
+      '/api/admin/deduplicate',
+      expect.objectContaining({
+        method: 'POST',
+        body: expect.stringMatching(/"account":"Checking"/),
+      })
+    );
 
     await waitFor(() => {
       expect(window.alert).toHaveBeenCalledWith(expect.stringContaining('Moved 2 duplicate'));
@@ -126,7 +132,10 @@ describe('AdminView Component', () => {
 
     expect(global.fetch).toHaveBeenCalledWith(
       '/api/admin/backfill-and-reconcile',
-      expect.objectContaining({ method: 'POST' })
+      expect.objectContaining({
+        method: 'POST',
+        body: expect.stringMatching(/"account":"Checking"/),
+      })
     );
 
     await waitFor(() => {

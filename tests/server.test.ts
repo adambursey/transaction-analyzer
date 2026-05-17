@@ -203,6 +203,7 @@ describe('Backend API Endpoints (Hermetic)', () => {
       const payload = {
         file_name: 'test.csv',
         importId: 'import_123',
+        account: 'Checking',
         transactions: [{ Date: '2026-05-01', Description: 'Test TX', Amount: 100, Balance: 250.5 }],
       };
 
@@ -223,8 +224,14 @@ describe('Backend API Endpoints (Hermetic)', () => {
 
   describe('POST /api/admin/deduplicate', () => {
     it('should deduplicate transactions', async () => {
-      const mockDoc1 = { id: 'doc1', data: () => ({ _signature: 'sig1', Amount: 10 }) };
-      const mockDoc2 = { id: 'doc2', data: () => ({ _signature: 'sig1', Amount: 10 }) }; // Duplicate
+      const mockDoc1 = {
+        id: 'doc1',
+        data: () => ({ _signature: 'Checking|sig1', Amount: 10, Account: 'Checking' }),
+      };
+      const mockDoc2 = {
+        id: 'doc2',
+        data: () => ({ _signature: 'Checking|sig1', Amount: 10, Account: 'Checking' }),
+      }; // Duplicate
       const mockGet = jest.fn().mockResolvedValue({
         docs: [mockDoc1, mockDoc2],
       });
@@ -244,7 +251,8 @@ describe('Backend API Endpoints (Hermetic)', () => {
 
       const response = await request(app)
         .post('/api/admin/deduplicate')
-        .set('Cookie', ['google_tokens={"refresh_token":"mock"}']);
+        .set('Cookie', ['google_tokens={"refresh_token":"mock"}'])
+        .send({ account: 'Checking' });
 
       expect(response.status).toBe(200);
       expect(response.body.deletedCount).toBe(1);
@@ -265,7 +273,8 @@ describe('Backend API Endpoints (Hermetic)', () => {
           Date: { toDate: () => new Date('2026-05-01') },
           Amount: 100,
           Balance: 100,
-          _signature: 'sig1',
+          Account: 'Checking',
+          _signature: 'Checking|sig1',
         }),
       };
       const mockDoc2 = {
@@ -273,7 +282,8 @@ describe('Backend API Endpoints (Hermetic)', () => {
         data: () => ({
           Date: { toDate: () => new Date('2026-05-02') },
           Amount: 50,
-          _signature: 'sig2',
+          Account: 'Checking',
+          _signature: 'Checking|sig2',
         }),
       };
       const mockDoc3 = {
@@ -282,7 +292,8 @@ describe('Backend API Endpoints (Hermetic)', () => {
           Date: { toDate: () => new Date('2026-05-03') },
           Amount: 20,
           Balance: 200,
-          _signature: 'sig3',
+          Account: 'Checking',
+          _signature: 'Checking|sig3',
         }),
       };
 
@@ -312,6 +323,7 @@ describe('Backend API Endpoints (Hermetic)', () => {
           // Sending backfill for doc2
           { Date: '2026-05-02', Description: 'Tx 2', Amount: 50, Balance: 150 },
         ],
+        account: 'Checking',
       };
 
       const response = await request(app)

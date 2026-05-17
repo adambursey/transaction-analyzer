@@ -83,13 +83,20 @@ describe('ImportModal Component', () => {
     });
 
     await waitFor(() => {
-      // The body should contain the properly parsed float balance
+      // The body should contain the properly parsed float balance and selected account
       expect(global.fetch).toHaveBeenCalledWith(
         '/api/import',
         expect.objectContaining({
           body: expect.stringMatching(/"Balance":1234\.56/),
         })
       );
+
+      const calls = (global.fetch as jest.Mock).mock.calls;
+      const importCall = calls.find((call) => call[0] === '/api/import');
+      expect(importCall).toBeDefined();
+      const payload = JSON.parse(importCall[1].body);
+      expect(payload.account).toBe('Checking');
+
       expect(mockOnImportComplete).toHaveBeenCalledWith(
         expect.objectContaining({
           success: true,

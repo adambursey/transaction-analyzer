@@ -8,7 +8,12 @@ interface ImportModalProps {
   onClose: () => void;
   onImportStarted?: (totalCount: number) => void;
   onImportProgress?: (processed: number, total: number) => void;
-  onImportComplete: (result: { success: boolean; message: string; geminiError?: string }) => void;
+  onImportComplete: (result: {
+    success: boolean;
+    message: string;
+    geminiError?: string;
+    targetAccount?: string;
+  }) => void;
   totalTransactionsCount?: number;
 }
 
@@ -35,6 +40,7 @@ export function ImportModal({
   const [file, setFile] = useState<File | null>(null);
   const [isImporting, setIsImporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [targetAccount, setTargetAccount] = useState<'Checking' | 'Savings'>('Checking');
 
   const [useSavedMapping, setUseSavedMapping] = useState(false);
   const [savedMappingStatus, setSavedMappingStatus] = useState<{
@@ -85,6 +91,7 @@ export function ImportModal({
       complete: async (results) => {
         try {
           const transactions = results.data.map((row: any) => ({
+            Account: targetAccount,
             Date: row['Posting Date'] || row['Date'] || '',
             Description: row['Description'] || '',
             Amount: parseFloat(row['Amount']) || 0,
@@ -177,6 +184,7 @@ export function ImportModal({
                   transactions: chunk,
                   importId,
                   useSavedMapping: totalTransactionsCount < 100 ? useSavedMapping : false,
+                  account: targetAccount,
                 }),
               });
 
@@ -231,10 +239,15 @@ export function ImportModal({
             success: true,
             message: finalMessage,
             geminiError: hasGeminiError ? lastGeminiError : undefined,
+            targetAccount,
           });
         } catch (err: any) {
           console.error('[ImportModal] Error caught in complete callback:', err);
-          onImportComplete({ success: false, message: err.message || 'Error importing' });
+          onImportComplete({
+            success: false,
+            message: err.message || 'Error importing',
+            targetAccount,
+          });
         }
       },
       error: (err) => {
@@ -276,6 +289,21 @@ export function ImportModal({
               </span>
               <span className="text-slate-500 text-sm">Chase format supported</span>
             </label>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <label htmlFor="targetAccount" className="text-sm font-medium text-slate-300">
+              Target Account
+            </label>
+            <select
+              id="targetAccount"
+              value={targetAccount}
+              onChange={(e) => setTargetAccount(e.target.value as 'Checking' | 'Savings')}
+              className="bg-slate-800 border border-slate-700 text-white text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5"
+            >
+              <option value="Checking">Checking</option>
+              <option value="Savings">Savings</option>
+            </select>
           </div>
 
           {error && (

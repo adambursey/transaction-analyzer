@@ -15,28 +15,30 @@ describe('importLogic', () => {
       const sig2 = generateSignature({ ...tx, id: 'ignore-me', status: 'reviewed' });
       expect(sig1).toBe(sig2);
       // We expect the signature to be a deterministic concatenation
-      expect(sig1).toBe('2026-05-01|uber eats|-20.5');
+      expect(sig1).toBe('Checking|2026-05-01|uber eats|-20.5');
     });
 
     it('should handle missing fields gracefully', () => {
       const tx = { Description: 'UBER EATS' };
       const sig = generateSignature(tx);
-      expect(sig).toBe('|uber eats|0');
+      expect(sig).toBe('Checking||uber eats|0');
     });
   });
 
   describe('deduplicateTransactions', () => {
     it('should filter out transactions that exist in the signatures set', () => {
-      const existingSignatures = new Set(['2026-05-01|uber eats|-20.5']);
+      const existingSignatures = new Set(['Checking|2026-05-01|uber eats|-20.5']);
       const incoming = [
-        { Date: '05/01/2026', Description: 'UBER EATS', Amount: -20.5 }, // Duplicate
+        { Date: '05/01/2026', Description: 'UBER EATS', Amount: -20.5 }, // Duplicate in Checking
+        { Account: 'Savings', Date: '05/01/2026', Description: 'UBER EATS', Amount: -20.5 }, // Same details, different account (New)
         { Date: '05/01/2026', Description: 'AMAZON', Amount: -100 }, // New
       ];
 
       const unique = deduplicateTransactions(incoming, existingSignatures);
 
-      expect(unique.length).toBe(1);
-      expect(unique[0].Description).toBe('AMAZON');
+      expect(unique.length).toBe(2);
+      expect(unique[0].Account).toBe('Savings');
+      expect(unique[1].Description).toBe('AMAZON');
     });
   });
 
@@ -205,12 +207,16 @@ describe('importLogic', () => {
   });
 
   describe('areTransactionsTheSame', () => {
-    it('should return false immediately if Dates or Amounts differ', () => {
+    it('should return false immediately if Accounts, Dates, or Amounts differ', () => {
       const tx1 = { Date: '05/01/2026', Amount: -20, Description: 'TARGET' };
       const tx2 = { Date: '05/02/2026', Amount: -20, Description: 'TARGET' }; // Different date
       const result = areTransactionsTheSame(tx1, tx2);
       expect(result.isMatch).toBe(false);
       expect(result.matchType).toBeNull();
+
+      const tx3 = { Account: 'Savings', Date: '05/01/2026', Amount: -20, Description: 'TARGET' }; // Different account
+      const result2 = areTransactionsTheSame(tx1, tx3);
+      expect(result2.isMatch).toBe(false);
     });
 
     it('should return exact match for identical normalized descriptions', () => {

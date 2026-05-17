@@ -49,7 +49,9 @@ export function generateSignature(transaction: any): string {
   }
   const amount = isNaN(parsedAmount) ? '' : parsedAmount;
 
-  return `${dateStr}|${desc}|${amount}`;
+  const account = String(transaction.Account || 'Checking');
+
+  return `${account}|${dateStr}|${desc}|${amount}`;
 }
 
 /**
@@ -220,7 +222,7 @@ export function areTransactionsTheSame(
   const sig1 = generateSignature(tx1).split('|');
   const sig2 = generateSignature(tx2).split('|');
 
-  if (sig1[0] !== sig2[0] || sig1[2] !== sig2[2]) {
+  if (sig1[0] !== sig2[0] || sig1[1] !== sig2[1] || sig1[3] !== sig2[3]) {
     return { isMatch: false, matchType: null, score: 0 };
   }
 

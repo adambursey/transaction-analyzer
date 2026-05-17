@@ -40,6 +40,10 @@ import {
   Check,
   Edit3,
   Archive,
+  ArrowRightLeft,
+  ArrowDownLeft,
+  ArrowUpRight,
+  Scale,
 } from 'lucide-react';
 import { format, isValid, parse } from 'date-fns';
 import { ImportModal } from './components/ImportModal';
@@ -551,6 +555,9 @@ export default function App() {
     // Clean and parse data
     let totalIncome = 0;
     let totalExpense = 0;
+    let transfersIn = 0;
+    let transfersOut = 0;
+    let transfersVolume = 0;
     const categoryTotals: Record<string, number> = {};
     const categoryMonthlyTotals: Record<string, Record<string, number>> = {};
     const categorySubcategoryTotals: Record<string, Record<string, number>> = {};
@@ -559,7 +566,16 @@ export default function App() {
       Record<string, Record<string, number>>
     > = {};
     const monthsSet = new Set<string>();
-    const monthlyTotals: Record<string, { income: number; expense: number }> = {};
+    const monthlyTotals: Record<
+      string,
+      {
+        income: number;
+        expense: number;
+        transfersIn: number;
+        transfersOut: number;
+        transfersVolume: number;
+      }
+    > = {};
 
     const parsedDataUnfiltered = preParsedData
       .map((row) => {
@@ -616,7 +632,11 @@ export default function App() {
 
         monthsSet.add(monthKey);
 
-        if (isExpense) {
+        if (category === 'Internal Transfer') {
+          if (isExpense) transfersOut += amount;
+          else transfersIn += amount;
+          transfersVolume += amount;
+        } else if (isExpense) {
           totalExpense += amount;
           categoryTotals[category] = (categoryTotals[category] || 0) + amount;
 
@@ -663,12 +683,28 @@ export default function App() {
         }
 
         if (!monthlyTotals[monthKey]) {
-          monthlyTotals[monthKey] = { income: 0, expense: 0 };
+          monthlyTotals[monthKey] = {
+            income: 0,
+            expense: 0,
+            transfersIn: 0,
+            transfersOut: 0,
+            transfersVolume: 0,
+          };
         }
-        if (isExpense) {
-          monthlyTotals[monthKey].expense += amount;
+
+        if (category !== 'Internal Transfer') {
+          if (isExpense) {
+            monthlyTotals[monthKey].expense += amount;
+          } else {
+            monthlyTotals[monthKey].income += amount;
+          }
         } else {
-          monthlyTotals[monthKey].income += amount;
+          if (isExpense) {
+            monthlyTotals[monthKey].transfersOut += amount;
+          } else {
+            monthlyTotals[monthKey].transfersIn += amount;
+          }
+          monthlyTotals[monthKey].transfersVolume += amount;
         }
 
         return {
@@ -711,6 +747,9 @@ export default function App() {
     // Calculate month-specific totals for KPIs and charts if a month is selected
     let displayIncome = totalIncome;
     let displayExpense = totalExpense;
+    let displayTransfersIn = transfersIn;
+    let displayTransfersOut = transfersOut;
+    let displayTransfersVolume = transfersVolume;
     let displayCategoryChartData = Object.entries(categoryTotals)
       .map(([name, value]) => ({ name, value }))
       .sort((a, b) => b.value - a.value)
@@ -719,6 +758,9 @@ export default function App() {
     if (selectedMonth !== 'All Months') {
       displayIncome = monthlyTotals[selectedMonth]?.income || 0;
       displayExpense = monthlyTotals[selectedMonth]?.expense || 0;
+      displayTransfersIn = monthlyTotals[selectedMonth]?.transfersIn || 0;
+      displayTransfersOut = monthlyTotals[selectedMonth]?.transfersOut || 0;
+      displayTransfersVolume = monthlyTotals[selectedMonth]?.transfersVolume || 0;
 
       const monthCategoryTotals: Record<string, number> = {};
       Object.entries(categoryMonthlyTotals).forEach(([cat, months]) => {
@@ -883,7 +925,7 @@ export default function App() {
 
     // Calculate Balance History
     const balanceHistory: { date: string; balance: number }[] = [];
-    let currentBalance: number | null = null;
+    const currentBalances: Record<string, number> = {};
 
     // Sort all unfiltered transactions chronologically for balance math
     const chronoSorted = [...parsedDataUnfiltered].sort((a, b) => {
@@ -893,23 +935,33 @@ export default function App() {
     });
 
     for (const tx of chronoSorted) {
+      const account = tx.Account || 'Default';
       const hasValidBalance = tx.Balance !== undefined && tx.Balance !== null && tx.Balance !== '';
 
       if (hasValidBalance) {
-        currentBalance = Number(tx.Balance);
-      } else if (currentBalance !== null) {
-        currentBalance = Number((currentBalance + (tx._parsedAmount || 0)).toFixed(2));
+        currentBalances[account] = Number(tx.Balance);
+      } else if (currentBalances[account] !== undefined) {
+        currentBalances[account] = Number(
+          (currentBalances[account] + (tx._parsedAmount || 0)).toFixed(2)
+        );
       }
 
-      if (currentBalance !== null && tx[dateCol]) {
+      const totalBalance = Object.values(currentBalances).reduce((sum, bal) => sum + bal, 0);
+
+      if (Object.keys(currentBalances).length > 0 && tx[dateCol]) {
         const d = new Date(tx[dateCol]);
         if (!isNaN(d.getTime())) {
           balanceHistory.push({
             date: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`,
-            balance: currentBalance,
+            balance: totalBalance,
           });
         }
       }
+    }
+
+    let currentBalance: number | null = null;
+    if (Object.keys(currentBalances).length > 0) {
+      currentBalance = Object.values(currentBalances).reduce((sum, bal) => sum + bal, 0);
     }
 
     let filteredBalanceHistory = balanceHistory;
@@ -932,6 +984,9 @@ export default function App() {
       totalIncome: displayIncome,
       totalExpense: displayExpense,
       net: displayIncome - displayExpense,
+      transfersIn: displayTransfersIn,
+      transfersOut: displayTransfersOut,
+      transfersVolume: displayTransfersVolume,
       categoryChartData: displayCategoryChartData,
       monthlyChartData,
       categoryTableData,
@@ -1802,6 +1857,89 @@ export default function App() {
                 </div>
               )}
             </div>
+
+            {/* Money Movement Summary */}
+            {analysis &&
+              (analysis.transfersIn > 0 ||
+                analysis.transfersOut > 0 ||
+                analysis.transfersVolume > 0) && (
+                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+                  <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
+                    <ArrowRightLeft className="w-5 h-5 text-indigo-500" />
+                    Internal Money Movement
+                  </h3>
+                  {selectedAccount === 'All' ? (
+                    <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 bg-indigo-100 rounded-full flex items-center justify-center">
+                        <RefreshCw className="w-6 h-6 text-indigo-600" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-slate-500">Total Volume Moved</p>
+                        <p className="text-2xl font-bold text-slate-900 whitespace-nowrap">
+                          $
+                          {(analysis.transfersVolume / 2).toLocaleString(undefined, {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}
+                        </p>
+                        <p className="text-xs text-slate-400 mt-1">
+                          Cross-account transfers do not affect global net cash flow.
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      <div className="flex items-center gap-4">
+                        <div className="w-10 h-10 bg-emerald-100 rounded-full flex items-center justify-center">
+                          <ArrowDownLeft className="w-5 h-5 text-emerald-600" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium text-slate-500">Transferred In</p>
+                          <p className="text-xl font-bold text-slate-900 whitespace-nowrap">
+                            +$
+                            {analysis.transfersIn.toLocaleString(undefined, {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-4">
+                        <div className="w-10 h-10 bg-rose-100 rounded-full flex items-center justify-center">
+                          <ArrowUpRight className="w-5 h-5 text-rose-600" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium text-slate-500">Transferred Out</p>
+                          <p className="text-xl font-bold text-slate-900 whitespace-nowrap">
+                            -$
+                            {analysis.transfersOut.toLocaleString(undefined, {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-4">
+                        <div className="w-10 h-10 bg-indigo-100 rounded-full flex items-center justify-center">
+                          <Scale className="w-5 h-5 text-indigo-600" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium text-slate-500">Net Transfer Flow</p>
+                          <p
+                            className={`text-xl font-bold whitespace-nowrap ${analysis.transfersIn - analysis.transfersOut >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}
+                          >
+                            {analysis.transfersIn - analysis.transfersOut >= 0 ? '+' : '-'}$
+                            {Math.abs(analysis.transfersIn - analysis.transfersOut).toLocaleString(
+                              undefined,
+                              { minimumFractionDigits: 2, maximumFractionDigits: 2 }
+                            )}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
           </div>
         )}
 

@@ -348,4 +348,75 @@ describe('Backend API Endpoints (Hermetic)', () => {
       );
     });
   });
+
+  describe('POST /api/admin/match-transfers', () => {
+    it('should successfully match and update paired transfers', async () => {
+      const mockCheckingTx = {
+        id: 'chk1',
+        ref: { id: 'chk1' },
+        data: () => ({
+          Account: 'Checking',
+          Amount: -50,
+          Description: 'Online Transfer to SAV ...9301',
+          Date: '2026-05-10T12:00:00.000Z',
+          status: 'reviewed',
+        }),
+      };
+
+      const mockSavingsTx = {
+        id: 'sav1',
+        ref: { id: 'sav1' },
+        data: () => ({
+          Account: 'Savings',
+          Amount: 50,
+          Description: 'Online Transfer from CHK ...4765',
+          Date: '2026-05-10T15:00:00.000Z',
+          status: 'reviewed',
+        }),
+      };
+
+      const mockGet = jest.fn().mockResolvedValue({
+        docs: [mockCheckingTx, mockSavingsTx],
+      });
+
+      mockDbCollection.mockReturnValue({
+        get: mockGet,
+      });
+
+      const mockBatchUpdate = jest.fn();
+      const mockBatchCommit = jest.fn().mockResolvedValue([]);
+      mockDbBatch.mockReturnValue({
+        update: mockBatchUpdate,
+        commit: mockBatchCommit,
+      });
+
+      // Override env variables for test
+      process.env.CHECKING_ACCOUNT_NUMBER = '4765';
+      process.env.SAVINGS_ACCOUNT_NUMBER = '9301';
+
+      const response = await request(app)
+        .post('/api/admin/match-transfers')
+        .set('Cookie', ['google_tokens={"refresh_token":"mock"}']);
+
+      expect(response.status).toBe(200);
+      expect(response.body.matchCount).toBe(1);
+
+      expect(mockBatchUpdate).toHaveBeenCalledTimes(2);
+      expect(mockBatchUpdate).toHaveBeenCalledWith(
+        mockCheckingTx.ref,
+        expect.objectContaining({
+          Category: 'Internal Transfer',
+          linkedTransferId: 'sav1',
+        })
+      );
+      expect(mockBatchUpdate).toHaveBeenCalledWith(
+        mockSavingsTx.ref,
+        expect.objectContaining({
+          Category: 'Internal Transfer',
+          linkedTransferId: 'chk1',
+        })
+      );
+      expect(mockBatchCommit).toHaveBeenCalled();
+    });
+  });
 });

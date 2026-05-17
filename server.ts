@@ -1861,6 +1861,109 @@ ${JSON.stringify(uniqueDescs)}
     }
   });
 
+  app.post('/api/admin/match-transfers', async (req, res) => {
+    try {
+      const firestore = new Firestore({ projectId: 'tx-analyzer-1777844550' });
+      const transactionsCollection = firestore.collection('transactions');
+
+      const checkingLast4 = process.env.CHECKING_ACCOUNT_NUMBER || '4765';
+      const savingsLast4 = process.env.SAVINGS_ACCOUNT_NUMBER || '9301';
+
+      // We only match active transactions
+      const snapshot = await transactionsCollection.get();
+
+      const checkingTxs: any[] = [];
+      const savingsTxs: any[] = [];
+
+      snapshot.docs.forEach((doc) => {
+        const data = doc.data();
+        if (data.status === 'archived') return;
+        if (data.Category === 'Internal Transfer') return;
+        if (data.Account === 'Checking') {
+          checkingTxs.push({ id: doc.id, ref: doc.ref, ...data });
+        } else if (data.Account === 'Savings') {
+          savingsTxs.push({ id: doc.id, ref: doc.ref, ...data });
+        }
+      });
+
+      let matchCount = 0;
+      let batch = firestore.batch();
+      let operationsInBatch = 0;
+      const matchedIds = new Set<string>();
+
+      for (const cTx of checkingTxs) {
+        if (matchedIds.has(cTx.id)) continue;
+
+        const cDesc = String(cTx.Description || '')
+          .toLowerCase()
+          .trim();
+        const cIncludesSavings = cDesc.includes(savingsLast4);
+        const cHasTo = /\bto\b/.test(cDesc);
+        const cHasFrom = /\bfrom\b/.test(cDesc);
+
+        if (!cIncludesSavings || (!cHasTo && !cHasFrom)) continue;
+
+        for (const sTx of savingsTxs) {
+          if (matchedIds.has(sTx.id)) continue;
+
+          const sDesc = String(sTx.Description || '')
+            .toLowerCase()
+            .trim();
+          const sIncludesChecking = sDesc.includes(checkingLast4);
+          const sHasTo = /\bto\b/.test(sDesc);
+          const sHasFrom = /\bfrom\b/.test(sDesc);
+
+          if (!sIncludesChecking || (!sHasTo && !sHasFrom)) continue;
+
+          const cAmt = Number(cTx.Amount);
+          const sAmt = Number(sTx.Amount);
+
+          // Absolute amounts must be equal
+          if (Math.abs(cAmt) !== Math.abs(sAmt)) continue;
+
+          // Signs must be opposite
+          if (cAmt * sAmt > 0) continue;
+
+          // Dates must match (YYYY-MM-DD)
+          const cDate = cTx.Date?.toDate?.() || new Date(cTx.Date);
+          const sDate = sTx.Date?.toDate?.() || new Date(sTx.Date);
+
+          if (!cDate || !sDate || isNaN(cDate.getTime()) || isNaN(sDate.getTime())) continue;
+
+          const cDateStr = cDate.toISOString().split('T')[0];
+          const sDateStr = sDate.toISOString().split('T')[0];
+
+          if (cDateStr === sDateStr) {
+            matchedIds.add(cTx.id);
+            matchedIds.add(sTx.id);
+
+            batch.update(cTx.ref, { Category: 'Internal Transfer', linkedTransferId: sTx.id });
+            batch.update(sTx.ref, { Category: 'Internal Transfer', linkedTransferId: cTx.id });
+
+            operationsInBatch += 2;
+            matchCount++;
+
+            if (operationsInBatch >= 400) {
+              await batch.commit();
+              batch = firestore.batch();
+              operationsInBatch = 0;
+            }
+            break;
+          }
+        }
+      }
+
+      if (operationsInBatch > 0) {
+        await batch.commit();
+      }
+
+      res.json({ success: true, matchCount });
+    } catch (err: any) {
+      console.error('Match transfers failed:', err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.post('/api/admin/migrate-to-checking', async (req, res) => {
     try {
       const firestore = new Firestore({ projectId: 'tx-analyzer-1777844550' });

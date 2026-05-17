@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Loader2, RefreshCw, ArchiveRestore, Archive, Upload } from 'lucide-react';
+import { Loader2, RefreshCw, ArchiveRestore, Archive, Upload, ArrowRightLeft } from 'lucide-react';
 import { format } from 'date-fns';
 import Papa from 'papaparse';
 import { stringSimilarity } from '../utils/importLogic';
@@ -293,6 +293,28 @@ export function AdminView({
     }
   };
 
+  const [isMatchingTransfers, setIsMatchingTransfers] = useState(false);
+
+  const handleMatchTransfers = async () => {
+    setIsMatchingTransfers(true);
+    try {
+      const res = await fetch('/api/admin/match-transfers', {
+        method: 'POST',
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to match transfers');
+
+      alert(`Success! Found and linked ${data.matchCount} internal transfers.`);
+      onDataChanged?.();
+      fetchData();
+    } catch (err: any) {
+      console.error(err);
+      alert('Error: ' + err.message);
+    } finally {
+      setIsMatchingTransfers(false);
+    }
+  };
+
   const handleDeduplicate = async () => {
     if (duplicateCount === 0) return;
     if (
@@ -522,6 +544,29 @@ export function AdminView({
                 <RefreshCw className="w-4 h-4" />
               )}
               {isScanningDupes ? 'Scanning...' : 'Scan Database'}
+            </button>
+          </div>
+
+          <div className="flex items-center justify-between p-4 bg-slate-50 border border-slate-100 rounded-xl">
+            <div className="flex-1 mr-8">
+              <h4 className="font-semibold text-slate-700">Match Internal Transfers</h4>
+              <p className="text-sm text-slate-500 mt-1">
+                Scans all Checking and Savings transactions for internal transfers based on date,
+                amount, and description. Matched transactions will be linked and removed from net
+                cash flow calculations.
+              </p>
+            </div>
+            <button
+              onClick={handleMatchTransfers}
+              disabled={isMatchingTransfers}
+              className="shrink-0 flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+            >
+              {isMatchingTransfers ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <ArrowRightLeft className="w-4 h-4" />
+              )}
+              {isMatchingTransfers ? 'Matching...' : 'Match Transfers'}
             </button>
           </div>
 

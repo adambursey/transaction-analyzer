@@ -2,6 +2,11 @@ import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { AdminView } from '../../src/components/AdminView';
+import Papa from 'papaparse';
+
+jest.mock('papaparse', () => ({
+  parse: jest.fn(),
+}));
 
 describe('AdminView Component', () => {
   beforeEach(() => {
@@ -77,6 +82,11 @@ describe('AdminView Component', () => {
     await waitFor(() => {
       expect(window.alert).toHaveBeenCalledWith(expect.stringContaining('Moved 2 duplicate'));
     });
+
+    // Wait for the subsequent fetchData to complete (4 initial + 1 action + 4 reload)
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledTimes(9);
+    });
   });
 
   it('handles backfill balances click', async () => {
@@ -105,6 +115,12 @@ describe('AdminView Component', () => {
     );
     await userEvent.upload(fileInput, file);
 
+    (Papa.parse as jest.Mock).mockImplementationOnce((f, config) => {
+      config.complete({
+        data: [{ Date: '2026-05-01', Description: 'Test', Amount: '100', Balance: '500' }],
+      });
+    });
+
     const backfillBtn = screen.getByRole('button', { name: /Process Backfill/i });
     await userEvent.click(backfillBtn);
 
@@ -117,6 +133,11 @@ describe('AdminView Component', () => {
       expect(window.alert).toHaveBeenCalledWith(
         expect.stringContaining('Successfully updated 1 balances and generated 1 discrepancies')
       );
+    });
+
+    // Wait for the subsequent fetchData to complete (4 initial + 1 action + 4 reload)
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledTimes(9);
     });
   });
 });

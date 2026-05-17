@@ -4,6 +4,7 @@ import {
   exactMatchTransactions,
   stringSimilarity,
   isCustomDuplicateValid,
+  areTransactionsTheSame,
 } from '../../src/utils/importLogic';
 
 describe('importLogic', () => {
@@ -200,6 +201,64 @@ describe('importLogic', () => {
       const desc1 = 'TARGET STORE 04/10';
       const desc2 = 'TARGET STORE 04/10';
       expect(isCustomDuplicateValid(desc1, desc2)).toBe(true);
+    });
+  });
+
+  describe('areTransactionsTheSame', () => {
+    it('should return false immediately if Dates or Amounts differ', () => {
+      const tx1 = { Date: '05/01/2026', Amount: -20, Description: 'TARGET' };
+      const tx2 = { Date: '05/02/2026', Amount: -20, Description: 'TARGET' }; // Different date
+      const result = areTransactionsTheSame(tx1, tx2);
+      expect(result.isMatch).toBe(false);
+      expect(result.matchType).toBeNull();
+    });
+
+    it('should return exact match for identical normalized descriptions', () => {
+      const tx1 = { Date: '05/01/2026', Amount: -20, Description: 'TARGET   STORE' };
+      const tx2 = { Date: '05/01/2026', Amount: -20, Description: 'target store' };
+      const result = areTransactionsTheSame(tx1, tx2);
+      expect(result.isMatch).toBe(true);
+      expect(result.matchType).toBe('exact');
+      expect(result.score).toBe(1.0);
+    });
+
+    it('should respect isCustomDuplicateValid rejections', () => {
+      const tx1 = { Date: '05/01/2026', Amount: -20, Description: 'CHECK 1806' };
+      const tx2 = { Date: '05/01/2026', Amount: -20, Description: 'CHECK 1808' };
+      const result = areTransactionsTheSame(tx1, tx2);
+      expect(result.isMatch).toBe(false); // Even though strings are very similar, check logic rejects it
+      expect(result.matchType).toBeNull();
+    });
+
+    it('should return fuzzy match for descriptions exceeding threshold', () => {
+      const tx1 = {
+        Date: '05/01/2026',
+        Amount: -20,
+        Description: 'Online Transfer to SAV ...5329',
+      };
+      const tx2 = {
+        Date: '05/01/2026',
+        Amount: -20,
+        Description: 'Online Transfer to SAV ...8999',
+      };
+      areTransactionsTheSame(tx1, tx2);
+      // Wait! 'Online Transfer' matches the transferRegex, but it doesn't have a transaction#,
+      // so it will fall through to fuzzy match. Let's use a generic string instead to be safe.
+      const txA = { Date: '05/01/2026', Amount: -20, Description: 'Amazon Web Services AWS' };
+      const txB = { Date: '05/01/2026', Amount: -20, Description: 'Amazon Web Services' };
+      const resultFuzzy = areTransactionsTheSame(txA, txB);
+      expect(resultFuzzy.isMatch).toBe(true);
+      expect(resultFuzzy.matchType).toBe('fuzzy');
+      expect(resultFuzzy.score).toBeGreaterThanOrEqual(0.35);
+    });
+
+    it('should return false if descriptions are too dissimilar', () => {
+      const tx1 = { Date: '05/01/2026', Amount: -20, Description: 'UBER EATS' };
+      const tx2 = { Date: '05/01/2026', Amount: -20, Description: 'AMAZON' };
+      const result = areTransactionsTheSame(tx1, tx2);
+      expect(result.isMatch).toBe(false);
+      expect(result.matchType).toBeNull();
+      expect(result.score).toBeLessThan(0.35);
     });
   });
 });

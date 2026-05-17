@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import Papa from 'papaparse';
-import { Upload, FileSpreadsheet, AlertCircle, X, Loader2, UploadCloud } from 'lucide-react';
+import { X, Loader2, UploadCloud } from 'lucide-react';
 import { generateSignature } from '../utils/importLogic';
 
 interface ImportModalProps {

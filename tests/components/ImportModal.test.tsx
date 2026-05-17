@@ -2,7 +2,6 @@ import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ImportModal } from '../../src/components/ImportModal';
-import Papa from 'papaparse';
 
 describe('ImportModal Component', () => {
   const mockOnClose = jest.fn();
@@ -18,7 +17,7 @@ describe('ImportModal Component', () => {
     jest.clearAllMocks();
   });
 
-  it('renders correctly when open', () => {
+  it('renders correctly when open', async () => {
     render(
       <ImportModal
         isOpen={true}
@@ -29,6 +28,11 @@ describe('ImportModal Component', () => {
       />
     );
     expect(screen.getByText('Import Transactions')).toBeInTheDocument();
+
+    // Wait for the initial saved mapping fetch to complete
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalled();
+    });
   });
 
   it('does not render when closed', () => {

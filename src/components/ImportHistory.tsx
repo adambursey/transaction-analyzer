@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Clock, Trash2, Loader2, AlertTriangle, CheckCircle } from 'lucide-react';
+import { Clock, Trash2, Loader2, CheckCircle } from 'lucide-react';
 import { format } from 'date-fns';
 
 interface ImportHistoryProps {

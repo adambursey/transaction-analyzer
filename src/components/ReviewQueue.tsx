@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Check, X, Edit3, Loader2, ChevronUp, ChevronDown, Filter, Trash2 } from 'lucide-react';
+import { Check, X, Edit3, Loader2, Filter } from 'lucide-react';
 
 interface ReviewQueueProps {
   transactions: any[];

@@ -64,6 +64,19 @@ export function AdminView({
     .filter((item) => item.original) // Ensure original exists
     .sort((a, b) => b.similarity - a.similarity);
 
+  const reconciliationAdjustments = transactions
+    .filter(
+      (t) =>
+        t.Category === 'Reconciliation Adjustment' ||
+        t._category === 'Reconciliation Adjustment' ||
+        t._category === 'Reconciliation Discrepancy'
+    )
+    .sort((a, b) => {
+      const dateA = new Date(a.Date).getTime();
+      const dateB = new Date(b.Date).getTime();
+      return dateB - dateA;
+    });
+
   const [isResolvingDupe, setIsResolvingDupe] = useState<string | null>(null);
 
   const handleResolveDuplicate = async (
@@ -643,6 +656,63 @@ export function AdminView({
                           typeof tx.Amount === 'string'
                             ? tx.Amount.replace(/[^0-9.-]+/g, '')
                             : tx.Amount
+                        ).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+
+        {/* System Reconciliation Adjustments */}
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col h-[600px]">
+          <div className="p-4 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
+            <h3 className="font-bold text-slate-800 flex items-center gap-2">
+              <RefreshCw className="w-5 h-5 text-slate-400" />
+              System Reconciliation Adjustments ({reconciliationAdjustments.length})
+            </h3>
+          </div>
+          <div className="overflow-y-auto flex-1 p-0">
+            {reconciliationAdjustments.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-full text-slate-400 p-8 text-center">
+                <RefreshCw className="w-12 h-12 mb-3 opacity-20" />
+                <p>No reconciliation adjustments found.</p>
+              </div>
+            ) : (
+              <table className="w-full text-sm text-left border-separate border-spacing-0">
+                <thead className="text-xs text-slate-500 uppercase bg-white sticky top-0 z-10 shadow-sm">
+                  <tr>
+                    <th className="px-4 py-3 font-semibold border-b border-slate-100">Date</th>
+                    <th className="px-4 py-3 font-semibold border-b border-slate-100">
+                      Description
+                    </th>
+                    <th className="px-4 py-3 font-semibold border-b border-slate-100 text-right">
+                      Amount
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-50">
+                  {reconciliationAdjustments.map((tx) => (
+                    <tr key={tx.id} className="hover:bg-slate-50/50 transition-colors">
+                      <td className="px-4 py-3 text-slate-600 font-mono text-xs">
+                        {tx.Date ? format(new Date(tx.Date), 'MM/dd/yyyy') : 'Unknown'}
+                      </td>
+                      <td
+                        className="px-4 py-3 text-slate-800 font-medium truncate max-w-[200px]"
+                        title={tx.Description}
+                      >
+                        {tx.Description}
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono text-slate-900">
+                        {Number(tx.Amount) < 0 ? '-' : ''}$
+                        {Math.abs(
+                          Number(
+                            typeof tx.Amount === 'string'
+                              ? tx.Amount.replace(/[^0-9.-]+/g, '')
+                              : tx.Amount
+                          )
                         ).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                       </td>
                     </tr>

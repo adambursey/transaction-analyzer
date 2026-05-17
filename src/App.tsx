@@ -1,18 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
   Tooltip,
-  Legend,
   ResponsiveContainer,
   PieChart,
   Pie,
   Cell,
   LineChart,
   Line,
+  CartesianGrid,
+  XAxis,
+  YAxis,
 } from 'recharts';
 import {
   FileSpreadsheet,
@@ -32,7 +29,6 @@ import {
   List,
   Wallet,
   LayoutDashboard,
-  Filter,
   Search,
   ArrowLeft,
   X,
@@ -45,7 +41,7 @@ import {
   Edit3,
   Archive,
 } from 'lucide-react';
-import { format, parseISO, isValid, parse } from 'date-fns';
+import { format, isValid, parse } from 'date-fns';
 import { ImportModal } from './components/ImportModal';
 import { ReviewQueue } from './components/ReviewQueue';
 import { ImportHistory } from './components/ImportHistory';
@@ -112,6 +108,7 @@ export default function App() {
   const [showTableTotals, setShowTableTotals] = useState(false);
   const [budgetData, setBudgetData] = useState<any[]>([]);
   const [budgetHeaders, setBudgetHeaders] = useState<string[]>([]);
+
   const [currentView, setCurrentView] = useState<
     'dashboard' | 'transactions' | 'budget' | 'categories' | 'admin'
   >('dashboard');
@@ -204,6 +201,7 @@ export default function App() {
     if (data.length > 0 && headers.length > 0) {
       analyzeData(data, headers);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedYear, selectedMonth, data, headers, budgetData]);
 
   async function fetchTaxonomy() {
@@ -511,12 +509,6 @@ export default function App() {
     preParsedData.forEach((row) => {
       const category = String(row[categoryCol] || '');
       const subcategory = String(subcategoryCol ? row[subcategoryCol] || '' : '');
-      const rawAmount = row[amountCol];
-      let amount = 0;
-      if (rawAmount) {
-        amount = Number(String(rawAmount).replace(/[^0-9.-]+/g, ''));
-      }
-
       if (category.toLowerCase() === 'income' && subcategory) {
         allIncomeSubcategories.add(subcategory);
       }
@@ -597,6 +589,11 @@ export default function App() {
         const isExpense = amount < 0;
 
         amount = Math.abs(amount);
+
+        // Do not include Reconciliation Adjustment in non-admin views
+        if (category === 'Reconciliation Adjustment') {
+          return null;
+        }
 
         const dateStr = row._effectiveDateStr;
         let date = new Date();
@@ -679,12 +676,6 @@ export default function App() {
       })
       .filter((tx): tx is any => tx !== null)
       .sort((a, b) => b._date.getTime() - a._date.getTime());
-
-    // Prepare chart data
-    const categoryChartData = Object.entries(categoryTotals)
-      .map(([name, value]) => ({ name, value }))
-      .sort((a, b) => b.value - a.value)
-      .slice(0, 10); // Top 10 categories
 
     // Prepare full category table data
     const sortedMonths = Array.from(monthsSet).sort((a, b) => {
@@ -981,18 +972,6 @@ export default function App() {
         new Set(
           analysis.allTransactions
             .filter((t: any) => !txFilterCategory || t._category === txFilterCategory)
-            .map((t: any) => t._subcategory)
-        )
-      )
-        .filter(Boolean)
-        .sort() as string[])
-    : [];
-
-  const modalSubcategories = analysis?.allTransactions
-    ? (Array.from(
-        new Set(
-          analysis.allTransactions
-            .filter((t: any) => t._category === editTxCategory)
             .map((t: any) => t._subcategory)
         )
       )
@@ -2001,7 +1980,6 @@ export default function App() {
                       {analysis.budgetAnalysis.map((row: any) => {
                         const isWithinTenDollars = row.budget > 0 && Math.abs(row.diff) < 10;
                         const isOverBudget = row.budget > 0 && row.diff >= 10;
-                        const isUnderBudget = row.budget > 0 && row.diff <= -10;
 
                         return (
                           <tr key={row.name} className="hover:bg-slate-50 transition-colors">
@@ -2285,7 +2263,6 @@ export default function App() {
                       {analysis.incomeAnalysis.map((row: any) => {
                         const isWithinTenDollars = row.budget > 0 && Math.abs(row.diff) < 10;
                         const isOverBudget = row.budget > 0 && row.diff >= 10; // Earned more
-                        const isUnderBudget = row.budget > 0 && row.diff <= -10; // Earned less
 
                         return (
                           <tr key={row.name} className="hover:bg-slate-50 transition-colors">
@@ -2816,7 +2793,6 @@ export default function App() {
                               (h) => !/year|month|notes|type|balance|status|importid/i.test(h)
                             )
                             .map((header) => {
-                              const isAmount = header === analysis.columnsIdentified.amount;
                               const isCategory = header === analysis.columnsIdentified.category;
                               const isSubcategory =
                                 header === analysis.columnsIdentified.subcategory;
@@ -2874,7 +2850,7 @@ export default function App() {
                               <input
                                 type="checkbox"
                                 checked={selectedTxIds.has(tx.id)}
-                                onChange={(e) => {
+                                onChange={() => {
                                   const next = new Set(selectedTxIds);
                                   if (next.has(tx.id)) next.delete(tx.id);
                                   else next.add(tx.id);
@@ -3130,7 +3106,9 @@ export default function App() {
             </div>
             <div className="p-6 space-y-6">
               <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-2">Date</label>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">
+                  Effective Date
+                </label>
                 <input
                   type="date"
                   value={editTxDate}
@@ -3138,6 +3116,20 @@ export default function App() {
                   className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all font-mono text-slate-900"
                 />
               </div>
+
+              {editingTx?.Date && (
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">
+                    Posted Date (Read Only)
+                  </label>
+                  <input
+                    type="text"
+                    value={format(new Date(editingTx.Date), 'MM/dd/yyyy')}
+                    disabled
+                    className="w-full px-4 py-3 bg-slate-100 border border-slate-200 rounded-xl text-slate-500 font-mono"
+                  />
+                </div>
+              )}
 
               <div>
                 <label className="block text-sm font-semibold text-slate-700 mb-2">Amount</label>

@@ -88,7 +88,7 @@ beforeAll(async () => {
 beforeEach(() => {
   jest.clearAllMocks();
   // Default fallback mock to prevent "is not a function" errors
-  mockDbCollection.mockImplementation((name) => {
+  mockDbCollection.mockImplementation((_name) => {
     return {
       doc: jest.fn().mockReturnValue({
         get: jest.fn().mockResolvedValue({ exists: false }),
@@ -105,8 +105,8 @@ beforeEach(() => {
 describe('Backend API Endpoints (Hermetic)', () => {
   describe('GET /api/taxonomy', () => {
     it('should return taxonomy from Firestore', async () => {
-      mockDbCollection.mockImplementationOnce((name) => {
-        if (name === 'taxonomy') {
+      mockDbCollection.mockImplementationOnce((_name) => {
+        if (_name === 'taxonomy') {
           return {
             doc: jest.fn().mockReturnValue({
               get: jest.fn().mockResolvedValue({
@@ -162,20 +162,20 @@ describe('Backend API Endpoints (Hermetic)', () => {
       });
 
       // Mock the collection and batch behavior
-      mockDbCollection.mockImplementation((name) => {
-        if (name === 'metadata') {
+      mockDbCollection.mockImplementation((_name) => {
+        if (_name === 'metadata') {
           return { doc: jest.fn().mockReturnValue({ get: mockTaxonomyGet }) };
         }
-        if (name === 'transactions') {
+        if (_name === 'transactions') {
           return {
             get: mockTransactionsGet,
             doc: jest.fn().mockReturnValue({ id: 'mock-doc-id' }),
           };
         }
-        if (name === 'imports') {
+        if (_name === 'imports') {
           return { doc: jest.fn().mockReturnValue({ set: jest.fn() }) };
         }
-        if (name === 'system') {
+        if (_name === 'system') {
           return {
             doc: jest.fn().mockReturnValue({
               get: jest.fn().mockResolvedValue({ exists: false }),
@@ -201,7 +201,7 @@ describe('Backend API Endpoints (Hermetic)', () => {
       // Wait, server.ts has `app.use(cookieParser())` but no global middleware blocking /api. Wait, let me double check server.ts.
 
       const payload = {
-        filename: 'test.csv',
+        file_name: 'test.csv',
         importId: 'import_123',
         transactions: [{ Date: '2026-05-01', Description: 'Test TX', Amount: 100, Balance: 250.5 }],
       };

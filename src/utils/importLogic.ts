@@ -203,3 +203,49 @@ export function isCustomDuplicateValid(desc1: string, desc2: string): boolean {
 
   return true;
 }
+
+/**
+ * Unified matching engine to determine if two transactions represent the same real-world event.
+ * Checks for exact Date and Amount match, then evaluates Description using exact, custom, and fuzzy rules.
+ *
+ * @param tx1 - First transaction object
+ * @param tx2 - Second transaction object
+ * @returns Object indicating match status, match type ('exact' | 'fuzzy' | null), and similarity score
+ */
+export function areTransactionsTheSame(
+  tx1: any,
+  tx2: any
+): { isMatch: boolean; matchType: 'exact' | 'fuzzy' | null; score: number } {
+  // Ensure Date and Amount are identical using the consistent signature generator
+  const sig1 = generateSignature(tx1).split('|');
+  const sig2 = generateSignature(tx2).split('|');
+
+  if (sig1[0] !== sig2[0] || sig1[2] !== sig2[2]) {
+    return { isMatch: false, matchType: null, score: 0 };
+  }
+
+  const rawDesc1 = String(tx1.Description || '');
+  const rawDesc2 = String(tx2.Description || '');
+
+  // Sanitize whitespace and case
+  const norm1 = rawDesc1.trim().replace(/\s+/g, ' ').toLowerCase();
+  const norm2 = rawDesc2.trim().replace(/\s+/g, ' ').toLowerCase();
+
+  // 1. Exact Match Check
+  if (norm1 === norm2) {
+    return { isMatch: true, matchType: 'exact', score: 1.0 };
+  }
+
+  // 2. Custom Rule Check (using raw strings to preserve original structure for regexes)
+  if (!isCustomDuplicateValid(rawDesc1, rawDesc2)) {
+    return { isMatch: false, matchType: null, score: 0 };
+  }
+
+  // 3. Fuzzy Match Check (using normalized strings for better accuracy against whitespace variance)
+  const score = stringSimilarity(norm1, norm2);
+  if (score >= POTENTIAL_DUPLICATE_THRESHOLD) {
+    return { isMatch: true, matchType: 'fuzzy', score };
+  }
+
+  return { isMatch: false, matchType: null, score };
+}

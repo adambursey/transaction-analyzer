@@ -16,9 +16,7 @@ import {
   deduplicateTransactions,
   exactMatchTransactions,
   generateSignature,
-  stringSimilarity,
-  POTENTIAL_DUPLICATE_THRESHOLD,
-  isCustomDuplicateValid,
+  areTransactionsTheSame,
 } from './src/utils/importLogic.js';
 
 dotenv.config();
@@ -82,14 +80,6 @@ function parseStrictDate(dateStr: any): Date | null {
  * @param index - The zero-based column index.
  * @returns The corresponding column letter.
  */
-function indexToColumn(index: number): string {
-  let column = '';
-  while (index >= 0) {
-    column = String.fromCharCode((index % 26) + 65) + column;
-    index = Math.floor(index / 26) - 1;
-  }
-  return column;
-}
 
 /**
  * Initializes and starts the Express server.
@@ -102,10 +92,10 @@ function indexToColumn(index: number): string {
  */
 export async function createApp() {
   const app = express();
-  const PORT = Number(process.env.PORT || 3000);
 
   app.use(cookieParser());
-  app.use(express.json());
+  app.use(express.json({ limit: '50mb' }));
+  app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
   // API routes FIRST
   app.get('/api/health', (req, res) => {
@@ -285,11 +275,38 @@ export async function createApp() {
       const transactionsCollection = firestore.collection('transactions');
       const importsCollection = firestore.collection('imports');
 
+      let currentDayStr = '';
+      let intradayIndex = 0;
+
       const parsedTransactions = transactions.map((tx: any) => {
+        if (tx.Date !== currentDayStr) {
+          currentDayStr = tx.Date;
+          intradayIndex = 0;
+        }
+        intradayIndex++;
+
         const d = parseStrictDate(tx.Date);
+        if (d) {
+          d.setSeconds(d.getSeconds() - intradayIndex);
+        }
+
+        const parsedAmount =
+          typeof tx.Amount === 'string'
+            ? parseFloat(tx.Amount.replace(/[^0-9.-]+/g, ''))
+            : Number(tx.Amount || 0);
+        let parsedBalance = undefined;
+        if (tx.Balance !== undefined && tx.Balance !== null && tx.Balance !== '') {
+          parsedBalance =
+            typeof tx.Balance === 'string'
+              ? parseFloat(tx.Balance.toString().replace(/[^0-9.-]+/g, ''))
+              : Number(tx.Balance);
+        }
+
         return {
           ...tx,
           Date: d ? Timestamp.fromDate(d) : null,
+          Amount: isNaN(parsedAmount) ? 0 : parsedAmount,
+          Balance: isNaN(parsedBalance as number) ? undefined : parsedBalance,
         };
       });
 
@@ -305,7 +322,7 @@ export async function createApp() {
         }
       }
 
-      const existingDateAmountMap = new Map<string, { id: string; description: string }>();
+      const existingDateAmountMap = new Map<string, { id: string; tx: any }>();
 
       snapshot.docs.forEach((doc) => {
         const data = doc.data();
@@ -320,7 +337,7 @@ export async function createApp() {
           // That's acceptable for a "potential duplicate" flag anchor.
           existingDateAmountMap.set(dateAmountKey, {
             id: doc.id,
-            description: data.Description || '',
+            tx: data,
           });
         }
 
@@ -363,12 +380,8 @@ export async function createApp() {
 
           let isPotentialDupe = false;
           if (existingMatch) {
-            const desc1 = String(tx.Description || '');
-            const desc2 = String(existingMatch.description || '');
-
-            if (!isCustomDuplicateValid(desc1, desc2)) {
-              isPotentialDupe = false;
-            } else if (stringSimilarity(desc1, desc2) >= POTENTIAL_DUPLICATE_THRESHOLD) {
+            const matchResult = areTransactionsTheSame(tx, existingMatch.tx);
+            if (matchResult.isMatch && matchResult.matchType === 'fuzzy') {
               isPotentialDupe = true;
             }
           }
@@ -917,7 +930,14 @@ ${JSON.stringify(uniqueFuzzyDescs)}
       const firestore = new Firestore({ projectId: 'tx-analyzer-1777844550' });
       const transactionsCollection = firestore.collection('transactions');
 
-      const updatesObj: Record<string, any> = { Amount: amount, Category: category };
+      const parsedAmount =
+        typeof amount === 'string'
+          ? parseFloat(amount.replace(/[^0-9.-]+/g, ''))
+          : Number(amount || 0);
+      const updatesObj: Record<string, any> = {
+        Amount: isNaN(parsedAmount) ? 0 : parsedAmount,
+        Category: category,
+      };
       if (subcategory !== undefined) {
         updatesObj.Subcategory = subcategory;
       }
@@ -927,6 +947,7 @@ ${JSON.stringify(uniqueFuzzyDescs)}
       if (date !== undefined) {
         const d = parseStrictDate(date);
         const newDateVal = d ? Timestamp.fromDate(d) : null;
+        updatesObj.Date = newDateVal;
         updatesObj.EffectiveDate = newDateVal;
       }
 
@@ -1463,7 +1484,7 @@ ${JSON.stringify(uniqueDescs)}
         }
       };
 
-      for (const [sig, docs] of groups.entries()) {
+      for (const [, docs] of groups.entries()) {
         if (docs.length > 1) {
           // Sort docs to prioritize keeping the "best" one.
           // Best = Has Category (not Uncategorized), then status = reviewed, then anything else.
@@ -1541,7 +1562,7 @@ ${JSON.stringify(uniqueDescs)}
         }
       };
 
-      for (const [key, docs] of groups.entries()) {
+      for (const [, docs] of groups.entries()) {
         if (docs.length > 1) {
           // Pick the "best" one to be the original (categorized > uncategorized)
           docs.sort((a, b) => {
@@ -1551,34 +1572,20 @@ ${JSON.stringify(uniqueDescs)}
           });
 
           const original = docs[0];
-          const originalDesc = String(original.data.Description || '');
 
           for (let i = 1; i < docs.length; i++) {
-            const dupeDesc = String(docs[i].data.Description || '');
+            const matchResult = areTransactionsTheSame(original.data, docs[i].data);
 
-            // If descriptions are exactly the same, they should have been caught by standard deduplication.
-            // If they are not exactly the same, apply our custom checks
-            if (originalDesc.toLowerCase().trim() !== dupeDesc.toLowerCase().trim()) {
-              let isPotentialDupe = false;
-              if (!isCustomDuplicateValid(originalDesc, dupeDesc)) {
-                isPotentialDupe = false;
-              } else if (
-                stringSimilarity(originalDesc, dupeDesc) >= POTENTIAL_DUPLICATE_THRESHOLD
-              ) {
-                isPotentialDupe = true;
-              }
+            if (matchResult.isMatch && matchResult.matchType === 'fuzzy') {
+              batch.update(docs[i].ref, {
+                status: 'potential_duplicate',
+                duplicateOfId: original.id,
+              });
+              opCount++;
+              flaggedCount++;
 
-              if (isPotentialDupe) {
-                batch.update(docs[i].ref, {
-                  status: 'potential_duplicate',
-                  duplicateOfId: original.id,
-                });
-                opCount++;
-                flaggedCount++;
-
-                if (opCount >= batchSize) {
-                  await commitBatch();
-                }
+              if (opCount >= batchSize) {
+                await commitBatch();
               }
             }
           }
@@ -1686,16 +1693,63 @@ ${JSON.stringify(uniqueDescs)}
         }
       };
 
-      for (const tx of transactions) {
+      // Step 1: Fetch all data ONCE to avoid multiple reads
+      const allTxQuery = await txCollection.get();
+      const allData = allTxQuery.docs.map((d) => ({ id: d.id, ref: d.ref, data: d.data() as any }));
+
+      // Build a map of Date+Amount -> array of transactions for fast lookup
+      const dbDateAmountMap = new Map<string, { ref: any; data: any }[]>();
+      allData.forEach((item) => {
+        const sigParts = generateSignature(item.data).split('|');
+        if (sigParts.length >= 3) {
+          const key = `${sigParts[0]}|${sigParts[2]}`;
+          if (!dbDateAmountMap.has(key)) dbDateAmountMap.set(key, []);
+          dbDateAmountMap.get(key)!.push(item);
+        }
+      });
+
+      let currentDayStr = '';
+      let intradayIndex = 0;
+
+      for (let i = 0; i < transactions.length; i++) {
+        const tx = transactions[i];
+
+        // Track the current day and increment index to preserve intra-day order
+        if (tx.Date !== currentDayStr) {
+          currentDayStr = tx.Date;
+          intradayIndex = 0;
+        }
+        intradayIndex++;
+
         if (tx.Balance !== undefined && tx.Balance !== null) {
-          const sig = generateSignature(tx);
-          const existingQuery = await txCollection.where('_signature', '==', sig).get();
-          if (!existingQuery.empty) {
-            existingQuery.docs.forEach((doc) => {
-              batch.update(doc.ref, { Balance: tx.Balance });
-              opCount++;
-              updateCount++;
-            });
+          const sigParts = generateSignature(tx).split('|');
+          if (sigParts.length >= 3) {
+            const key = `${sigParts[0]}|${sigParts[2]}`;
+            const candidates = dbDateAmountMap.get(key) || [];
+
+            for (const candidate of candidates) {
+              const matchResult = areTransactionsTheSame(tx, candidate.data);
+              if (matchResult.isMatch) {
+                const safeBalance =
+                  typeof tx.Balance === 'string'
+                    ? parseFloat(tx.Balance.toString().replace(/[^0-9.-]+/g, ''))
+                    : Number(tx.Balance);
+
+                // Add exact intra-day timestamp offset (subtracting seconds so newest is closest to 12:00:00)
+                const baseDate = parseStrictDate(tx.Date);
+                let newDateVal = candidate.data.Date;
+                if (baseDate) {
+                  baseDate.setSeconds(baseDate.getSeconds() - intradayIndex);
+                  newDateVal = Timestamp.fromDate(baseDate);
+                }
+
+                batch.update(candidate.ref, { Balance: safeBalance, Date: newDateVal });
+                candidate.data.Balance = safeBalance; // Update in-memory so timeline sees it
+                candidate.data.Date = newDateVal;
+                opCount++;
+                updateCount++;
+              }
+            }
             if (opCount >= batchSize) await commitBatch();
           }
         }
@@ -1703,11 +1757,7 @@ ${JSON.stringify(uniqueDescs)}
       await commitBatch();
 
       // Step 2 & 3 & 4: Reconcile Timeline
-      const allTxQuery = await txCollection.get();
-      const allDocs = allTxQuery.docs;
-
       // Sort chronologically
-      const allData = allDocs.map((d) => ({ id: d.id, ref: d.ref, data: d.data() as any }));
       allData.sort((a, b) => {
         const dateA = a.data.Date && a.data.Date.toDate ? a.data.Date.toDate().getTime() : 0;
         const dateB = b.data.Date && b.data.Date.toDate ? b.data.Date.toDate().getTime() : 0;
@@ -1732,10 +1782,10 @@ ${JSON.stringify(uniqueDescs)}
 
         if (currentBalance === null) {
           if (item.data.Balance !== undefined && item.data.Balance !== null) {
-            currentBalance = item.data.Balance;
+            currentBalance = Number(item.data.Balance);
           }
         } else {
-          currentBalance = Number((currentBalance + (item.data.Amount || 0)).toFixed(2));
+          currentBalance = Number((currentBalance + Number(item.data.Amount || 0)).toFixed(2));
           if (item.data.Balance !== undefined && item.data.Balance !== null) {
             const rowBalance = Number(item.data.Balance);
             if (Math.abs(rowBalance - currentBalance) > 0.01) {
@@ -1747,6 +1797,7 @@ ${JSON.stringify(uniqueDescs)}
                 Date: item.data.Date,
                 Description: 'System Reconciliation Adjustment',
                 Amount: gap,
+                Category: 'Reconciliation Adjustment',
                 _category: 'Reconciliation Discrepancy',
                 Type: 'Adjustment',
                 status: 'reviewed',
@@ -1875,7 +1926,7 @@ ${JSON.stringify(uniqueDescs)}
 if (process.env.NODE_ENV !== 'test') {
   createApp()
     .then((app) => {
-      const PORT = Number(process.env.PORT || 3000);
+      const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
       app.listen(PORT, '0.0.0.0', () => {
         console.log(`Server running on http://localhost:${PORT}`);
       });

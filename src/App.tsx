@@ -1167,7 +1167,7 @@ export default function App() {
                   }`}
                 >
                   <FolderTree className="w-4 h-4" />
-                  Categories
+                  Settings
                 </button>
                 <button
                   onClick={() => setCurrentView('admin')}

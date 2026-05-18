@@ -1,8 +1,6 @@
-- [x] set up ESLint/TSLint
-- [x] set up Prettier
-- [x] set up Husky to lint and format code before commits
-- [x] set up Jest for unit testing
-- [x] update code documentation
-- [x] write unit tests for everything (not just one test for everything, but for all the functions in all the files)
-- [x] add an admin function to save/restore the knownMapping dictionary from database
-- [ ] treat transactions to and from savings differently since the money is not flowing out out, just moving from one account to another
+[x] recurring transaction definition UI
+[ ] recurring transaction matching
+[ ] recurring transaction editing
+[ ] recurring transaction deletion
+[ ] balance projection UI (how will balance change based on current and projected income and expenses)
+[ ] create and restore database backups from admin UI

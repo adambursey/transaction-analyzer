@@ -654,7 +654,104 @@ ${JSON.stringify(uniqueFuzzyDescs)}
       res.status(500).json({ error: err.message });
     }
   });
+  app.get('/api/recurring', async (req, res) => {
+    const authHeader = req.headers.authorization;
+    let tokensCookie = req.cookies.google_tokens;
+    if (authHeader && authHeader.startsWith('Bearer '))
+      tokensCookie = decodeURIComponent(authHeader.split(' ')[1]);
+    if (!tokensCookie) return res.status(401).json({ error: 'Not authenticated' });
 
+    try {
+      const firestore = new Firestore({ projectId: 'tx-analyzer-1777844550' });
+      const snapshot = await firestore.collection('recurring_transactions').get();
+      const recurring = snapshot.docs
+        .map((doc) => ({ id: doc.id, ...doc.data() }))
+        .filter((r: any) => !r.archived);
+      res.json({ recurring });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/recurring', async (req, res) => {
+    const authHeader = req.headers.authorization;
+    let tokensCookie = req.cookies.google_tokens;
+    if (authHeader && authHeader.startsWith('Bearer '))
+      tokensCookie = decodeURIComponent(authHeader.split(' ')[1]);
+    if (!tokensCookie) return res.status(401).json({ error: 'Not authenticated' });
+
+    try {
+      const {
+        frequency,
+        description,
+        amountAverage,
+        amountMin,
+        amountMax,
+        exampleTransactionIds,
+        matchedTransactionIds,
+        projectedOccurrence,
+      } = req.body;
+      const firestore = new Firestore({ projectId: 'tx-analyzer-1777844550' });
+      const docRef = await firestore.collection('recurring_transactions').add({
+        frequency,
+        description,
+        amountAverage,
+        amountMin,
+        amountMax,
+        exampleTransactionIds: exampleTransactionIds || [],
+        matchedTransactionIds: matchedTransactionIds || [],
+        projectedOccurrence: projectedOccurrence || 'Unknown',
+        archived: false,
+        createdAt: new Date().toISOString(),
+      });
+      res.json({ success: true, id: docRef.id });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/recurring/:id/archive', async (req, res) => {
+    const authHeader = req.headers.authorization;
+    let tokensCookie = req.cookies.google_tokens;
+    if (authHeader && authHeader.startsWith('Bearer '))
+      tokensCookie = decodeURIComponent(authHeader.split(' ')[1]);
+    if (!tokensCookie) return res.status(401).json({ error: 'Not authenticated' });
+
+    try {
+      const { id } = req.params;
+      const firestore = new Firestore({ projectId: 'tx-analyzer-1777844550' });
+      await firestore.collection('recurring_transactions').doc(id).update({ archived: true });
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.patch('/api/recurring/:id', async (req, res) => {
+    const authHeader = req.headers.authorization;
+    let tokensCookie = req.cookies.google_tokens;
+    if (authHeader && authHeader.startsWith('Bearer '))
+      tokensCookie = decodeURIComponent(authHeader.split(' ')[1]);
+    if (!tokensCookie) return res.status(401).json({ error: 'Not authenticated' });
+
+    try {
+      const { id } = req.params;
+      const { projectedOccurrence, description } = req.body;
+      const firestore = new Firestore({ projectId: 'tx-analyzer-1777844550' });
+
+      const updateData: any = {};
+      if (projectedOccurrence !== undefined) updateData.projectedOccurrence = projectedOccurrence;
+      if (description !== undefined) updateData.description = description;
+
+      if (Object.keys(updateData).length > 0) {
+        await firestore.collection('recurring_transactions').doc(id).update(updateData);
+      }
+
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
   app.post('/api/sheet', async (req, res) => {
     const authHeader = req.headers.authorization;
     let tokensCookie = req.cookies.google_tokens;

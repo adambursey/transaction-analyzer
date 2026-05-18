@@ -111,7 +111,6 @@ export default function App() {
   const [isCategoryTableExpanded, setIsCategoryTableExpanded] = useState(true);
   const [showTableTotals, setShowTableTotals] = useState(false);
   const [budgetData, setBudgetData] = useState<any[]>([]);
-  const [budgetHeaders, setBudgetHeaders] = useState<string[]>([]);
   const [selectedAccount, setSelectedAccount] = useState<'All' | 'Checking' | 'Savings'>(
     'Checking'
   );
@@ -289,7 +288,6 @@ export default function App() {
         setHeaders(result.headers);
         if (result.budgetData) {
           setBudgetData(result.budgetData);
-          setBudgetHeaders(result.budgetHeaders || []);
         }
       } else {
         setError('No data found in the sheet');
@@ -2588,7 +2586,8 @@ export default function App() {
         {isAuthenticated && currentView === 'categories' && (
           <CategoriesView
             taxonomy={taxonomy}
-            transactions={analysis?.allTransactionsUnfiltered || []}
+            analysis={analysis}
+            transactions={analysis?.allTransactions || []}
             onUpdate={fetchTaxonomy}
             onCategorySelect={(cat, subcat) => {
               setTxFilterCategory(cat);

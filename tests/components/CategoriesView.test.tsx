@@ -15,7 +15,10 @@ describe('CategoriesView Component', () => {
   const mockOnUpdate = jest.fn();
 
   beforeEach(() => {
-    global.fetch = jest.fn();
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({}),
+    });
     jest.clearAllMocks();
   });
 
@@ -24,6 +27,7 @@ describe('CategoriesView Component', () => {
       <CategoriesView
         taxonomy={mockTaxonomy}
         transactions={mockTransactions}
+        analysis={{}}
         onUpdate={mockOnUpdate}
       />
     );
@@ -38,6 +42,7 @@ describe('CategoriesView Component', () => {
       <CategoriesView
         taxonomy={mockTaxonomy}
         transactions={mockTransactions}
+        analysis={{}}
         onUpdate={mockOnUpdate}
       />
     );
@@ -62,7 +67,7 @@ describe('CategoriesView Component', () => {
   });
 
   it('prevents deleting a category if it is in use', async () => {
-    (global.fetch as jest.Mock).mockResolvedValueOnce({
+    (global.fetch as jest.Mock).mockResolvedValue({
       ok: true,
       json: async () => ({ inUse: true }),
     });
@@ -71,6 +76,7 @@ describe('CategoriesView Component', () => {
       <CategoriesView
         taxonomy={mockTaxonomy}
         transactions={mockTransactions}
+        analysis={{}}
         onUpdate={mockOnUpdate}
       />
     );

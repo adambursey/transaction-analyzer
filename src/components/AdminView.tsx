@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Loader2, RefreshCw, ArchiveRestore, Archive, Upload, ArrowRightLeft } from 'lucide-react';
 import { format } from 'date-fns';
 import Papa from 'papaparse';
@@ -109,7 +109,7 @@ export function AdminView({
     }
   };
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     setLoading(true);
     try {
       const [txRes, importsRes, dupRes, mappingRes] = await Promise.all([
@@ -140,7 +140,7 @@ export function AdminView({
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedAccount]);
 
   const handleSaveMapping = async () => {
     setIsSavingMapping(true);
@@ -160,7 +160,7 @@ export function AdminView({
 
   useEffect(() => {
     fetchData();
-  }, [selectedAccount]);
+  }, [fetchData]);
 
   const handleRestoreTxs = async () => {
     if (selectedTxIds.size === 0) return;

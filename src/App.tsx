@@ -51,6 +51,7 @@ import { ReviewQueue } from './components/ReviewQueue';
 import { ImportHistory } from './components/ImportHistory';
 import { CategoriesView } from './components/CategoriesView';
 import { AdminView } from './components/AdminView';
+import { RecurringMatcherLab } from './components/RecurringMatcherLab';
 
 const CATEGORY_COLORS = [
   '#3377FF',
@@ -116,7 +117,7 @@ export default function App() {
   );
 
   const [currentView, setCurrentView] = useState<
-    'dashboard' | 'transactions' | 'budget' | 'categories' | 'admin'
+    'dashboard' | 'transactions' | 'budget' | 'categories' | 'admin' | 'matcher'
   >('dashboard');
   const [taxonomy, setTaxonomy] = useState<Record<string, string[]>>({});
   const [txFilterCategory, setTxFilterCategory] = useState('');
@@ -1177,6 +1178,17 @@ export default function App() {
                 >
                   <Settings className="w-4 h-4" />
                   Admin
+                </button>
+                <button
+                  onClick={() => setCurrentView('matcher')}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${
+                    currentView === 'matcher'
+                      ? 'bg-blue-50 text-blue-600'
+                      : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50'
+                  }`}
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  Matcher Lab
                 </button>
               </nav>
             )}
@@ -3193,6 +3205,8 @@ export default function App() {
             transactions={analysis?.allTransactionsUnfiltered || []}
           />
         )}
+
+        {currentView === 'matcher' && <RecurringMatcherLab transactions={data} />}
       </main>
       {/* Budget Modal */}
       {isBudgetModalOpen && editingBudget && (

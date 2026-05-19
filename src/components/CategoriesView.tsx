@@ -54,6 +54,8 @@ export function CategoriesView({
   const [editingProjectionValue, setEditingProjectionValue] = useState('');
   const [editingDescriptionId, setEditingDescriptionId] = useState<string | null>(null);
   const [editingDescriptionValue, setEditingDescriptionValue] = useState('');
+  const [editingInstancesId, setEditingInstancesId] = useState<string | null>(null);
+  const [editingInstancesValue, setEditingInstancesValue] = useState<number>(1);
   const [recurringSort, setRecurringSort] = useState<{
     key: 'name' | 'amount';
     dir: 'asc' | 'desc';
@@ -98,7 +100,8 @@ export function CategoriesView({
       if (!res.ok) throw new Error('Failed to update recurring transaction');
       setEditingProjectionId(null);
       setEditingDescriptionId(null);
-      await fetchRecurring();
+      setEditingInstancesId(null);
+      fetchRecurring();
     } catch (err: any) {
       alert(err.message);
     }
@@ -757,19 +760,80 @@ export function CategoriesView({
                                           <span className="font-medium text-slate-600 ml-1">
                                             {rt.projectedOccurrence}
                                           </span>
+                                          <button
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setEditingProjectionValue(
+                                                rt.projectedOccurrence || ''
+                                              );
+                                              setEditingProjectionId(rt.id);
+                                            }}
+                                            className="ml-2 text-slate-400 hover:text-blue-600 opacity-0 group-hover:opacity-100 transition-opacity"
+                                            title="Edit Projection"
+                                          >
+                                            <Edit3 className="w-3.5 h-3.5" />
+                                          </button>
                                         </>
                                       )}
-                                    <button
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        setEditingProjectionValue(rt.projectedOccurrence || '');
-                                        setEditingProjectionId(rt.id);
-                                      }}
-                                      className="ml-2 text-slate-400 hover:text-blue-600 opacity-0 group-hover:opacity-100 transition-opacity"
-                                      title="Edit Projection"
-                                    >
-                                      <Edit3 className="w-3.5 h-3.5" />
-                                    </button>
+
+                                    {(rt.instancesPerPeriod || 1) > 1 ||
+                                    editingInstancesId === rt.id ? (
+                                      editingInstancesId === rt.id ? (
+                                        <div className="flex items-center ml-2">
+                                          <span className="font-medium text-slate-400 mx-1">•</span>
+                                          <input
+                                            type="number"
+                                            min="1"
+                                            value={editingInstancesValue}
+                                            onChange={(e) =>
+                                              setEditingInstancesValue(
+                                                Math.max(1, parseInt(e.target.value) || 1)
+                                              )
+                                            }
+                                            className="bg-white border border-slate-300 text-slate-900 text-xs rounded px-2 py-0.5 ml-1 focus:ring-blue-500 focus:border-blue-500 w-16"
+                                            onClick={(e) => e.stopPropagation()}
+                                          />
+                                          <button
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleUpdateRecurringField(rt.id, {
+                                                instancesPerPeriod: editingInstancesValue,
+                                              });
+                                            }}
+                                            className="ml-2 text-blue-600 hover:text-blue-800"
+                                          >
+                                            <Check className="w-4 h-4" />
+                                          </button>
+                                          <button
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setEditingInstancesId(null);
+                                            }}
+                                            className="ml-1 text-slate-400 hover:text-slate-600"
+                                          >
+                                            <X className="w-4 h-4" />
+                                          </button>
+                                        </div>
+                                      ) : (
+                                        <>
+                                          <span className="font-medium text-slate-400 mx-1">•</span>
+                                          <span className="font-medium text-slate-600 ml-1">
+                                            {rt.instancesPerPeriod || 1}x per period
+                                          </span>
+                                          <button
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setEditingInstancesValue(rt.instancesPerPeriod || 1);
+                                              setEditingInstancesId(rt.id);
+                                            }}
+                                            className="ml-2 text-slate-400 hover:text-blue-600 opacity-0 group-hover:opacity-100 transition-opacity"
+                                            title="Edit Instances"
+                                          >
+                                            <Edit3 className="w-3.5 h-3.5" />
+                                          </button>
+                                        </>
+                                      )
+                                    ) : null}
                                   </>
                                 )}
                               </div>

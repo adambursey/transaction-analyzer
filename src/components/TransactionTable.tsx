@@ -72,13 +72,37 @@ export function TransactionTable({
       if (txFilterType === 'income' && tx._isExpense) return false;
       if (txFilterType === 'expense' && !tx._isExpense) return false;
       if (txSearchText) {
-        const searchLower = txSearchText.toLowerCase();
-        const matchesDesc = tx.Description && tx.Description.toLowerCase().includes(searchLower);
-        const matchesCat = tx._category && tx._category.toLowerCase().includes(searchLower);
-        const matchesSubcat =
-          tx._subcategory && tx._subcategory.toLowerCase().includes(searchLower);
-        const matchesAmount = tx.Amount && String(tx.Amount).toLowerCase().includes(searchLower);
-        if (!matchesDesc && !matchesCat && !matchesSubcat && !matchesAmount) return false;
+        const terms = txSearchText.toLowerCase().split(/\s+/).filter(Boolean);
+        const negativeTerms = terms
+          .filter((t) => t.startsWith('-') && t.length > 1)
+          .map((t) => t.substring(1));
+        const positiveSearchString = terms.filter((t) => !t.startsWith('-')).join(' ');
+
+        const textToSearch = [
+          tx.Description || '',
+          tx._category || '',
+          tx._subcategory || '',
+          String(tx.Amount || ''),
+        ]
+          .join(' ')
+          .toLowerCase();
+
+        if (negativeTerms.some((term) => textToSearch.includes(term))) {
+          return false;
+        }
+
+        if (positiveSearchString) {
+          const matchesDesc =
+            tx.Description && tx.Description.toLowerCase().includes(positiveSearchString);
+          const matchesCat =
+            tx._category && tx._category.toLowerCase().includes(positiveSearchString);
+          const matchesSubcat =
+            tx._subcategory && tx._subcategory.toLowerCase().includes(positiveSearchString);
+          const matchesAmount =
+            tx.Amount && String(tx.Amount).toLowerCase().includes(positiveSearchString);
+
+          if (!matchesDesc && !matchesCat && !matchesSubcat && !matchesAmount) return false;
+        }
       }
       return true;
     })

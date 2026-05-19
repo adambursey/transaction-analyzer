@@ -23,6 +23,7 @@ export function AddRecurringModal({
   const [isFrequencyTouched, setIsFrequencyTouched] = useState(false);
   const [description, setDescription] = useState('');
   const [projectedOccurrence, setProjectedOccurrence] = useState('Unknown');
+  const [instancesPerPeriod, setInstancesPerPeriod] = useState(1);
   const [isSaving, setIsSaving] = useState(false);
 
   // Local state for the table's global filters, since this modal shouldn't affect the main app
@@ -217,12 +218,14 @@ export function AddRecurringModal({
         exampleTransactionIds: Array.from(selectedTxIds),
         matchedTransactionIds: [],
         projectedOccurrence,
+        instancesPerPeriod,
       });
       // Reset form
       setFrequency('monthly');
       setIsFrequencyTouched(false);
       setDescription('');
       setProjectedOccurrence('Unknown');
+      setInstancesPerPeriod(1);
       setSelectedTxIds(new Set());
       onClose();
     } catch (err: any) {
@@ -254,7 +257,7 @@ export function AddRecurringModal({
         </div>
 
         <div className="p-6 overflow-y-auto flex-1 flex flex-col gap-6">
-          <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             <div>
               <label className="block text-sm font-semibold text-slate-700 mb-2">
                 Description / Nickname
@@ -264,7 +267,7 @@ export function AddRecurringModal({
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="e.g. Netflix Subscription"
-                className="w-full bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
+                className="w-full h-[54px] bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
               />
             </div>
             <div>
@@ -275,7 +278,7 @@ export function AddRecurringModal({
                   setFrequency(e.target.value);
                   setIsFrequencyTouched(true);
                 }}
-                className="w-full bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
+                className="w-full h-[54px] bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
               >
                 <option value="weekly">Weekly</option>
                 <option value="bi-weekly">Bi-weekly</option>
@@ -294,7 +297,19 @@ export function AddRecurringModal({
                 value={projectedOccurrence}
                 onChange={(e) => setProjectedOccurrence(e.target.value)}
                 placeholder="Auto-calculates..."
-                className="w-full bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
+                className="w-full h-[54px] bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-2">
+                Instances per Period
+              </label>
+              <input
+                type="number"
+                min="1"
+                value={instancesPerPeriod}
+                onChange={(e) => setInstancesPerPeriod(Math.max(1, parseInt(e.target.value) || 1))}
+                className="w-full h-[54px] bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
               />
             </div>
           </div>

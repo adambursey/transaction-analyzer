@@ -690,6 +690,7 @@ ${JSON.stringify(uniqueFuzzyDescs)}
         exampleTransactionIds,
         matchedTransactionIds,
         projectedOccurrence,
+        instancesPerPeriod,
       } = req.body;
       const firestore = new Firestore({ projectId: 'tx-analyzer-1777844550' });
       const docRef = await firestore.collection('recurring_transactions').add({
@@ -701,6 +702,7 @@ ${JSON.stringify(uniqueFuzzyDescs)}
         exampleTransactionIds: exampleTransactionIds || [],
         matchedTransactionIds: matchedTransactionIds || [],
         projectedOccurrence: projectedOccurrence || 'Unknown',
+        instancesPerPeriod: instancesPerPeriod || 1,
         archived: false,
         createdAt: new Date().toISOString(),
       });
@@ -736,12 +738,13 @@ ${JSON.stringify(uniqueFuzzyDescs)}
 
     try {
       const { id } = req.params;
-      const { projectedOccurrence, description } = req.body;
+      const { projectedOccurrence, description, instancesPerPeriod } = req.body;
       const firestore = new Firestore({ projectId: 'tx-analyzer-1777844550' });
 
       const updateData: any = {};
       if (projectedOccurrence !== undefined) updateData.projectedOccurrence = projectedOccurrence;
       if (description !== undefined) updateData.description = description;
+      if (instancesPerPeriod !== undefined) updateData.instancesPerPeriod = instancesPerPeriod;
 
       if (Object.keys(updateData).length > 0) {
         await firestore.collection('recurring_transactions').doc(id).update(updateData);

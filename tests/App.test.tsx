@@ -5,6 +5,7 @@ import App from '../src/App';
 
 describe('App Component', () => {
   beforeEach(() => {
+    localStorage.clear();
     global.fetch = jest.fn();
     jest.clearAllMocks();
 

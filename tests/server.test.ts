@@ -2,7 +2,7 @@
  * @jest-environment node
  */
 import request from 'supertest';
-import { createApp } from '../server';
+import { createApp, removeTransactionIdsFromRecurringExamples } from '../server';
 
 // --- MOCKING ---
 
@@ -479,6 +479,48 @@ describe('Backend API Endpoints (Hermetic)', () => {
       // Verify that 400 Bad Request error is returned
       expect(response.status).toBe(400);
       expect(response.body.error).toContain('Missing required fields');
+    });
+  });
+
+  describe('removeTransactionIdsFromRecurringExamples Utility', () => {
+    it('should query recurring transactions and update exampleTransactionIds when matched', async () => {
+      const mockDoc = {
+        ref: 'mock-recurring-doc-ref',
+        data: () => ({
+          exampleTransactionIds: ['tx_deleted', 'tx_kept'],
+        }),
+      };
+
+      const mockGet = jest.fn().mockResolvedValue({
+        empty: false,
+        docs: [mockDoc],
+      });
+
+      mockDbCollection.mockImplementation((name) => {
+        if (name === 'recurring_transactions') {
+          return { get: mockGet };
+        }
+        return {};
+      });
+
+      const mockBatchUpdate = jest.fn();
+      const mockBatchCommit = jest.fn().mockResolvedValue([]);
+      mockDbBatch.mockReturnValue({
+        update: mockBatchUpdate,
+        commit: mockBatchCommit,
+      });
+
+      const firestoreMock = {
+        collection: mockDbCollection,
+        batch: mockDbBatch,
+      } as any;
+
+      await removeTransactionIdsFromRecurringExamples(firestoreMock, ['tx_deleted']);
+
+      expect(mockBatchUpdate).toHaveBeenCalledWith('mock-recurring-doc-ref', {
+        exampleTransactionIds: ['tx_kept'],
+      });
+      expect(mockBatchCommit).toHaveBeenCalled();
     });
   });
 });

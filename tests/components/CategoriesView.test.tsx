@@ -15,6 +15,7 @@ describe('CategoriesView Component', () => {
   const mockOnUpdate = jest.fn();
 
   beforeEach(() => {
+    localStorage.clear();
     global.fetch = jest.fn().mockResolvedValue({
       ok: true,
       json: async () => ({}),
@@ -33,6 +34,21 @@ describe('CategoriesView Component', () => {
     );
     expect(screen.getByText('Income')).toBeInTheDocument();
     expect(screen.getByText('Expense')).toBeInTheDocument();
+  });
+
+  it('renders Recurring Transactions section before Categories section', () => {
+    render(
+      <CategoriesView
+        taxonomy={mockTaxonomy}
+        transactions={mockTransactions}
+        analysis={{}}
+        onUpdate={mockOnUpdate}
+      />
+    );
+    const headings = screen.getAllByRole('heading', { level: 2 });
+    const headingTexts = headings.map((h) => h.textContent);
+    expect(headingTexts[0]).toBe('Recurring Transactions');
+    expect(headingTexts[1]).toBe('Categories');
   });
 
   it('allows adding a new category', async () => {
@@ -91,5 +107,30 @@ describe('CategoriesView Component', () => {
     });
 
     expect(mockOnUpdate).not.toHaveBeenCalled();
+  });
+
+  it('persists and loads section expanded state in localStorage', async () => {
+    localStorage.setItem('isCategoriesExpanded', 'false');
+    localStorage.setItem('isRecurringExpanded', 'false');
+
+    render(
+      <CategoriesView
+        taxonomy={mockTaxonomy}
+        transactions={mockTransactions}
+        analysis={{}}
+        onUpdate={mockOnUpdate}
+      />
+    );
+
+    expect(screen.queryByPlaceholderText('New Category Name...')).not.toBeInTheDocument();
+    expect(screen.queryByText('Add Recurring Transaction')).not.toBeInTheDocument();
+
+    const recurringHeader = screen.getByText('Recurring Transactions');
+    await userEvent.click(recurringHeader);
+
+    expect(screen.getByText('Add Recurring Transaction')).toBeInTheDocument();
+    expect(localStorage.getItem('isRecurringExpanded')).toBe('true');
+
+    localStorage.clear();
   });
 });

@@ -1,2 +1,2 @@
-[ ] balance projection UI (how will balance change based on current and projected income and expenses)
+[ ] actual vs projected balance chart in This Month view
 [ ] create and restore database backups from admin UI

@@ -59,6 +59,7 @@ describe('ThisMonthView Component', () => {
   ];
 
   beforeEach(() => {
+    localStorage.clear();
     jest.clearAllMocks();
     (global.fetch as jest.Mock).mockResolvedValue({
       ok: true,

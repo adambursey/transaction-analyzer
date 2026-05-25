@@ -90,6 +90,99 @@ function parseStrictDate(dateStr: any): Date | null {
  * Separated from startServer to allow for easy testing with Supertest without binding to a port.
  * @returns The configured Express application.
  */
+/**
+ * Utility to sync and remove deleted transaction IDs from example lists of any recurring transaction.
+ *
+ * @param firestore - The Firestore database instance.
+ * @param txIds - Array of transaction IDs that are being deleted.
+ */
+export async function removeTransactionIdsFromRecurringExamples(
+  firestore: Firestore,
+  txIds: string[]
+) {
+  if (txIds.length === 0) return;
+  try {
+    const recurringCollection = firestore.collection('recurring_transactions');
+    const snapshot = await recurringCollection.get();
+    if (snapshot.empty) return;
+
+    const batch = firestore.batch();
+    let opsCount = 0;
+
+    // Iterate through all recurring profiles and filter out deleted transaction IDs
+    for (const doc of snapshot.docs) {
+      const data = doc.data();
+      const exampleIds = data.exampleTransactionIds || [];
+      const filteredIds = exampleIds.filter((id: string) => !txIds.includes(id));
+
+      // If any IDs were filtered out, queue an update
+      if (filteredIds.length !== exampleIds.length) {
+        batch.update(doc.ref, { exampleTransactionIds: filteredIds });
+        opsCount++;
+      }
+    }
+
+    if (opsCount > 0) {
+      await batch.commit();
+      console.log(
+        `[Recurring Sync] Removed deleted transactions from ${opsCount} recurring example lists.`
+      );
+    }
+  } catch (err) {
+    console.error(
+      '[Recurring Sync] Error syncing deleted transactions with recurring examples:',
+      err
+    );
+  }
+}
+
+/**
+ * One-time startup cleanup utility to remove any stale example transaction IDs
+ * that no longer exist in the database from all recurring profiles.
+ */
+export async function cleanStaleRecurringExamplesOnStartup() {
+  try {
+    const firestore = new Firestore({ projectId: 'tx-analyzer-1777844550' });
+    const recurringCollection = firestore.collection('recurring_transactions');
+    const transactionsCollection = firestore.collection('transactions');
+
+    const recurringSnapshot = await recurringCollection.get();
+    if (recurringSnapshot.empty) return;
+
+    // Fetch all existing transaction documents to build a set of active/non-archived IDs
+    const txSnapshot = await transactionsCollection.get();
+    const validTxIds = new Set(
+      txSnapshot.docs.filter((doc) => doc.data().status !== 'archived').map((doc) => doc.id)
+    );
+
+    const batch = firestore.batch();
+    let updatedCount = 0;
+
+    // Filter out transaction IDs that are no longer active in the database
+    for (const doc of recurringSnapshot.docs) {
+      const data = doc.data();
+      const exampleIds = data.exampleTransactionIds || [];
+      const filteredIds = exampleIds.filter((id: string) => validTxIds.has(id));
+
+      if (filteredIds.length !== exampleIds.length) {
+        batch.update(doc.ref, { exampleTransactionIds: filteredIds });
+        updatedCount++;
+      }
+    }
+
+    if (updatedCount > 0) {
+      await batch.commit();
+      console.log(
+        `[Startup Cleanup] Cleaned stale example transaction IDs from ${updatedCount} recurring profiles.`
+      );
+    } else {
+      console.log(`[Startup Cleanup] No stale example transaction IDs found.`);
+    }
+  } catch (err) {
+    console.error('[Startup Cleanup] Failed to run stale examples cleanup:', err);
+  }
+}
+
 export async function createApp() {
   const app = express();
 
@@ -584,6 +677,12 @@ ${JSON.stringify(uniqueFuzzyDescs)}
       const isReclassification = importDoc.exists && importDoc.data()?.reclassification === true;
 
       const snapshot = await transactionsCollection.where('importId', '==', importId).get();
+
+      // If this is a normal import rollback (deletion), remove transaction IDs from recurring examples
+      if (!isReclassification && snapshot.docs.length > 0) {
+        const deletedTxIds = snapshot.docs.map((doc) => doc.id);
+        await removeTransactionIdsFromRecurringExamples(firestore, deletedTxIds);
+      }
 
       const batchSize = 400;
       for (let i = 0; i < snapshot.docs.length; i += batchSize) {
@@ -1798,6 +1897,10 @@ ${JSON.stringify(uniqueDescs)}
         return;
       }
 
+      if (action === 'keep_original' || action === 'replace_original') {
+        await removeTransactionIdsFromRecurringExamples(firestore, [newId]);
+      }
+
       await batch.commit();
       res.json({ success: true });
     } catch (err: any) {
@@ -2139,6 +2242,8 @@ ${JSON.stringify(uniqueDescs)}
 
       sendEvent(`Found ${totalDocs} transactions to process.`);
 
+      const deletedTxIds: string[] = [];
+
       for (const doc of snapshot.docs) {
         const data = doc.data();
 
@@ -2161,6 +2266,7 @@ ${JSON.stringify(uniqueDescs)}
 
         if (seenSignatures.has(newSig)) {
           batch.delete(doc.ref);
+          deletedTxIds.push(doc.id);
           deletedCount++;
           opsInBatch++;
         } else {
@@ -2182,6 +2288,10 @@ ${JSON.stringify(uniqueDescs)}
 
       if (opsInBatch > 0) {
         await batch.commit();
+      }
+
+      if (deletedTxIds.length > 0) {
+        await removeTransactionIdsFromRecurringExamples(firestore, deletedTxIds);
       }
 
       sendEvent(
@@ -2219,6 +2329,7 @@ if (process.env.NODE_ENV !== 'test') {
       const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
       app.listen(PORT, '0.0.0.0', () => {
         console.log(`Server running on http://localhost:${PORT}`);
+        cleanStaleRecurringExamplesOnStartup();
       });
     })
     .catch((err) => {

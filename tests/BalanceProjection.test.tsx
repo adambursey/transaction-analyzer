@@ -1,6 +1,5 @@
 import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import App from '../src/App';
 
 // Mock Recharts specifically for this test file to inspect the exact dataset passed to the chart

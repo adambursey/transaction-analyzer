@@ -110,8 +110,14 @@ export default function App() {
   const [data, setData] = useState<any[]>([]);
   const [headers, setHeaders] = useState<string[]>([]);
   const [analysis, setAnalysis] = useState<any>(null);
-  const [isTopExpensesExpanded, setIsTopExpensesExpanded] = useState(true);
-  const [isCategoryTableExpanded, setIsCategoryTableExpanded] = useState(true);
+  const [isTopExpensesExpanded, setIsTopExpensesExpanded] = useState(() => {
+    const saved = localStorage.getItem('isTopExpensesExpanded');
+    return saved !== null ? saved === 'true' : true;
+  });
+  const [isCategoryTableExpanded, setIsCategoryTableExpanded] = useState(() => {
+    const saved = localStorage.getItem('isCategoryTableExpanded');
+    return saved !== null ? saved === 'true' : true;
+  });
   const [showTableTotals, setShowTableTotals] = useState(false);
   const [budgetData, setBudgetData] = useState<any[]>([]);
   const [selectedAccount, setSelectedAccount] = useState<'All' | 'Checking' | 'Savings'>(
@@ -134,8 +140,14 @@ export default function App() {
   const [hoveredCategory, setHoveredCategory] = useState<string | null>(null);
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
   const [isBudgetModalOpen, setIsBudgetModalOpen] = useState(false);
-  const [isBudgetExpensesExpanded, setIsBudgetExpensesExpanded] = useState(true);
-  const [isBudgetIncomeExpanded, setIsBudgetIncomeExpanded] = useState(true);
+  const [isBudgetExpensesExpanded, setIsBudgetExpensesExpanded] = useState(() => {
+    const saved = localStorage.getItem('isBudgetExpensesExpanded');
+    return saved !== null ? saved === 'true' : true;
+  });
+  const [isBudgetIncomeExpanded, setIsBudgetIncomeExpanded] = useState(() => {
+    const saved = localStorage.getItem('isBudgetIncomeExpanded');
+    return saved !== null ? saved === 'true' : true;
+  });
   const [showBudgetAverage, setShowBudgetAverage] = useState(false);
   const [editingBudget, setEditingBudget] = useState<{
     category: string;
@@ -186,6 +198,22 @@ export default function App() {
     txFilterType,
     txFilterMatched,
   ]);
+
+  useEffect(() => {
+    localStorage.setItem('isTopExpensesExpanded', String(isTopExpensesExpanded));
+  }, [isTopExpensesExpanded]);
+
+  useEffect(() => {
+    localStorage.setItem('isCategoryTableExpanded', String(isCategoryTableExpanded));
+  }, [isCategoryTableExpanded]);
+
+  useEffect(() => {
+    localStorage.setItem('isBudgetExpensesExpanded', String(isBudgetExpensesExpanded));
+  }, [isBudgetExpensesExpanded]);
+
+  useEffect(() => {
+    localStorage.setItem('isBudgetIncomeExpanded', String(isBudgetIncomeExpanded));
+  }, [isBudgetIncomeExpanded]);
 
   // Initial auth check and set up message listener for OAuth popup flow
   useEffect(() => {
@@ -2731,7 +2759,7 @@ export default function App() {
           <CategoriesView
             taxonomy={taxonomy}
             analysis={analysis}
-            transactions={analysis?.allTransactions || []}
+            transactions={analysis?.allTransactionsUnfiltered || []}
             onUpdate={fetchTaxonomy}
             onCategorySelect={(cat, subcat) => {
               setTxFilterCategory(cat);

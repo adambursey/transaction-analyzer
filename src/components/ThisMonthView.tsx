@@ -51,12 +51,26 @@ export function ThisMonthView({ transactions, currentBalance, onRefresh }: ThisM
   const [unmatched, setUnmatched] = useState<any[]>([]);
   const [projectedBalance, setProjectedBalance] = useState<number>(currentBalance);
   const [expectedImpact, setExpectedImpact] = useState<number>(0);
-  const [remainingExpanded, setRemainingExpanded] = useState(true);
-  const [matchedExpanded, setMatchedExpanded] = useState(false);
+  const [remainingExpanded, setRemainingExpanded] = useState(() => {
+    const saved = localStorage.getItem('remainingExpanded');
+    return saved !== null ? saved === 'true' : true;
+  });
+  const [matchedExpanded, setMatchedExpanded] = useState(() => {
+    const saved = localStorage.getItem('matchedExpanded');
+    return saved !== null ? saved === 'true' : false;
+  });
   const [matchedResults, setMatchedResults] = useState<MatchingResult[]>([]);
   const [recurringProfiles, setRecurringProfiles] = useState<any[]>([]);
   const [savingMap, setSavingMap] = useState<Record<string, boolean>>({});
   const [savingAll, setSavingAll] = useState(false);
+
+  useEffect(() => {
+    localStorage.setItem('remainingExpanded', String(remainingExpanded));
+  }, [remainingExpanded]);
+
+  useEffect(() => {
+    localStorage.setItem('matchedExpanded', String(matchedExpanded));
+  }, [matchedExpanded]);
 
   useEffect(() => {
     /**
@@ -349,68 +363,64 @@ export function ThisMonthView({ transactions, currentBalance, onRefresh }: ThisM
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
-        <div>
-          <h2 className="text-3xl font-bold text-slate-900 tracking-tight flex items-center gap-3">
-            <CalendarDays className="w-8 h-8 text-blue-600" />
-            This Month
-          </h2>
-          <p className="text-slate-500 mt-2 text-lg">
-            Projection and upcoming expected transactions for {currentMonthName}.
-          </p>
-        </div>
-      </div>
-
       {/* Hero Stats Section */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="relative overflow-hidden bg-white rounded-3xl p-6 border border-slate-200 shadow-sm transition-all duration-300 hover:shadow-md hover:border-slate-300 group">
-          <div className="absolute top-0 right-0 p-4 opacity-10 transform translate-x-4 -translate-y-4 group-hover:scale-110 transition-transform duration-500">
-            <Wallet className="w-24 h-24" />
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center shrink-0">
+              <Wallet className="w-6 h-6 text-blue-600" />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-slate-500">Current Balance</p>
+              <p className="text-2xl font-bold text-slate-900 whitespace-nowrap">
+                {currentBalance < 0 ? '-' : ''}
+                {formatCurrency(currentBalance)}
+              </p>
+            </div>
           </div>
-          <p className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-2">
-            Current Balance
-          </p>
-          <p className="text-4xl font-black text-slate-900">
-            {currentBalance < 0 ? '-' : ''}
-            {formatCurrency(currentBalance)}
-          </p>
         </div>
 
-        <div className="relative overflow-hidden bg-white rounded-3xl p-6 border border-slate-200 shadow-sm transition-all duration-300 hover:shadow-md hover:border-slate-300 group">
-          <div className="absolute top-0 right-0 p-4 opacity-10 transform translate-x-4 -translate-y-4 group-hover:scale-110 transition-transform duration-500 text-amber-500">
-            <Clock className="w-24 h-24" />
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 bg-amber-100 rounded-full flex items-center justify-center shrink-0">
+              <Clock className="w-6 h-6 text-amber-600" />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-slate-500">
+                {unmatched.length} Upcoming Transactions
+              </p>
+              <p className="text-2xl font-bold text-slate-900 whitespace-nowrap">
+                {expectedImpact < 0 ? '-' : '+'}
+                {formatCurrency(expectedImpact)}
+              </p>
+            </div>
           </div>
-          <p className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-2">
-            Upcoming Impact
-          </p>
-          <div className="flex items-end gap-3">
-            <p className="text-4xl font-black text-slate-900">
-              {expectedImpact < 0 ? '-' : '+'}
-              {formatCurrency(expectedImpact)}
-            </p>
-          </div>
-          <p className="text-sm text-slate-500 mt-2 flex items-center gap-1.5">
-            Across {unmatched.length} expected transactions
-          </p>
         </div>
 
-        <div className="relative overflow-hidden bg-white rounded-3xl p-6 border border-slate-200 shadow-sm transition-all duration-300 hover:shadow-md hover:border-slate-300 group">
-          <div className="absolute top-0 right-0 p-4 opacity-10 transform translate-x-4 -translate-y-4 group-hover:scale-110 transition-transform duration-500">
-            {projectedBalance > currentBalance ? (
-              <TrendingUp className="w-24 h-24" />
-            ) : (
-              <TrendingDown className="w-24 h-24" />
-            )}
-          </div>
-          <p className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-2">
-            Projected End of Month
-          </p>
-          <p className="text-4xl font-black text-slate-900">
-            {projectedBalance < 0 ? '-' : ''}
-            {formatCurrency(projectedBalance)}
-          </p>
-          <p className="text-sm text-slate-500 mt-2">Based on current balance and known upcoming</p>
-        </div>
+        {(() => {
+          const isGrowth = projectedBalance > currentBalance;
+          const IconComponent = isGrowth ? TrendingUp : TrendingDown;
+          const iconBgClass = isGrowth ? 'bg-emerald-100' : 'bg-rose-100';
+          const iconTextClass = isGrowth ? 'text-emerald-600' : 'text-rose-600';
+          return (
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+              <div className="flex items-center gap-4">
+                <div
+                  className={`w-12 h-12 ${iconBgClass} rounded-full flex items-center justify-center shrink-0`}
+                >
+                  <IconComponent className={`w-6 h-6 ${iconTextClass}`} />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-slate-500">Projected End of Month</p>
+                  <p className="text-2xl font-bold text-slate-900 whitespace-nowrap">
+                    {projectedBalance < 0 ? '-' : ''}
+                    {formatCurrency(projectedBalance)}
+                  </p>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
       </div>
 
       {/* Unmatched Transactions List */}

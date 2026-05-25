@@ -237,6 +237,138 @@ describe('Matching Engine Utils', () => {
       ).length;
       expect(matchCount).toBe(4);
     });
+
+    /**
+     * Test that runMatchingEngine completely ignores candidate transactions
+     * when they are already marked as matched (matched === true) in the database.
+     */
+    it('should ignore candidate transactions where matched is true', () => {
+      // Mock transactions: Netflix is already matched, Spotify is unmatched
+      // Use local Date constructor (month 4 = May) to avoid timezone discrepancies
+      const txs = [
+        {
+          id: '1',
+          Description: 'NETFLIX COM',
+          Amount: -15.99,
+          Date: new Date(2026, 4, 1),
+          matched: true,
+        },
+        {
+          id: '2',
+          Description: 'SPOTIFY',
+          Amount: -10.99,
+          Date: new Date(2026, 4, 3),
+          matched: false,
+        },
+      ];
+
+      // Recurring profiles expected to occur in the current month
+      const profiles = [
+        {
+          id: 'p1',
+          description: 'Netflix',
+          projectedOccurrence: 'Day 1',
+          amountAverage: -15.99,
+          exampleTransactionIds: ['1'],
+        },
+        {
+          id: 'p3',
+          description: 'Spotify',
+          projectedOccurrence: 'Day 3',
+          amountAverage: -10.99,
+          exampleTransactionIds: ['2'],
+        },
+      ];
+
+      // Run the matching engine
+      const results = runMatchingEngine(txs, profiles, 2026, 4, 15, txs);
+
+      // Netflix (which has matched: true) must NOT be processed or returned in results
+      const netflixMatch = results.find((r) => r.transaction.id === '1');
+      expect(netflixMatch).toBeUndefined();
+
+      // Spotify (which has matched: false) should be matched successfully
+      const spotifyMatch = results.find((r) => r.transaction.id === '2');
+      expect(spotifyMatch).toBeDefined();
+    });
+
+    /**
+     * Test that runMatchingEngine includes candidate transactions where matched is true
+     * when allowMatched parameter is set to true.
+     */
+    it('should include candidate transactions where matched is true when allowMatched is true', () => {
+      // Mock transactions: Netflix is already matched
+      const txs = [
+        {
+          id: '1',
+          Description: 'NETFLIX COM',
+          Amount: -15.99,
+          Date: new Date(2026, 4, 1),
+          matched: true,
+        },
+      ];
+
+      // Recurring profiles expected to occur in the current month
+      const profiles = [
+        {
+          id: 'p1',
+          description: 'Netflix',
+          projectedOccurrence: 'Day 1',
+          amountAverage: -15.99,
+          exampleTransactionIds: ['1'],
+        },
+      ];
+
+      // Run the matching engine with allowMatched = true (6th argument)
+      const results = runMatchingEngine(txs, profiles, 2026, 4, 15, txs, true);
+
+      // Netflix (which has matched: true) should be matched successfully
+      const netflixMatch = results.find((r) => r.transaction.id === '1');
+      expect(netflixMatch).toBeDefined();
+    });
+
+    /**
+     * Test that runMatchingEngine ignores recurring profiles that have already had all
+     * of their expected monthly instances satisfied by matched transactions.
+     */
+    it('should ignore recurring profiles that are already fully matched in the month', () => {
+      // Mock transactions: tx1 is already matched to Netflix, tx2 is unmatched and similar
+      const txs = [
+        {
+          id: '1',
+          Description: 'NETFLIX COM',
+          Amount: -15.99,
+          Date: new Date(2026, 4, 10),
+          matched: true,
+        },
+        {
+          id: '2',
+          Description: 'NETFLIX COM',
+          Amount: -15.99,
+          Date: new Date(2026, 4, 15),
+          matched: false,
+        },
+      ];
+
+      const profiles = [
+        {
+          id: 'p1',
+          description: 'Netflix',
+          projectedOccurrence: 'Day 10',
+          amountAverage: -15.99,
+          frequency: 'monthly',
+          exampleTransactionIds: ['1'],
+        },
+      ];
+
+      // Run the matching engine with allowMatched = false
+      const results = runMatchingEngine(txs, profiles, 2026, 4, 20, txs);
+
+      // Netflix (p1) is already fully matched by tx1 in May.
+      // So tx2 (unmatched) should NOT receive a match suggestion for Netflix!
+      const tx2Match = results.find((r) => r.transaction.id === '2');
+      expect(tx2Match).toBeUndefined();
+    });
   });
 
   describe('getInstancesPerPeriod', () => {

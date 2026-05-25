@@ -739,13 +739,16 @@ ${JSON.stringify(uniqueFuzzyDescs)}
 
     try {
       const { id } = req.params;
-      const { projectedOccurrence, description, instancesPerPeriod } = req.body;
+      const { projectedOccurrence, description, instancesPerPeriod, exampleTransactionIds } =
+        req.body;
       const firestore = new Firestore({ projectId: 'tx-analyzer-1777844550' });
 
       const updateData: any = {};
       if (projectedOccurrence !== undefined) updateData.projectedOccurrence = projectedOccurrence;
       if (description !== undefined) updateData.description = description;
       if (instancesPerPeriod !== undefined) updateData.instancesPerPeriod = instancesPerPeriod;
+      if (exampleTransactionIds !== undefined)
+        updateData.exampleTransactionIds = exampleTransactionIds;
 
       if (Object.keys(updateData).length > 0) {
         await firestore.collection('recurring_transactions').doc(id).update(updateData);
@@ -756,6 +759,7 @@ ${JSON.stringify(uniqueFuzzyDescs)}
       res.status(500).json({ error: err.message });
     }
   });
+
   app.post('/api/sheet', async (req, res) => {
     const authHeader = req.headers.authorization;
     let tokensCookie = req.cookies.google_tokens;

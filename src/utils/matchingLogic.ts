@@ -259,6 +259,7 @@ export function getLongestCommonSubstring(str1: string, str2: string): number {
  * @param month - The specific month being evaluated (0-indexed, e.g., 4 for May).
  * @param todayDate - The current calendar day (1-31), used to filter out future projections.
  * @param allTransactions - The entire global corpus of transactions, used to build accurate TF-IDF weights.
+ * @param allowMatched - Optional. If true, already matched transactions (matched: true) will not be skipped.
  * @returns An array of `MatchingResult` objects representing matched pairs and flags.
  */
 export function runMatchingEngine(
@@ -267,11 +268,18 @@ export function runMatchingEngine(
   year: number,
   month: number,
   todayDate: number,
-  allTransactions: any[]
+  allTransactions: any[],
+  allowMatched?: boolean
 ): MatchingResult[] {
   // Filter candidates down to ONLY the current month being evaluated.
   // We do not want to match a transaction from January to a May recurring projection.
   const monthTx = transactions.filter((tx) => {
+    // Non-obvious choice: Skip matching any transactions that have already been manually or
+    // explicitly marked as 'matched' in the database, unless allowMatched is explicitly true.
+    if (!allowMatched && tx.matched === true) {
+      return false;
+    }
+
     const txDate = tx.Date?.toDate
       ? tx.Date.toDate()
       : new Date(tx.Date || tx['Posting Date'] || tx.date);
@@ -282,6 +290,73 @@ export function runMatchingEngine(
   const idfWeights = calculateIdfWeights(allTransactions);
   const totalDocs = allTransactions.length;
 
+  // Identify profiles that are already fully matched in the calendar month being evaluated.
+  // We only run this satisfied check if allowMatched is false (i.e., we are matching unmatched
+  // transactions for suggestions) to avoid infinite recursion.
+  const satisfiedProfileIds = new Set<string>();
+  if (!allowMatched) {
+    const matchedTxsInMonth = allTransactions.filter((tx) => {
+      if (tx.matched !== true) return false;
+      const txDate = tx.Date?.toDate
+        ? tx.Date.toDate()
+        : new Date(tx.Date || tx['Posting Date'] || tx.date);
+      return txDate.getFullYear() === year && txDate.getMonth() === month;
+    });
+
+    const matchesCount = new Map<string, number>();
+    recurringTransactions.forEach((rt) => matchesCount.set(rt.id, 0));
+
+    // A. Count explicit example ID associations
+    matchedTxsInMonth.forEach((tx) => {
+      const explicitProfile = recurringTransactions.find(
+        (rt) => rt.exampleTransactionIds && rt.exampleTransactionIds.includes(tx.id)
+      );
+      if (explicitProfile) {
+        matchesCount.set(explicitProfile.id, (matchesCount.get(explicitProfile.id) || 0) + 1);
+      }
+    });
+
+    // B. Count dynamic associations for already matched transactions in the target month.
+    // We pass allowMatched = true to evaluate them, skipping satisfied check inside the recursion.
+    const dynamicMatchedResults = runMatchingEngine(
+      matchedTxsInMonth,
+      recurringTransactions,
+      year,
+      month,
+      todayDate,
+      allTransactions,
+      true
+    );
+
+    dynamicMatchedResults.forEach((r) => {
+      if (r.matches.length > 0) {
+        const topMatchId = r.matches[0].recurringId;
+        // Only count if this transaction was not already explicitly counted under this profile
+        const isExplicitlyCounted = recurringTransactions.some(
+          (rt) =>
+            rt.id === topMatchId &&
+            rt.exampleTransactionIds &&
+            rt.exampleTransactionIds.includes(r.transaction.id)
+        );
+        if (!isExplicitlyCounted) {
+          matchesCount.set(topMatchId, (matchesCount.get(topMatchId) || 0) + 1);
+        }
+      }
+    });
+
+    // C. Mark fully satisfied profiles (count >= expected occurrences in month)
+    recurringTransactions.forEach((rt) => {
+      const expectedDates = getExpectedDatesInMonth(rt, allTransactions, year, month);
+      const cyclesInMonth = expectedDates.length || 1;
+      const maxInstances = getInstancesPerPeriod(rt) * cyclesInMonth;
+
+      const count = matchesCount.get(rt.id) || 0;
+      if (count >= maxInstances) {
+        satisfiedProfileIds.add(rt.id);
+      }
+    });
+  }
+
   // ----------------------------------------------------------------------
   // STEP 1: Build Target Profiles
   // We transform the raw recurring profiles into rich "Target" objects
@@ -289,6 +364,12 @@ export function runMatchingEngine(
   // ----------------------------------------------------------------------
   const profiles = recurringTransactions
     .filter((rt) => {
+      // Skip matching this profile to other unmatched transactions if it has already had all
+      // of its expected instances satisfied by matched transactions this month.
+      if (!allowMatched && satisfiedProfileIds.has(rt.id)) {
+        return false;
+      }
+
       // Look-ahead filter: If a recurring item is expected on the 30th, and today is the 5th,
       // the transaction simply hasn't happened yet. Don't try to match it.
       // We allow a generous 3-day look-ahead to account for weekend posting delays.

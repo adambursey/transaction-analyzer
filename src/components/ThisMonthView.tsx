@@ -40,6 +40,8 @@ interface ThisMonthViewProps {
   transactions: any[];
   /** The user's current actual balance across active accounts */
   currentBalance: number;
+  /** Callback triggered when a transaction matching is manually saved */
+  onRefresh?: () => void;
 }
 
 /**
@@ -51,7 +53,7 @@ interface ThisMonthViewProps {
  * @param props - Component props containing transaction list and current balance.
  * @returns Renders the dashboard projection cards and chronological remaining transaction items.
  */
-export function ThisMonthView({ transactions, currentBalance }: ThisMonthViewProps) {
+export function ThisMonthView({ transactions, currentBalance, onRefresh }: ThisMonthViewProps) {
   const [loading, setLoading] = useState(true);
   const [unmatched, setUnmatched] = useState<any[]>([]);
   const [projectedBalance, setProjectedBalance] = useState<number>(currentBalance);
@@ -59,6 +61,9 @@ export function ThisMonthView({ transactions, currentBalance }: ThisMonthViewPro
   const [remainingExpanded, setRemainingExpanded] = useState(true);
   const [matchedExpanded, setMatchedExpanded] = useState(false);
   const [matchedResults, setMatchedResults] = useState<MatchingResult[]>([]);
+  const [recurringProfiles, setRecurringProfiles] = useState<any[]>([]);
+  const [savingMap, setSavingMap] = useState<Record<string, boolean>>({});
+  const [savingAll, setSavingAll] = useState(false);
 
   useEffect(() => {
     /**
@@ -67,25 +72,25 @@ export function ThisMonthView({ transactions, currentBalance }: ThisMonthViewPro
     async function init() {
       try {
         setLoading(true);
-        // Fetch active recurring profiles from the backend database
+        // Fetch active recurring profiles from the database
         const res = await fetch('/api/recurring');
         if (!res.ok) throw new Error('Failed to fetch recurring transactions');
         const data = await res.json();
         const recurring = data.recurring || [];
+        setRecurringProfiles(recurring);
 
         const now = new Date();
         const currentYear = now.getFullYear();
         const currentMonth = now.getMonth();
         const todayDate = now.getDate();
+        // Filter transactions into unmatched and already-matched lists
+        const unmatchedTxs = transactions.filter((t) => !t.matched);
+        const alreadyMatchedTxs = transactions.filter((t) => t.matched === true);
 
-        // Run the robust standard matching engine for the current month.
-        // We pass todayDate (now.getDate()) so that the engine's built-in look-ahead filter
-        // correctly filters out profiles projected for later in the month.
-        // This ensures the matching engine does NOT try to match future expected profiles
-        // against unrelated early-posting transactions, maintaining 100% accurate matches
-        // and leaving future profiles as unmatched so they appear in the "Remaining to Occur" list.
+        // Run the robust standard matching engine for the current month's unmatched transactions.
+        // This calculates potential suggestions for our collapsible "Matched Transactions" list.
         const matchResults = runMatchingEngine(
-          transactions,
+          unmatchedTxs,
           recurring,
           currentYear,
           currentMonth,
@@ -95,18 +100,40 @@ export function ThisMonthView({ transactions, currentBalance }: ThisMonthViewPro
 
         setMatchedResults(matchResults);
 
-        // Run the standard matching engine for the previous month.
+        // Run the standard matching engine for the previous month's unmatched transactions.
         // We pass 31 to evaluate the entire month of April, catching transactions that
         // posted early in the last few days of April.
         const prevMonth = currentMonth === 0 ? 11 : currentMonth - 1;
         const prevYear = currentMonth === 0 ? currentYear - 1 : currentYear;
         const prevMatchResults = runMatchingEngine(
-          transactions,
+          unmatchedTxs,
           recurring,
           prevYear,
           prevMonth,
           31,
           transactions
+        );
+
+        // Run the matching engine on already matched transactions to dynamically associate them with their profiles.
+        // Running it separately prevents already-matched items from competing greedily with unmatched suggestions.
+        const alreadyMatchedResults = runMatchingEngine(
+          alreadyMatchedTxs,
+          recurring,
+          currentYear,
+          currentMonth,
+          todayDate,
+          transactions,
+          true
+        );
+
+        const prevAlreadyMatchedResults = runMatchingEngine(
+          alreadyMatchedTxs,
+          recurring,
+          prevYear,
+          prevMonth,
+          31,
+          transactions,
+          true
         );
 
         // Non-obvious choice: We track the exact matched transaction objects for each recurring profile
@@ -116,20 +143,67 @@ export function ThisMonthView({ transactions, currentBalance }: ThisMonthViewPro
         const matchesByProfile = new Map<string, any[]>();
         recurring.forEach((rt) => matchesByProfile.set(rt.id, []));
 
-        // For every matched transaction in the current month, record the matched transaction object.
+        // 1. Highest Priority: Aggregate explicitly associated matched transactions
+        // (where the transaction ID is recorded in the profile's exampleTransactionIds array).
+        transactions.forEach((tx) => {
+          if (tx.matched === true) {
+            const associatedProfile = recurring.find(
+              (rt) => rt.exampleTransactionIds && rt.exampleTransactionIds.includes(tx.id)
+            );
+            if (associatedProfile) {
+              const txDate = tx.Date?.toDate ? tx.Date.toDate() : new Date(tx.Date || tx.date);
+              const txYear = txDate.getFullYear();
+              const txMonth = txDate.getMonth();
+
+              // Check if it is in the current month or an early posting from the previous month
+              const isCurrentMonth = txYear === currentYear && txMonth === currentMonth;
+              let isEarlyPosting = false;
+              if (associatedProfile.frequency === 'monthly') {
+                const isPrevMonth = txYear === prevYear && txMonth === prevMonth;
+                if (isPrevMonth) {
+                  const expectedDay = parseDay(associatedProfile.projectedOccurrence);
+                  if (expectedDay <= 5 && txDate.getDate() >= 25) {
+                    isEarlyPosting = true;
+                  }
+                }
+              }
+
+              if (isCurrentMonth || isEarlyPosting) {
+                const list = matchesByProfile.get(associatedProfile.id) || [];
+                if (!list.some((existingTx) => existingTx.id === tx.id)) {
+                  list.push(tx);
+                  matchesByProfile.set(associatedProfile.id, list);
+                }
+              }
+            }
+          }
+        });
+
+        // 2. Second Priority: Aggregate dynamically matched transactions from this month's unmatched run
         matchResults.forEach((r) => {
           if (r.matches.length > 0) {
             const recId = r.matches[0].recurringId;
             const list = matchesByProfile.get(recId) || [];
-            list.push(r.transaction);
-            matchesByProfile.set(recId, list);
+            if (!list.some((existingTx) => existingTx.id === r.transaction.id)) {
+              list.push(r.transaction);
+              matchesByProfile.set(recId, list);
+            }
           }
         });
 
-        // Catch early posting transactions from the previous month.
-        // If a monthly profile is expected in the first 5 days of the current month (Day 1-5),
-        // and it successfully matched a transaction in the last week of the previous month (Day 25-31),
-        // we count it as matched for the current month.
+        // 3. Third Priority: Aggregate dynamically matched transactions from alreadyMatchedResults (fallback check)
+        alreadyMatchedResults.forEach((r) => {
+          if (r.matches.length > 0) {
+            const recId = r.matches[0].recurringId;
+            const list = matchesByProfile.get(recId) || [];
+            if (!list.some((existingTx) => existingTx.id === r.transaction.id)) {
+              list.push(r.transaction);
+              matchesByProfile.set(recId, list);
+            }
+          }
+        });
+
+        // 4. Fourth Priority: Catch dynamically matched early-posting transactions from the previous month (unmatched)
         prevMatchResults.forEach((r) => {
           if (r.matches.length > 0) {
             const recId = r.matches[0].recurringId;
@@ -138,12 +212,36 @@ export function ThisMonthView({ transactions, currentBalance }: ThisMonthViewPro
               const expectedDay = parseDay(profile.projectedOccurrence);
               const txDate = r.transaction.Date?.toDate
                 ? r.transaction.Date.toDate()
-                : new Date(r.transaction.Date);
+                : new Date(r.transaction.Date || r.transaction.date);
 
               if (expectedDay <= 5 && txDate.getDate() >= 25) {
                 const list = matchesByProfile.get(recId) || [];
-                list.push(r.transaction);
-                matchesByProfile.set(recId, list);
+                if (!list.some((existingTx) => existingTx.id === r.transaction.id)) {
+                  list.push(r.transaction);
+                  matchesByProfile.set(recId, list);
+                }
+              }
+            }
+          }
+        });
+
+        // 5. Fifth Priority: Catch dynamically matched early-posting from already-matched prevAlreadyMatchedResults (fallback)
+        prevAlreadyMatchedResults.forEach((r) => {
+          if (r.matches.length > 0) {
+            const recId = r.matches[0].recurringId;
+            const profile = recurring.find((rt) => rt.id === recId);
+            if (profile && profile.frequency === 'monthly') {
+              const expectedDay = parseDay(profile.projectedOccurrence);
+              const txDate = r.transaction.Date?.toDate
+                ? r.transaction.Date.toDate()
+                : new Date(r.transaction.Date || r.transaction.date);
+
+              if (expectedDay <= 5 && txDate.getDate() >= 25) {
+                const list = matchesByProfile.get(recId) || [];
+                if (!list.some((existingTx) => existingTx.id === r.transaction.id)) {
+                  list.push(r.transaction);
+                  matchesByProfile.set(recId, list);
+                }
               }
             }
           }
@@ -337,6 +435,188 @@ export function ThisMonthView({ transactions, currentBalance }: ThisMonthViewPro
 
     init();
   }, [transactions, currentBalance]);
+
+  /**
+   * Saves a candidate matching association by marking the transaction as matched
+   * and adding the transaction ID as a permanent example under the recurring profile.
+   *
+   * @param tx - The transaction being matched.
+   * @param recurringId - The ID of the target recurring profile.
+   */
+  const handleSaveMatch = async (tx: any, recurringId: string) => {
+    const saveKey = `${tx.id}-${recurringId}`;
+    if (savingMap[saveKey]) return;
+
+    setSavingMap((prev) => ({ ...prev, [saveKey]: true }));
+
+    try {
+      // Find corresponding recurring profile
+      const profile = recurringProfiles.find((p) => p.id === recurringId);
+      if (!profile) throw new Error('Recurring profile not found');
+
+      // Append transaction ID ensuring uniqueness
+      const currentExamples = profile.exampleTransactionIds || [];
+      const updatedExamples = currentExamples.includes(tx.id)
+        ? currentExamples
+        : [...currentExamples, tx.id];
+
+      // Step 1: Update the recurring profile examples list
+      const patchProfileRes = await fetch(`/api/recurring/${recurringId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          exampleTransactionIds: updatedExamples,
+        }),
+      });
+
+      if (!patchProfileRes.ok) {
+        const errData = await patchProfileRes.json();
+        throw new Error(errData.error || 'Failed to update recurring profile examples');
+      }
+
+      // Step 2: Extract a clean timezone-safe date string
+      const d = tx.Date?.toDate ? tx.Date.toDate() : new Date(tx.Date || tx.date);
+      let dateStr = '';
+      if (!isNaN(d.getTime())) {
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        dateStr = `${y}-${m}-${day}`;
+      }
+
+      // Step 3: Update the transaction matched field
+      const patchTxRes = await fetch('/api/transaction/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: tx.id,
+          amount: tx.Amount,
+          category: tx.Category || tx._category || 'Uncategorized',
+          subcategory: tx.Subcategory || tx._subcategory || '',
+          status: tx.status || 'reviewed',
+          date: dateStr || undefined,
+          matched: true,
+        }),
+      });
+
+      if (!patchTxRes.ok) {
+        const errData = await patchTxRes.json();
+        throw new Error(errData.error || 'Failed to update transaction status');
+      }
+
+      // Step 4: Refresh data by calling onRefresh
+      if (onRefresh) {
+        onRefresh();
+      }
+    } catch (err: any) {
+      alert(err.message || 'An error occurred while saving the match');
+    } finally {
+      setSavingMap((prev) => {
+        const next = { ...prev };
+        delete next[saveKey];
+        return next;
+      });
+    }
+  };
+
+  /**
+   * Saves all automatically suggested transaction matches sequentially.
+   * Processes them sequentially to avoid race conditions when multiple transactions
+   * are matched to the same recurring profile.
+   */
+  const handleSaveAllMatches = async () => {
+    if (savingAll) return;
+
+    // Filter to candidates that actually have suggested matches
+    const candidates = matchedResults.filter((r) => r.matches && r.matches.length > 0);
+    if (candidates.length === 0) return;
+
+    setSavingAll(true);
+
+    try {
+      // Keep a local list of recurring profiles to aggregate changes correctly
+      const localProfiles = [...recurringProfiles];
+
+      for (const result of candidates) {
+        const tx = result.transaction;
+        // Always save the top-scoring candidate match
+        const recurringId = result.matches[0].recurringId;
+
+        const profileIdx = localProfiles.findIndex((p) => p.id === recurringId);
+        if (profileIdx === -1) continue;
+
+        const profile = localProfiles[profileIdx];
+        const currentExamples = profile.exampleTransactionIds || [];
+        const updatedExamples = currentExamples.includes(tx.id)
+          ? currentExamples
+          : [...currentExamples, tx.id];
+
+        // Update local profiles list to carry over examples to any subsequent sequence item
+        localProfiles[profileIdx] = {
+          ...profile,
+          exampleTransactionIds: updatedExamples,
+        };
+
+        // Step 1: Update the recurring profile examples list in the backend
+        const patchProfileRes = await fetch(`/api/recurring/${recurringId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            exampleTransactionIds: updatedExamples,
+          }),
+        });
+
+        if (!patchProfileRes.ok) {
+          const errData = await patchProfileRes.json();
+          throw new Error(
+            errData.error ||
+              `Failed to update recurring profile examples for ${profile.description}`
+          );
+        }
+
+        // Step 2: Extract timezone-safe date string
+        const d = tx.Date?.toDate ? tx.Date.toDate() : new Date(tx.Date || tx.date);
+        let dateStr = '';
+        if (!isNaN(d.getTime())) {
+          const y = d.getFullYear();
+          const m = String(d.getMonth() + 1).padStart(2, '0');
+          const day = String(d.getDate()).padStart(2, '0');
+          dateStr = `${y}-${m}-${day}`;
+        }
+
+        // Step 3: Update the transaction matched field in the database
+        const patchTxRes = await fetch('/api/transaction/update', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: tx.id,
+            amount: tx.Amount,
+            category: tx.Category || tx._category || 'Uncategorized',
+            subcategory: tx.Subcategory || tx._subcategory || '',
+            status: tx.status || 'reviewed',
+            date: dateStr || undefined,
+            matched: true,
+          }),
+        });
+
+        if (!patchTxRes.ok) {
+          const errData = await patchTxRes.json();
+          throw new Error(
+            errData.error || `Failed to update transaction status for ${tx.Description}`
+          );
+        }
+      }
+
+      // Step 4: Refresh data by calling onRefresh
+      if (onRefresh) {
+        onRefresh();
+      }
+    } catch (err: any) {
+      alert(err.message || 'An error occurred while saving all matches');
+    } finally {
+      setSavingAll(false);
+    }
+  };
 
   /**
    * Evaluates if a given recurring profile is expected to occur in a specific calendar month.
@@ -641,11 +921,44 @@ export function ThisMonthView({ transactions, currentBalance }: ThisMonthViewPro
                               </div>
                             </div>
                           </div>
+                          <button
+                            onClick={() => handleSaveMatch(result.transaction, m.recurringId)}
+                            disabled={savingMap[`${result.transaction.id}-${m.recurringId}`]}
+                            className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg shadow-sm hover:shadow-md transition-all flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+                          >
+                            {savingMap[`${result.transaction.id}-${m.recurringId}`] ? (
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                            ) : (
+                              'Save'
+                            )}
+                          </button>
                         </div>
                       ))}
                     </div>
                   </div>
                 ))}
+                <div className="flex justify-end pt-2">
+                  <button
+                    onClick={handleSaveAllMatches}
+                    disabled={
+                      savingAll ||
+                      matchedResults.filter((r) => r.matches && r.matches.length > 0).length === 0
+                    }
+                    className="px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold rounded-2xl shadow-sm hover:shadow-md transition-all duration-300 flex items-center gap-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed transform hover:-translate-y-0.5 active:translate-y-0 cursor-pointer"
+                  >
+                    {savingAll ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Saving all...
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle2 className="w-4 h-4" />
+                        Save All Matches
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
             )}
           </div>

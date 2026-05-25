@@ -3249,9 +3249,12 @@ export default function App() {
             transactions={analysis?.allTransactionsUnfiltered || []}
           />
         )}
-
         {currentView === 'this_month' && (
-          <ThisMonthView transactions={data} currentBalance={analysis?.currentBalance || 0} />
+          <ThisMonthView
+            transactions={data}
+            currentBalance={analysis?.currentBalance || 0}
+            onRefresh={fetchSheetData}
+          />
         )}
       </main>
       {/* Budget Modal */}

@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { ThisMonthView } from '../../src/components/ThisMonthView';
 
 // Mock the fetch call
@@ -343,6 +343,339 @@ describe('ThisMonthView Component', () => {
     await waitFor(() => {
       // Rent should no longer be visible
       expect(screen.queryByText('Rent')).not.toBeInTheDocument();
+    });
+  });
+
+  /**
+   * Test that clicking the "Save" button on a matched transaction candidate
+   * correctly marks it as matched, updates the recurring profile's example transaction IDs,
+   * and triggers the refresh callback.
+   */
+  it('allows saving a candidate match which updates recurring profile examples, transaction matched state, and triggers onRefresh', async () => {
+    // Mock the callback refresh function
+    const mockOnRefresh = jest.fn();
+    // Mock global fetch for PATCH /api/recurring/r1 and POST /api/transaction/update
+    const fetchMock = jest.fn().mockImplementation((url, _options) => {
+      if (url === '/api/recurring') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ recurring: mockRecurring }),
+        });
+      }
+      if (url === '/api/recurring/r1') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ success: true }),
+        });
+      }
+      if (url === '/api/transaction/update') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ success: true }),
+        });
+      }
+      return Promise.resolve({ ok: true, json: async () => ({}) });
+    });
+    global.fetch = fetchMock;
+
+    // Mock runMatchingEngine to return Netflix candidate for tx1
+    (runMatchingEngine as jest.Mock).mockReturnValue([
+      {
+        transaction: mockTransactions[0], // id: 'tx1'
+        matches: [{ recurringId: 'r1', recurringName: 'Netflix', score: 100 }],
+        isAutoMatch: true,
+        isConflict: false,
+      },
+    ]);
+
+    render(
+      <ThisMonthView
+        transactions={mockTransactions}
+        currentBalance={5000}
+        onRefresh={mockOnRefresh}
+      />
+    );
+
+    // Wait for the loader to clear
+    await waitFor(() => {
+      expect(screen.queryByText(/Loading/i)).not.toBeInTheDocument();
+    });
+
+    // Expand Matched Transactions
+    const matchedBtn = screen.getByRole('button', { name: /Matched/i });
+    matchedBtn.click();
+
+    // The Save button should exist inside the expanded candidate Netflix card
+    let saveBtn: HTMLElement;
+    await waitFor(() => {
+      saveBtn = screen.getByRole('button', { name: /^Save$/i });
+      expect(saveBtn).toBeInTheDocument();
+    });
+
+    // Click Save
+    saveBtn!.click();
+
+    // Assert that the PATCH api for recurring profile was called
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/recurring/r1',
+        expect.objectContaining({
+          method: 'PATCH',
+          body: JSON.stringify({ exampleTransactionIds: ['tx1'] }),
+        })
+      );
+    });
+
+    // Assert that the POST api to update transaction was called
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/transaction/update',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          id: 'tx1',
+          amount: -15.99,
+          category: 'Uncategorized',
+          subcategory: '',
+          status: 'reviewed',
+          date: '2026-05-10',
+          matched: true,
+        }),
+      })
+    );
+
+    // Assert that onRefresh was triggered
+    expect(mockOnRefresh).toHaveBeenCalled();
+  });
+
+  /**
+   * Test that recurring transactions satisfied by already matched transactions (matched: true)
+   * are correctly excluded from the "Remaining to Occur" unmatched list.
+   */
+  it('filters out recurring transactions that are satisfied by already matched transactions (matched: true)', async () => {
+    // Mock recurring profile Netflix (r1) having exampleTransactionIds: ['tx1']
+    const recurringWithExample = [
+      {
+        id: 'r1',
+        description: 'Netflix',
+        amountAverage: -15.99,
+        projectedOccurrence: 'Day 10',
+        frequency: 'monthly',
+        status: 'active',
+        exampleTransactionIds: ['tx1'],
+      },
+      {
+        id: 'r2',
+        description: 'Rent',
+        amountAverage: -1500,
+        projectedOccurrence: 'Day 1',
+        frequency: 'monthly',
+        status: 'active',
+      },
+    ];
+
+    // Mock global fetch to return this profile
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      json: async () => ({ recurring: recurringWithExample }),
+    });
+
+    // Mock transaction tx1 having matched: true
+    const txs = [
+      {
+        id: 'tx1',
+        Description: 'Netflix',
+        Amount: -15.99,
+        Date: new Date('2026-05-10T12:00:00Z'),
+        matched: true,
+      },
+    ];
+
+    // runMatchingEngine on unmatched transactions will return [] since all txs are matched: true
+    (runMatchingEngine as jest.Mock).mockReturnValue([]);
+
+    render(<ThisMonthView transactions={txs} currentBalance={5000} />);
+
+    await waitFor(() => {
+      expect(screen.queryByText(/Loading/i)).not.toBeInTheDocument();
+    });
+
+    // Netflix should NOT be in the unmatched list ("Remaining to Occur") because it is already matched
+    expect(screen.queryByText('Netflix')).not.toBeInTheDocument();
+
+    // Rent should be in the list
+    expect(screen.getByText('Rent')).toBeInTheDocument();
+  });
+
+  /**
+   * Test that recurring transactions satisfied by dynamically matched already matched transactions (matched: true)
+   * are correctly excluded from the "Remaining to Occur" unmatched list, even when not in exampleTransactionIds.
+   */
+  it('filters out recurring transactions that are satisfied by dynamically matched already matched transactions (matched: true) even when not in exampleTransactionIds', async () => {
+    // Mock recurring profile Netflix (r1) without exampleTransactionIds
+    const recurringWithoutExample = [
+      {
+        id: 'r1',
+        description: 'Netflix',
+        amountAverage: -15.99,
+        projectedOccurrence: 'Day 10',
+        frequency: 'monthly',
+        status: 'active',
+      },
+      {
+        id: 'r2',
+        description: 'Rent',
+        amountAverage: -1500,
+        projectedOccurrence: 'Day 1',
+        frequency: 'monthly',
+        status: 'active',
+      },
+    ];
+
+    // Mock global fetch to return this profile
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      json: async () => ({ recurring: recurringWithoutExample }),
+    });
+
+    // Mock transaction tx1 having matched: true
+    const txs = [
+      {
+        id: 'tx1',
+        Description: 'Netflix',
+        Amount: -15.99,
+        Date: new Date('2026-05-10T12:00:00Z'),
+        matched: true,
+      },
+    ];
+
+    // runMatchingEngine mock implementation:
+    // When allowMatched is true, return the match for Netflix.
+    (runMatchingEngine as jest.Mock).mockImplementation(
+      (txsInput, rec, yr, mo, day, all, allowMatched) => {
+        if (allowMatched) {
+          return [
+            {
+              transaction: txs[0],
+              isConflict: false,
+              isAutoMatch: true,
+              matches: [{ recurringId: 'r1', recurringName: 'Netflix', score: 100 }],
+            },
+          ];
+        }
+        return [];
+      }
+    );
+
+    render(<ThisMonthView transactions={txs} currentBalance={5000} />);
+
+    await waitFor(() => {
+      expect(screen.queryByText(/Loading/i)).not.toBeInTheDocument();
+    });
+
+    // Netflix should NOT be in the unmatched list ("Remaining to Occur") because it is already matched dynamically
+    expect(screen.queryByText('Netflix')).not.toBeInTheDocument();
+
+    // Rent should be in the list
+    expect(screen.getByText('Rent')).toBeInTheDocument();
+  });
+
+  /**
+   * Test that a "Save All Matches" button exists in the Matched Transactions list
+   * and triggers sequential saves for all suggestions.
+   */
+  it('renders a "Save All" button and allows saving all candidates sequentially', async () => {
+    const mockOnRefresh = jest.fn();
+
+    // Mock profiles: Netflix (r1) and Spotify (r2)
+    const recurring = [
+      {
+        id: 'r1',
+        description: 'Netflix',
+        amountAverage: -15.99,
+        projectedOccurrence: 'Day 10',
+        frequency: 'monthly',
+        status: 'active',
+        exampleTransactionIds: [],
+      },
+      {
+        id: 'r2',
+        description: 'Spotify',
+        amountAverage: -10.99,
+        projectedOccurrence: 'Day 15',
+        frequency: 'monthly',
+        status: 'active',
+        exampleTransactionIds: [],
+      },
+    ];
+
+    // Mock global fetch to return profiles
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      json: async () => ({ recurring }),
+    });
+
+    // Mock candidate transactions: tx1 (Netflix) and tx2 (Spotify)
+    const txs = [
+      {
+        id: 'tx1',
+        Description: 'Netflix Inc',
+        Amount: -15.99,
+        Date: new Date('2026-05-10T12:00:00Z'),
+        matched: false,
+      },
+      {
+        id: 'tx2',
+        Description: 'Spotify Premium',
+        Amount: -10.99,
+        Date: new Date('2026-05-15T12:00:00Z'),
+        matched: false,
+      },
+    ];
+
+    // Mock runMatchingEngine to return suggestions for both txs
+    (runMatchingEngine as jest.Mock).mockReturnValue([
+      {
+        transaction: txs[0],
+        isConflict: false,
+        isAutoMatch: true,
+        matches: [{ recurringId: 'r1', recurringName: 'Netflix', score: 100 }],
+      },
+      {
+        transaction: txs[1],
+        isConflict: false,
+        isAutoMatch: true,
+        matches: [{ recurringId: 'r2', recurringName: 'Spotify', score: 100 }],
+      },
+    ]);
+
+    render(<ThisMonthView transactions={txs} currentBalance={5000} onRefresh={mockOnRefresh} />);
+
+    await waitFor(() => {
+      expect(screen.queryByText(/Loading/i)).not.toBeInTheDocument();
+    });
+
+    // Expand Matched Transactions section
+    const matchedBtn = screen.getByRole('button', { name: /Matched Transactions/i });
+    fireEvent.click(matchedBtn);
+
+    // Verify "Save All Matches" button exists
+    const saveAllBtn = screen.getByRole('button', { name: /Save All Matches/i });
+    expect(saveAllBtn).toBeInTheDocument();
+
+    // Mock sequential fetch responses
+    (global.fetch as jest.Mock)
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ recurring }) }) // Fetch in init
+      .mockResolvedValueOnce({ ok: true }) // PATCH Netflix
+      .mockResolvedValueOnce({ ok: true }) // POST Netflix tx
+      .mockResolvedValueOnce({ ok: true }) // PATCH Spotify
+      .mockResolvedValueOnce({ ok: true }); // POST Spotify tx
+
+    // Click "Save All Matches"
+    fireEvent.click(saveAllBtn);
+
+    // Wait for the operations to complete and onRefresh to be called
+    await waitFor(() => {
+      expect(mockOnRefresh).toHaveBeenCalled();
     });
   });
 });

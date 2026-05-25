@@ -315,6 +315,7 @@ export async function createApp() {
           Amount: isNaN(parsedAmount) ? 0 : parsedAmount,
           Balance: isNaN(parsedBalance as number) ? undefined : parsedBalance,
           Account: accountStr,
+          matched: false,
         };
       });
 
@@ -819,6 +820,7 @@ ${JSON.stringify(uniqueFuzzyDescs)}
             importId: raw['importId'] || '',
             duplicateOfId: raw['duplicateOfId'] || undefined,
             Account: raw['Account'] || 'Checking',
+            matched: raw['matched'] !== undefined ? !!raw['matched'] : false,
           };
         })
         .filter((tx) => tx.status !== 'archived');
@@ -832,6 +834,7 @@ ${JSON.stringify(uniqueFuzzyDescs)}
         'Category',
         'Subcategory',
         'status',
+        'matched',
       ];
 
       const budgetSnapshot = await budgetsCollection.get();
@@ -1031,7 +1034,7 @@ ${JSON.stringify(uniqueFuzzyDescs)}
       return;
     }
 
-    const { id, amount, category, subcategory, status, date } = req.body;
+    const { id, amount, category, subcategory, status, date, matched } = req.body;
     if (!id || amount === undefined || !category) {
       res.status(400).json({ error: 'Missing required fields' });
       return;
@@ -1054,6 +1057,9 @@ ${JSON.stringify(uniqueFuzzyDescs)}
       }
       if (status !== undefined) {
         updatesObj.status = status;
+      }
+      if (matched !== undefined) {
+        updatesObj.matched = !!matched;
       }
       if (date !== undefined) {
         const d = parseStrictDate(date);

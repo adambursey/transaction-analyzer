@@ -50,6 +50,7 @@ export function TransactionTable({
   const [txFilterCategory, setTxFilterCategory] = useState('');
   const [txFilterSubcategory, setTxFilterSubcategory] = useState('');
   const [txFilterType, setTxFilterType] = useState<'all' | 'income' | 'expense'>('all');
+  const [txFilterMatched, setTxFilterMatched] = useState<'all' | 'matched' | 'unmatched'>('all');
   const [txSortConfig, setTxSortConfig] = useState<{
     key: string;
     direction: 'asc' | 'desc';
@@ -71,6 +72,8 @@ export function TransactionTable({
       if (txFilterSubcategory && tx._subcategory !== txFilterSubcategory) return false;
       if (txFilterType === 'income' && tx._isExpense) return false;
       if (txFilterType === 'expense' && !tx._isExpense) return false;
+      if (txFilterMatched === 'matched' && !tx.matched) return false;
+      if (txFilterMatched === 'unmatched' && tx.matched) return false;
       if (txSearchText) {
         const terms = txSearchText.toLowerCase().split(/\s+/).filter(Boolean);
         const negativeTerms = terms
@@ -135,7 +138,7 @@ export function TransactionTable({
     <div className="space-y-6">
       {/* Filters */}
       <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-        <div className="grid grid-cols-1 md:grid-cols-7 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-8 gap-4">
           <div className="col-span-1 md:col-span-2">
             <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">
               Search
@@ -256,6 +259,24 @@ export function TransactionTable({
               <option value="expense">Expense Only</option>
             </select>
           </div>
+          <div>
+            <label
+              htmlFor="table-transactions-matched-select"
+              className="block text-xs font-semibold text-slate-500 uppercase mb-2"
+            >
+              Matched Status
+            </label>
+            <select
+              id="table-transactions-matched-select"
+              value={txFilterMatched}
+              onChange={(e) => setTxFilterMatched(e.target.value as any)}
+              className="w-full bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
+            >
+              <option value="all">All</option>
+              <option value="matched">Matched Only</option>
+              <option value="unmatched">Unmatched Only</option>
+            </select>
+          </div>
           <div className="flex items-end gap-4">
             {!hideTotalsToggle && (
               <label className="flex items-center gap-2 cursor-pointer group mb-0.5">
@@ -275,6 +296,7 @@ export function TransactionTable({
                 setTxFilterCategory('');
                 setTxFilterSubcategory('');
                 setTxFilterType('all');
+                setTxFilterMatched('all');
                 setSelectedYear('All');
                 setSelectedMonth('All Months');
               }}
@@ -502,6 +524,7 @@ export function TransactionTable({
                       const isSubcategory = header === analysis.columnsIdentified.subcategory;
                       const isDescription = header === analysis.columnsIdentified.description;
                       const isDate = header === analysis.columnsIdentified.date;
+                      const isMatched = header === 'matched';
 
                       let dotColor = null;
                       if (isCategory) dotColor = getCategoryColor(String(val));
@@ -537,6 +560,14 @@ export function TransactionTable({
                                 minimumFractionDigits: 2,
                                 maximumFractionDigits: 2,
                               })}
+                            </span>
+                          ) : isMatched ? (
+                            <span
+                              className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                                val ? 'bg-green-100 text-green-800' : 'bg-slate-100 text-slate-800'
+                              }`}
+                            >
+                              {val ? 'Matched' : 'Unmatched'}
                             </span>
                           ) : isCategory ? (
                             <div className="flex items-center gap-2">

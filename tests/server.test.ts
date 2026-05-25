@@ -419,4 +419,66 @@ describe('Backend API Endpoints (Hermetic)', () => {
       expect(mockBatchCommit).toHaveBeenCalled();
     });
   });
+
+  describe('POST /api/transaction/update', () => {
+    /**
+     * Test successful update of a transaction with the "matched" field.
+     */
+    it('should successfully update a transaction including matched status', async () => {
+      // Mock the Firestore doc update method
+      const mockUpdate = jest.fn();
+      mockDbCollection.mockReturnValue({
+        doc: jest.fn().mockReturnValue({
+          update: mockUpdate,
+        }),
+      });
+
+      // Prepare updated payload including the new boolean 'matched' field
+      const payload = {
+        id: 'tx123',
+        amount: '-150.00',
+        category: 'Utilities',
+        subcategory: 'Electricity',
+        status: 'reviewed',
+        date: '2026-05-15',
+        matched: true,
+      };
+
+      // Perform POST request to single update API route
+      const response = await request(app)
+        .post('/api/transaction/update')
+        .set('Cookie', ['google_tokens={"refresh_token":"mock"}'])
+        .send(payload);
+
+      // Verify server responded with 200 OK and success: true
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ success: true });
+
+      // Assert that update was called on the correct Firestore doc with correct fields
+      expect(mockUpdate).toHaveBeenCalledWith({
+        Amount: -150.0,
+        Category: 'Utilities',
+        Subcategory: 'Electricity',
+        status: 'reviewed',
+        matched: true,
+        Date: expect.objectContaining({ toDate: expect.any(Function) }),
+        EffectiveDate: expect.objectContaining({ toDate: expect.any(Function) }),
+      });
+    });
+
+    /**
+     * Test failure validation check for missing fields.
+     */
+    it('should return 400 if required fields are missing', async () => {
+      // Send a payload missing required fields (Amount and Category)
+      const response = await request(app)
+        .post('/api/transaction/update')
+        .set('Cookie', ['google_tokens={"refresh_token":"mock"}'])
+        .send({ id: 'tx123' });
+
+      // Verify that 400 Bad Request error is returned
+      expect(response.status).toBe(400);
+      expect(response.body.error).toContain('Missing required fields');
+    });
+  });
 });

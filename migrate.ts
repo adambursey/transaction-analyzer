@@ -16,8 +16,21 @@ async function migrate() {
 
     for (const doc of snapshot.docs) {
       const data = doc.data();
+      const updates: any = {};
+      let needsUpdate = false;
+
       if (!data.Account) {
-        batch.update(doc.ref, { Account: 'Checking' });
+        updates.Account = 'Checking';
+        needsUpdate = true;
+      }
+
+      if (data.matched === undefined) {
+        updates.matched = false;
+        needsUpdate = true;
+      }
+
+      if (needsUpdate) {
+        batch.update(doc.ref, updates);
         operationsInBatch++;
         count++;
 

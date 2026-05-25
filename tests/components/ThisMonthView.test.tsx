@@ -301,4 +301,48 @@ describe('ThisMonthView Component', () => {
     // So ATVs should NOT be in the unmatched list.
     expect(screen.queryByText('ATVs Payment')).not.toBeInTheDocument();
   });
+
+  it('renders collapsible Remaining to Occur and Matched Transactions sections', async () => {
+    (runMatchingEngine as jest.Mock).mockReturnValue([
+      {
+        transaction: mockTransactions[0],
+        matches: [{ recurringId: 'r1', recurringName: 'Netflix', score: 100 }],
+        isAutoMatch: true,
+        isConflict: false,
+      },
+    ]);
+
+    render(<ThisMonthView transactions={mockTransactions} currentBalance={5000} />);
+
+    await waitFor(() => {
+      expect(screen.queryByText(/Loading/i)).not.toBeInTheDocument();
+    });
+
+    // Both collapsible headers should exist
+    const remainingBtn = screen.getByRole('button', { name: /Remaining to Occur/i });
+    const matchedBtn = screen.getByRole('button', { name: /Matched/i });
+
+    expect(remainingBtn).toBeInTheDocument();
+    expect(matchedBtn).toBeInTheDocument();
+
+    // Remaining to Occur is expanded by default, so Rent should be visible initially
+    expect(screen.getByText('Rent')).toBeInTheDocument();
+
+    // Matched Transactions is collapsed by default, so Netflix should NOT be visible initially
+    expect(screen.queryByText('Netflix')).not.toBeInTheDocument();
+
+    // Click Matched Transactions header to expand it
+    matchedBtn.click();
+    await waitFor(() => {
+      // Netflix should now be visible in the matched list!
+      expect(screen.getAllByText('Netflix').length).toBeGreaterThan(0);
+    });
+
+    // Click Remaining to Occur header to collapse it
+    remainingBtn.click();
+    await waitFor(() => {
+      // Rent should no longer be visible
+      expect(screen.queryByText('Rent')).not.toBeInTheDocument();
+    });
+  });
 });

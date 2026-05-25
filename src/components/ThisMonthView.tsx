@@ -15,6 +15,11 @@ import {
   Clock,
   Loader2,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
+  AlertCircle,
+  DollarSign,
+  Tag,
 } from 'lucide-react';
 import {
   runMatchingEngine,
@@ -23,6 +28,7 @@ import {
   getLongestCommonSubstring,
   getInstancesPerPeriod,
   getExpectedDatesInMonth,
+  MatchingResult,
 } from '../utils/matchingLogic';
 import { format } from 'date-fns';
 
@@ -50,6 +56,9 @@ export function ThisMonthView({ transactions, currentBalance }: ThisMonthViewPro
   const [unmatched, setUnmatched] = useState<any[]>([]);
   const [projectedBalance, setProjectedBalance] = useState<number>(currentBalance);
   const [expectedImpact, setExpectedImpact] = useState<number>(0);
+  const [remainingExpanded, setRemainingExpanded] = useState(true);
+  const [matchedExpanded, setMatchedExpanded] = useState(false);
+  const [matchedResults, setMatchedResults] = useState<MatchingResult[]>([]);
 
   useEffect(() => {
     /**
@@ -83,6 +92,8 @@ export function ThisMonthView({ transactions, currentBalance }: ThisMonthViewPro
           todayDate,
           transactions
         );
+
+        setMatchedResults(matchResults);
 
         // Run the standard matching engine for the previous month.
         // We pass 31 to evaluate the entire month of April, catching transactions that
@@ -440,74 +451,203 @@ export function ThisMonthView({ transactions, currentBalance }: ThisMonthViewPro
 
       {/* Unmatched Transactions List */}
       <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-          <h3 className="text-xl font-bold text-slate-800">Remaining to Occur</h3>
-          <span className="bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-sm font-semibold">
-            {unmatched.length} Items
-          </span>
-        </div>
-
-        {unmatched.length === 0 ? (
-          <div className="p-12 text-center text-slate-500 flex flex-col items-center">
-            <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mb-4">
-              <CheckCircle2 className="w-8 h-8" />
-            </div>
-            <p className="text-xl font-semibold text-slate-800 mb-1">All Caught Up!</p>
-            <p>All expected recurring transactions for this month have been matched.</p>
+        <button
+          onClick={() => setRemainingExpanded(!remainingExpanded)}
+          className="w-full p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50 hover:bg-slate-100/70 transition-colors text-left focus:outline-none"
+        >
+          <div className="flex items-center gap-3">
+            <h3 className="text-xl font-bold text-slate-800">Remaining to Occur</h3>
+            <span className="bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-sm font-semibold">
+              {unmatched.length} Items
+            </span>
           </div>
-        ) : (
-          <div className="divide-y divide-slate-100">
-            {unmatched.map((rt) => {
-              const isIncome = (rt.amountAverage || 0) > 0;
-              const expectedDay = parseDay(rt.projectedOccurrence);
-              const dayStr =
-                expectedDay === 99 ? 'Date Unknown' : `${currentMonthName} ${expectedDay}`;
+          <div className="text-slate-400">
+            {remainingExpanded ? (
+              <ChevronUp className="w-6 h-6 text-slate-500" />
+            ) : (
+              <ChevronDown className="w-6 h-6 text-slate-500" />
+            )}
+          </div>
+        </button>
 
-              return (
-                <div
-                  key={`${rt.id}-${rt._instanceIndex || 0}`}
-                  className="p-4 md:p-6 hover:bg-slate-50 transition-colors flex flex-col md:flex-row md:items-center justify-between gap-4 group"
-                >
-                  <div className="flex items-center gap-4">
-                    <div
-                      className={`w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 shadow-inner ${isIncome ? 'bg-emerald-100 text-emerald-600' : 'bg-rose-100 text-rose-600'}`}
-                    >
-                      {isIncome ? (
-                        <TrendingUp className="w-6 h-6" />
-                      ) : (
-                        <TrendingDown className="w-6 h-6" />
-                      )}
-                    </div>
-                    <div>
-                      <h4 className="font-semibold text-lg text-slate-900 group-hover:text-blue-600 transition-colors">
-                        {rt.description}
-                      </h4>
-                      <div className="flex items-center gap-3 text-sm text-slate-500 mt-1">
-                        <span className="flex items-center gap-1 font-medium bg-slate-100 px-2 py-0.5 rounded-md">
-                          <CalendarDays className="w-3.5 h-3.5" />
-                          {dayStr}
-                        </span>
+        {remainingExpanded &&
+          (unmatched.length === 0 ? (
+            <div className="p-12 text-center text-slate-500 flex flex-col items-center">
+              <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mb-4">
+                <CheckCircle2 className="w-8 h-8" />
+              </div>
+              <p className="text-xl font-semibold text-slate-800 mb-1">All Caught Up!</p>
+              <p>All expected recurring transactions for this month have been matched.</p>
+            </div>
+          ) : (
+            <div className="divide-y divide-slate-100">
+              {unmatched.map((rt) => {
+                const isIncome = (rt.amountAverage || 0) > 0;
+                const expectedDay = parseDay(rt.projectedOccurrence);
+                const dayStr =
+                  expectedDay === 99 ? 'Date Unknown' : `${currentMonthName} ${expectedDay}`;
+
+                return (
+                  <div
+                    key={`${rt.id}-${rt._instanceIndex || 0}`}
+                    className="p-4 md:p-6 hover:bg-slate-50 transition-colors flex flex-col md:flex-row md:items-center justify-between gap-4 group"
+                  >
+                    <div className="flex items-center gap-4">
+                      <div
+                        className={`w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 shadow-inner ${isIncome ? 'bg-emerald-100 text-emerald-600' : 'bg-rose-100 text-rose-600'}`}
+                      >
+                        {isIncome ? (
+                          <TrendingUp className="w-6 h-6" />
+                        ) : (
+                          <TrendingDown className="w-6 h-6" />
+                        )}
+                      </div>
+                      <div>
+                        <h4 className="font-semibold text-lg text-slate-900 group-hover:text-blue-600 transition-colors">
+                          {rt.description}
+                        </h4>
+                        <div className="flex items-center gap-3 text-sm text-slate-500 mt-1">
+                          <span className="flex items-center gap-1 font-medium bg-slate-100 px-2 py-0.5 rounded-md">
+                            <CalendarDays className="w-3.5 h-3.5" />
+                            {dayStr}
+                          </span>
+                        </div>
                       </div>
                     </div>
-                  </div>
 
-                  <div className="flex items-center justify-between md:justify-end gap-6 w-full md:w-auto mt-2 md:mt-0 pl-16 md:pl-0">
-                    <div className="text-right">
-                      <p className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
-                        Expected Amount
-                      </p>
-                      <p
-                        className={`font-mono text-lg font-bold ${isIncome ? 'text-emerald-600' : 'text-slate-900'}`}
-                      >
-                        {isIncome ? '+' : '-'}
-                        {formatCurrency(rt.amountAverage || 0)}
-                      </p>
+                    <div className="flex items-center justify-between md:justify-end gap-6 w-full md:w-auto mt-2 md:mt-0 pl-16 md:pl-0">
+                      <div className="text-right">
+                        <p className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
+                          Expected Amount
+                        </p>
+                        <p
+                          className={`font-mono text-lg font-bold ${isIncome ? 'text-emerald-600' : 'text-slate-900'}`}
+                        >
+                          {isIncome ? '+' : '-'}
+                          {formatCurrency(rt.amountAverage || 0)}
+                        </p>
+                      </div>
+                      <ArrowRight className="w-5 h-5 text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity hidden md:block transform group-hover:translate-x-1" />
                     </div>
-                    <ArrowRight className="w-5 h-5 text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity hidden md:block transform group-hover:translate-x-1" />
                   </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
+          ))}
+      </div>
+
+      {/* Matched Transactions List */}
+      <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
+        <button
+          onClick={() => setMatchedExpanded(!matchedExpanded)}
+          className="w-full p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50 hover:bg-slate-100/70 transition-colors text-left focus:outline-none"
+        >
+          <div className="flex items-center gap-3">
+            <h3 className="text-xl font-bold text-slate-800">Matched Transactions</h3>
+            <span className="bg-emerald-100 text-emerald-700 px-3 py-1 rounded-full text-sm font-semibold">
+              {matchedResults.length} Items
+            </span>
+          </div>
+          <div className="text-slate-400">
+            {matchedExpanded ? (
+              <ChevronUp className="w-6 h-6 text-slate-500" />
+            ) : (
+              <ChevronDown className="w-6 h-6 text-slate-500" />
+            )}
+          </div>
+        </button>
+
+        {matchedExpanded && (
+          <div className="p-6 bg-slate-50/50 border-t border-slate-100">
+            {matchedResults.length === 0 ? (
+              <div className="text-center text-slate-500 py-12">
+                No matched transactions found for this month.
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {matchedResults.map((result, idx) => (
+                  <div
+                    key={idx}
+                    className={`p-4 rounded-xl border ${result.isConflict ? 'border-amber-300 bg-amber-50' : result.isAutoMatch ? 'border-green-200 bg-green-50' : 'border-slate-200 bg-white'}`}
+                  >
+                    {/* Transaction Header */}
+                    <div className="flex justify-between items-start mb-3">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          {result.isConflict && <AlertCircle className="w-4 h-4 text-amber-500" />}
+                          {result.isAutoMatch && (
+                            <CheckCircle2 className="w-4 h-4 text-green-500" />
+                          )}
+                          <h4 className="font-semibold text-slate-900">
+                            {result.transaction.Description}
+                          </h4>
+                        </div>
+                        <div className="flex items-center gap-3 mt-1 text-sm text-slate-500">
+                          <span className="flex items-center gap-1 font-medium bg-slate-100 px-2 py-0.5 rounded-md">
+                            <CalendarDays className="w-3.5 h-3.5" />
+                            {result.transaction.Date?.toDate
+                              ? result.transaction.Date.toDate().toLocaleDateString()
+                              : String(result.transaction.Date).split('T')[0]}
+                          </span>
+                          <span className="flex items-center gap-1 font-mono font-semibold bg-slate-100 px-2 py-0.5 rounded-md">
+                            <DollarSign className="w-3.5 h-3.5" />
+                            {Math.abs(result.transaction.Amount).toFixed(2)}
+                          </span>
+                          {result.transaction.Category && (
+                            <span className="flex items-center gap-1 font-medium bg-slate-100 px-2 py-0.5 rounded-md">
+                              <Tag className="w-3.5 h-3.5" />
+                              {result.transaction.Category}{' '}
+                              {result.transaction.Subcategory
+                                ? `> ${result.transaction.Subcategory}`
+                                : ''}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      {result.isConflict && (
+                        <span className="px-2 py-1 bg-amber-100 text-amber-800 text-xs font-medium rounded">
+                          Conflict Flagged
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Match Candidates */}
+                    <div className="space-y-2 mt-4 pl-4 border-l-2 border-slate-200">
+                      {result.matches.map((m: any, mIdx: number) => (
+                        <div
+                          key={mIdx}
+                          className="bg-white p-3 rounded border border-slate-100 shadow-sm flex items-center justify-between"
+                        >
+                          <div className="flex items-center gap-3">
+                            <div
+                              className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm ${mIdx === 0 && !result.isConflict ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600'}`}
+                            >
+                              {m.score}%
+                            </div>
+                            <div>
+                              <div className="font-medium text-slate-800 flex items-center gap-2">
+                                {m.recurringName}
+                                {mIdx === 0 && !result.isConflict && result.isAutoMatch && (
+                                  <span className="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded uppercase font-bold tracking-wider">
+                                    Top Match
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-xs text-slate-500 mt-0.5 flex gap-3">
+                                <span>Tokens: {m.breakdown?.tokenScore ?? 0}%</span>
+                                <span>Substring: {m.breakdown?.lcsChars ?? 0} chars</span>
+                                <span>Cat Bonus: +{m.breakdown?.categoryBonus ?? 0}%</span>
+                                <span>Expected: {m.breakdown?.amountExpected ?? 'N/A'}</span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>

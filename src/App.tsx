@@ -124,6 +124,7 @@ export default function App() {
   const [txFilterCategory, setTxFilterCategory] = useState('');
   const [txFilterSubcategory, setTxFilterSubcategory] = useState('');
   const [txFilterType, setTxFilterType] = useState<'all' | 'income' | 'expense'>('all');
+  const [txFilterMatched, setTxFilterMatched] = useState<'all' | 'matched' | 'unmatched'>('all');
   const [showTxTotals, setShowTxTotals] = useState(false);
   const [selectedYear, setSelectedYear] = useState<string>(new Date().getFullYear().toString());
   const [selectedMonth, setSelectedMonth] = useState<string>(format(new Date(), 'MMM yyyy'));
@@ -151,6 +152,7 @@ export default function App() {
   const [editTxCategory, setEditTxCategory] = useState('');
   const [editTxSubcategory, setEditTxSubcategory] = useState('');
   const [editTxBalance, setEditTxBalance] = useState('');
+  const [editTxMatched, setEditTxMatched] = useState(false);
   const [isUpdatingTx, setIsUpdatingTx] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [importStatus, setImportStatus] = useState<{
@@ -174,7 +176,14 @@ export default function App() {
   useEffect(() => {
     setSelectedTxIds(new Set());
     setIsBulkEditingTx(false);
-  }, [selectedYear, selectedMonth, txFilterCategory, txFilterSubcategory, txFilterType]);
+  }, [
+    selectedYear,
+    selectedMonth,
+    txFilterCategory,
+    txFilterSubcategory,
+    txFilterType,
+    txFilterMatched,
+  ]);
 
   // Initial auth check and set up message listener for OAuth popup flow
   useEffect(() => {
@@ -407,6 +416,7 @@ export default function App() {
           category: editTxCategory,
           subcategory: editTxSubcategory,
           Balance: editTxBalance ? parseFloat(editTxBalance.replace(/[^0-9.-]+/g, '')) : undefined,
+          matched: editTxMatched,
         }),
       });
 
@@ -2628,7 +2638,7 @@ export default function App() {
 
             {/* Filters */}
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-              <div className="grid grid-cols-1 md:grid-cols-7 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-8 gap-4">
                 <div className="col-span-1 md:col-span-2">
                   <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">
                     Search
@@ -2755,6 +2765,24 @@ export default function App() {
                     <option value="expense">Expense Only</option>
                   </select>
                 </div>
+                <div>
+                  <label
+                    htmlFor="transactions-matched-select"
+                    className="block text-xs font-semibold text-slate-500 uppercase mb-2"
+                  >
+                    Matched Status
+                  </label>
+                  <select
+                    id="transactions-matched-select"
+                    value={txFilterMatched}
+                    onChange={(e) => setTxFilterMatched(e.target.value as any)}
+                    className="w-full bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
+                  >
+                    <option value="all">All</option>
+                    <option value="matched">Matched Only</option>
+                    <option value="unmatched">Unmatched Only</option>
+                  </select>
+                </div>
                 <div className="flex items-end gap-4">
                   <label className="flex items-center gap-2 cursor-pointer group mb-0.5">
                     <input
@@ -2772,6 +2800,7 @@ export default function App() {
                       setTxFilterCategory('');
                       setTxFilterSubcategory('');
                       setTxFilterType('all');
+                      setTxFilterMatched('all');
                       setSelectedYear('All');
                       setSelectedMonth('All Months');
                     }}
@@ -2917,6 +2946,8 @@ export default function App() {
                   if (txFilterSubcategory && tx._subcategory !== txFilterSubcategory) return false;
                   if (txFilterType === 'income' && tx._isExpense) return false;
                   if (txFilterType === 'expense' && !tx._isExpense) return false;
+                  if (txFilterMatched === 'matched' && !tx.matched) return false;
+                  if (txFilterMatched === 'unmatched' && tx.matched) return false;
                   if (txSearchText) {
                     const searchLower = txSearchText.toLowerCase();
                     const matchesDesc =
@@ -3065,6 +3096,7 @@ export default function App() {
                                 const isDescription =
                                   header === analysis.columnsIdentified.description;
                                 const isDate = header === analysis.columnsIdentified.date;
+                                const isMatched = header === 'matched';
 
                                 let dotColor = null;
                                 if (isCategory) {
@@ -3089,6 +3121,7 @@ export default function App() {
                                       } else {
                                         // Default row click action
                                         setEditingTx(tx);
+                                        setEditTxMatched(!!tx.matched);
                                         setEditTxAmount(tx._parsedAmount.toFixed(2));
                                         const d = new Date(tx._date);
                                         if (!isNaN(d.getTime())) {
@@ -3121,6 +3154,16 @@ export default function App() {
                                           minimumFractionDigits: 2,
                                           maximumFractionDigits: 2,
                                         })}
+                                      </span>
+                                    ) : isMatched ? (
+                                      <span
+                                        className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                                          val
+                                            ? 'bg-green-100 text-green-800'
+                                            : 'bg-slate-100 text-slate-800'
+                                        }`}
+                                      >
+                                        {val ? 'Matched' : 'Unmatched'}
                                       </span>
                                     ) : isCategory ? (
                                       <div className="flex items-center gap-2">
@@ -3414,6 +3457,22 @@ export default function App() {
                       </option>
                     ))}
                 </select>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <input
+                  type="checkbox"
+                  id="edit-tx-matched"
+                  checked={editTxMatched}
+                  onChange={(e) => setEditTxMatched(e.target.checked)}
+                  className="w-4 h-4 text-blue-600 bg-slate-50 border-slate-200 rounded focus:ring-blue-500"
+                />
+                <label
+                  htmlFor="edit-tx-matched"
+                  className="text-sm font-semibold text-slate-700 cursor-pointer"
+                >
+                  Matched to Recurring Profile
+                </label>
               </div>
             </div>
             <div className="p-6 bg-slate-50 flex gap-3">

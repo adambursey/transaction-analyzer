@@ -47,6 +47,7 @@ import {
   CalendarDays,
 } from 'lucide-react';
 import { format, isValid, parse } from 'date-fns';
+import { getUnmatchedRecurringInstances } from './utils/projectionLogic';
 import { ImportModal } from './components/ImportModal';
 import { ReviewQueue } from './components/ReviewQueue';
 import { ImportHistory } from './components/ImportHistory';
@@ -121,6 +122,7 @@ export default function App() {
     'dashboard' | 'transactions' | 'budget' | 'categories' | 'admin' | 'this_month'
   >('dashboard');
   const [taxonomy, setTaxonomy] = useState<Record<string, string[]>>({});
+  const [recurringProfiles, setRecurringProfiles] = useState<any[]>([]);
   const [txFilterCategory, setTxFilterCategory] = useState('');
   const [txFilterSubcategory, setTxFilterSubcategory] = useState('');
   const [txFilterType, setTxFilterType] = useState<'all' | 'income' | 'expense'>('all');
@@ -210,7 +212,9 @@ export default function App() {
     if (isAuthenticated) {
       fetchSheetData();
       fetchTaxonomy();
+      fetchRecurringProfiles();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthenticated]);
 
   // Re-run data analysis whenever core data or timeframe filters change
@@ -219,7 +223,7 @@ export default function App() {
       analyzeData(data, headers);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedYear, selectedMonth, data, headers, budgetData, selectedAccount]);
+  }, [selectedYear, selectedMonth, data, headers, budgetData, selectedAccount, recurringProfiles]);
 
   async function fetchTaxonomy() {
     try {
@@ -230,6 +234,18 @@ export default function App() {
       }
     } catch (err) {
       console.error('Failed to fetch taxonomy:', err);
+    }
+  }
+
+  async function fetchRecurringProfiles() {
+    try {
+      const res = await fetch('/api/recurring');
+      if (res.ok) {
+        const data = await res.json();
+        setRecurringProfiles(data.recurring || []);
+      }
+    } catch (err) {
+      console.error('Failed to fetch recurring profiles:', err);
     }
   }
 
@@ -280,6 +296,7 @@ export default function App() {
   async function fetchSheetData() {
     setLoading(true);
     setError(null);
+    fetchRecurringProfiles();
 
     try {
       const res = await fetch('/api/sheet', {
@@ -990,6 +1007,86 @@ export default function App() {
       });
     }
 
+    // Map isProjected: false to all actual balance history points
+    const finalBalanceHistory = filteredBalanceHistory.map((item) => ({
+      ...item,
+      isProjected: false,
+      actualBalance: item.balance,
+      projectedBalance: null as number | null,
+      description: undefined as string | undefined,
+      amount: undefined as number | undefined,
+    }));
+
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth();
+    const targetCurrentYearStr = currentYear.toString();
+    const currentMonthMMM = format(now, 'MMM yyyy');
+
+    const includesCurrentMonth =
+      (selectedYear === 'All' || selectedYear === targetCurrentYearStr) &&
+      (selectedMonth === 'All Months' || selectedMonth === currentMonthMMM);
+
+    if (includesCurrentMonth && recurringProfiles.length > 0) {
+      const todayDate = now.getDate();
+      const unmatchedList = getUnmatchedRecurringInstances(
+        rawData,
+        recurringProfiles,
+        currentYear,
+        currentMonth,
+        todayDate
+      );
+
+      if (unmatchedList.length > 0) {
+        let runningBalance = currentBalance || 0;
+
+        let lastActualDateStr = format(now, 'yyyy-MM-dd');
+        if (balanceHistory.length > 0) {
+          lastActualDateStr = balanceHistory[balanceHistory.length - 1].date;
+        }
+        const lastActualDate = new Date(lastActualDateStr);
+
+        // If the filtered list is empty, seed it with the last actual point
+        if (finalBalanceHistory.length === 0) {
+          finalBalanceHistory.push({
+            date: lastActualDateStr,
+            balance: runningBalance,
+            isProjected: false,
+            actualBalance: runningBalance,
+            projectedBalance: runningBalance,
+            description: undefined,
+            amount: undefined,
+          });
+        } else {
+          // Connect the last actual point to the projected line
+          const lastIdx = finalBalanceHistory.length - 1;
+          finalBalanceHistory[lastIdx].projectedBalance = finalBalanceHistory[lastIdx].balance;
+        }
+
+        // Chronologically append the remaining expected transactions
+        unmatchedList.forEach((rt) => {
+          runningBalance = Number((runningBalance + (rt.amountAverage || 0)).toFixed(2));
+
+          let projDate = rt._projectedDate ? new Date(rt._projectedDate) : new Date(lastActualDate);
+          if (projDate.getTime() < lastActualDate.getTime()) {
+            projDate = new Date(lastActualDate);
+          }
+
+          const dateStr = `${projDate.getFullYear()}-${String(projDate.getMonth() + 1).padStart(2, '0')}-${String(projDate.getDate()).padStart(2, '0')}`;
+
+          finalBalanceHistory.push({
+            date: dateStr,
+            balance: runningBalance,
+            isProjected: true,
+            actualBalance: null,
+            projectedBalance: runningBalance,
+            description: rt.description,
+            amount: rt.amountAverage,
+          });
+        });
+      }
+    }
+
     setAnalysis({
       totalIncome: displayIncome,
       totalExpense: displayExpense,
@@ -1009,7 +1106,7 @@ export default function App() {
       incomeAnalysis,
       periodMonths,
       currentBalance,
-      balanceHistory: filteredBalanceHistory,
+      balanceHistory: finalBalanceHistory,
       columnsIdentified: {
         date: dateCol,
         amount: amountCol,
@@ -1616,14 +1713,29 @@ export default function App() {
                           tickLine={false}
                         />
                         <Tooltip
-                          formatter={(value: number) => [
-                            `$${value.toLocaleString(undefined, {
+                          formatter={(value: number, name: string) => {
+                            const labelName =
+                              name === 'actualBalance'
+                                ? 'Balance'
+                                : name === 'projectedBalance'
+                                  ? 'Projected Balance'
+                                  : 'Balance';
+                            const valStr = `$${value.toLocaleString(undefined, {
                               minimumFractionDigits: 2,
                               maximumFractionDigits: 2,
-                            })}`,
-                            'Balance',
-                          ]}
-                          labelFormatter={(label) => new Date(label).toLocaleDateString()}
+                            })}`;
+                            return [valStr, labelName];
+                          }}
+                          labelFormatter={(label) => {
+                            const d = new Date(label + 'T12:00:00');
+                            return isNaN(d.getTime())
+                              ? label
+                              : d.toLocaleDateString(undefined, {
+                                  year: 'numeric',
+                                  month: 'long',
+                                  day: 'numeric',
+                                });
+                          }}
                           contentStyle={{
                             borderRadius: '8px',
                             border: 'none',
@@ -1632,11 +1744,20 @@ export default function App() {
                         />
                         <Line
                           type="monotone"
-                          dataKey="balance"
+                          dataKey="actualBalance"
                           stroke="#2563eb"
                           strokeWidth={3}
                           dot={false}
                           activeDot={{ r: 6, fill: '#2563eb', stroke: '#fff', strokeWidth: 2 }}
+                        />
+                        <Line
+                          type="monotone"
+                          dataKey="projectedBalance"
+                          stroke="#3b82f6"
+                          strokeWidth={3}
+                          strokeDasharray="5 5"
+                          dot={false}
+                          activeDot={{ r: 6, fill: '#3b82f6', stroke: '#fff', strokeWidth: 2 }}
                         />
                       </LineChart>
                     </ResponsiveContainer>

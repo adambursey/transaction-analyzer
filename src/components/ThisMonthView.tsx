@@ -21,15 +21,8 @@ import {
   DollarSign,
   Tag,
 } from 'lucide-react';
-import {
-  runMatchingEngine,
-  calculateIdfWeights,
-  calculateTokenOverlap,
-  getLongestCommonSubstring,
-  getInstancesPerPeriod,
-  getExpectedDatesInMonth,
-  MatchingResult,
-} from '../utils/matchingLogic';
+import { runMatchingEngine, MatchingResult } from '../utils/matchingLogic';
+import { getUnmatchedRecurringInstances } from '../utils/projectionLogic';
 import { format } from 'date-fns';
 
 /**
@@ -83,12 +76,11 @@ export function ThisMonthView({ transactions, currentBalance, onRefresh }: ThisM
         const currentYear = now.getFullYear();
         const currentMonth = now.getMonth();
         const todayDate = now.getDate();
+
         // Filter transactions into unmatched and already-matched lists
         const unmatchedTxs = transactions.filter((t) => !t.matched);
-        const alreadyMatchedTxs = transactions.filter((t) => t.matched === true);
 
-        // Run the robust standard matching engine for the current month's unmatched transactions.
-        // This calculates potential suggestions for our collapsible "Matched Transactions" list.
+        // Run the robust standard matching engine for suggestions list
         const matchResults = runMatchingEngine(
           unmatchedTxs,
           recurring,
@@ -97,324 +89,16 @@ export function ThisMonthView({ transactions, currentBalance, onRefresh }: ThisM
           todayDate,
           transactions
         );
-
         setMatchedResults(matchResults);
 
-        // Run the standard matching engine for the previous month's unmatched transactions.
-        // We pass 31 to evaluate the entire month of April, catching transactions that
-        // posted early in the last few days of April.
-        const prevMonth = currentMonth === 0 ? 11 : currentMonth - 1;
-        const prevYear = currentMonth === 0 ? currentYear - 1 : currentYear;
-        const prevMatchResults = runMatchingEngine(
-          unmatchedTxs,
-          recurring,
-          prevYear,
-          prevMonth,
-          31,
-          transactions
-        );
-
-        // Run the matching engine on already matched transactions to dynamically associate them with their profiles.
-        // Running it separately prevents already-matched items from competing greedily with unmatched suggestions.
-        const alreadyMatchedResults = runMatchingEngine(
-          alreadyMatchedTxs,
+        // Retrieve unmatched list using the new exported helper!
+        const unmatchedList = getUnmatchedRecurringInstances(
+          transactions,
           recurring,
           currentYear,
           currentMonth,
-          todayDate,
-          transactions,
-          true
+          todayDate
         );
-
-        const prevAlreadyMatchedResults = runMatchingEngine(
-          alreadyMatchedTxs,
-          recurring,
-          prevYear,
-          prevMonth,
-          31,
-          transactions,
-          true
-        );
-
-        // Non-obvious choice: We track the exact matched transaction objects for each recurring profile
-        // instead of just incrementing an anonymous count. This enables us to dynamically assign
-        // transactions to their closest calendar projection dates (weekly, bi-weekly, or monthly)
-        // and show the precise calendar date of each unmatched occurrence.
-        const matchesByProfile = new Map<string, any[]>();
-        recurring.forEach((rt) => matchesByProfile.set(rt.id, []));
-
-        // 1. Highest Priority: Aggregate explicitly associated matched transactions
-        // (where the transaction ID is recorded in the profile's exampleTransactionIds array).
-        transactions.forEach((tx) => {
-          if (tx.matched === true) {
-            const associatedProfile = recurring.find(
-              (rt) => rt.exampleTransactionIds && rt.exampleTransactionIds.includes(tx.id)
-            );
-            if (associatedProfile) {
-              const txDate = tx.Date?.toDate ? tx.Date.toDate() : new Date(tx.Date || tx.date);
-              const txYear = txDate.getFullYear();
-              const txMonth = txDate.getMonth();
-
-              // Check if it is in the current month or an early posting from the previous month
-              const isCurrentMonth = txYear === currentYear && txMonth === currentMonth;
-              let isEarlyPosting = false;
-              if (associatedProfile.frequency === 'monthly') {
-                const isPrevMonth = txYear === prevYear && txMonth === prevMonth;
-                if (isPrevMonth) {
-                  const expectedDay = parseDay(associatedProfile.projectedOccurrence);
-                  if (expectedDay <= 5 && txDate.getDate() >= 25) {
-                    isEarlyPosting = true;
-                  }
-                }
-              }
-
-              if (isCurrentMonth || isEarlyPosting) {
-                const list = matchesByProfile.get(associatedProfile.id) || [];
-                if (!list.some((existingTx) => existingTx.id === tx.id)) {
-                  list.push(tx);
-                  matchesByProfile.set(associatedProfile.id, list);
-                }
-              }
-            }
-          }
-        });
-
-        // 2. Second Priority: Aggregate dynamically matched transactions from this month's unmatched run
-        matchResults.forEach((r) => {
-          if (r.matches.length > 0) {
-            const recId = r.matches[0].recurringId;
-            const list = matchesByProfile.get(recId) || [];
-            if (!list.some((existingTx) => existingTx.id === r.transaction.id)) {
-              list.push(r.transaction);
-              matchesByProfile.set(recId, list);
-            }
-          }
-        });
-
-        // 3. Third Priority: Aggregate dynamically matched transactions from alreadyMatchedResults (fallback check)
-        alreadyMatchedResults.forEach((r) => {
-          if (r.matches.length > 0) {
-            const recId = r.matches[0].recurringId;
-            const list = matchesByProfile.get(recId) || [];
-            if (!list.some((existingTx) => existingTx.id === r.transaction.id)) {
-              list.push(r.transaction);
-              matchesByProfile.set(recId, list);
-            }
-          }
-        });
-
-        // 4. Fourth Priority: Catch dynamically matched early-posting transactions from the previous month (unmatched)
-        prevMatchResults.forEach((r) => {
-          if (r.matches.length > 0) {
-            const recId = r.matches[0].recurringId;
-            const profile = recurring.find((rt) => rt.id === recId);
-            if (profile && profile.frequency === 'monthly') {
-              const expectedDay = parseDay(profile.projectedOccurrence);
-              const txDate = r.transaction.Date?.toDate
-                ? r.transaction.Date.toDate()
-                : new Date(r.transaction.Date || r.transaction.date);
-
-              if (expectedDay <= 5 && txDate.getDate() >= 25) {
-                const list = matchesByProfile.get(recId) || [];
-                if (!list.some((existingTx) => existingTx.id === r.transaction.id)) {
-                  list.push(r.transaction);
-                  matchesByProfile.set(recId, list);
-                }
-              }
-            }
-          }
-        });
-
-        // 5. Fifth Priority: Catch dynamically matched early-posting from already-matched prevAlreadyMatchedResults (fallback)
-        prevAlreadyMatchedResults.forEach((r) => {
-          if (r.matches.length > 0) {
-            const recId = r.matches[0].recurringId;
-            const profile = recurring.find((rt) => rt.id === recId);
-            if (profile && profile.frequency === 'monthly') {
-              const expectedDay = parseDay(profile.projectedOccurrence);
-              const txDate = r.transaction.Date?.toDate
-                ? r.transaction.Date.toDate()
-                : new Date(r.transaction.Date || r.transaction.date);
-
-              if (expectedDay <= 5 && txDate.getDate() >= 25) {
-                const list = matchesByProfile.get(recId) || [];
-                if (!list.some((existingTx) => existingTx.id === r.transaction.id)) {
-                  list.push(r.transaction);
-                  matchesByProfile.set(recId, list);
-                }
-              }
-            }
-          }
-        });
-
-        // Relaxed Fallback for Early Postings:
-        // Banks frequently have early payments with higher amount variances (e.g. utility bills).
-        // If a monthly profile expected Day 1-5 remains unmatched, we check if a transaction in the
-        // last week of the previous month (Day 25-31) shares the same sign, has a very high description
-        // similarity (>= 70%), and is within 50% amount variance.
-        recurring.forEach((rt) => {
-          // Non-obvious choice: For multi-instance profiles (e.g. expected 2x per period), we only skip
-          // early-posting checks if the profile's instances have been fully satisfied. If only 1 out of 2
-          // instances matched in the current month, the remaining slot is eligible to match an early-posting transaction.
-          const maxInstances = getInstancesPerPeriod(rt);
-          const currentMatches = matchesByProfile.get(rt.id)?.length || 0;
-          if (rt.status === 'archived' || currentMatches >= maxInstances) return;
-          if (rt.frequency !== 'monthly') return;
-
-          const expectedDay = parseDay(rt.projectedOccurrence);
-          if (expectedDay > 5) return;
-
-          const examples = (rt.exampleTransactionIds || [])
-            .map((id: string) => transactions.find((t: any) => t.id === id))
-            .filter(Boolean);
-
-          const exampleDescriptions = examples.map((e: any) => e.Description || '');
-          if (exampleDescriptions.length === 0 && rt.description) {
-            exampleDescriptions.push(rt.description);
-          }
-
-          const isIncome = (rt.amountAverage || 0) > 0;
-          const idfWeights = calculateIdfWeights(transactions);
-          const totalDocs = transactions.length;
-
-          // Non-obvious choice: Exclude any transactions that have already been registered as early postings
-          // via standard matches (prevMatchResults) to avoid double-counting them in this relaxed fallback.
-          const alreadyMatchedTxIds = new Set<string>();
-          prevMatchResults.forEach((r) => {
-            if (r.matches.length > 0 && r.matches[0].recurringId === rt.id) {
-              const txDate = r.transaction.Date?.toDate
-                ? r.transaction.Date.toDate()
-                : new Date(r.transaction.Date);
-              if (expectedDay <= 5 && txDate.getDate() >= 25) {
-                alreadyMatchedTxIds.add(r.transaction.id);
-              }
-            }
-          });
-
-          // Find all early transactions that match the profile in the last week of the previous month.
-          const earlyTxs = transactions.filter((tx) => {
-            if (alreadyMatchedTxIds.has(tx.id)) return false;
-
-            const txDate = tx.Date?.toDate ? tx.Date.toDate() : new Date(tx.Date);
-            // Must be in the previous month, in the last 7 days (Day 25-31)
-            if (
-              txDate.getFullYear() !== prevYear ||
-              txDate.getMonth() !== prevMonth ||
-              txDate.getDate() < 25
-            ) {
-              return false;
-            }
-
-            const txAmount = tx.Amount;
-            // Must have the same sign (credit vs debit)
-            if ((isIncome && txAmount <= 0) || (!isIncome && txAmount >= 0)) {
-              return false;
-            }
-
-            // Relaxed amount boundary check: up to 50% difference allowed for utility/variable bills
-            const diffPct =
-              Math.abs(Math.abs(txAmount) - Math.abs(rt.amountAverage || 0)) /
-              Math.abs(rt.amountAverage || 1);
-            if (diffPct > 0.5) return false;
-
-            // Strict description similarity overlap: >= 70% confidence using TF-IDF and LCS
-            const tokenScore = calculateTokenOverlap(
-              tx.Description || '',
-              exampleDescriptions,
-              idfWeights,
-              totalDocs
-            );
-
-            let maxLcs = 0;
-            exampleDescriptions.forEach((exDesc: string) => {
-              const lcs = getLongestCommonSubstring(tx.Description || '', exDesc);
-              if (lcs > maxLcs) maxLcs = lcs;
-            });
-            const lcsScore = Math.min(1, maxLcs / 8);
-
-            const textScore = tokenScore * 0.5 + lcsScore * 0.5;
-            return textScore >= 0.7;
-          });
-
-          // Register matches for early posting up to the number of remaining needed instances for the month.
-          const needed = maxInstances - currentMatches;
-          const matchesToRegister = Math.min(needed, earlyTxs.length);
-          if (matchesToRegister > 0) {
-            const list = matchesByProfile.get(rt.id) || [];
-            for (let k = 0; k < matchesToRegister; k++) {
-              list.push(earlyTxs[k]);
-            }
-            matchesByProfile.set(rt.id, list);
-          }
-        });
-
-        // Filter and collect all unmatched recurring instances expected in this month.
-        // Instead of a generic duplication, we generate the actual expected dates in the target month,
-        // duplicate them for instancesPerPeriod (multi-instance), and assign our actual matches
-        // to the closest expected dates. The remaining unassigned dates are unmatched!
-        const unmatchedList: any[] = [];
-        recurring.forEach((rt) => {
-          if (rt.status === 'archived') return;
-
-          // Generate expected occurrence dates in this calendar month
-          const expectedDates = getExpectedDatesInMonth(
-            rt,
-            transactions,
-            currentYear,
-            currentMonth
-          );
-          if (expectedDates.length === 0) return;
-
-          const maxInst = rt.instancesPerPeriod || 1;
-          const expectedInstances: { date: Date; instanceIndex: number }[] = [];
-          expectedDates.forEach((date) => {
-            for (let i = 0; i < maxInst; i++) {
-              expectedInstances.push({ date, instanceIndex: i });
-            }
-          });
-
-          const matchedTxs = matchesByProfile.get(rt.id) || [];
-          const assignedIndices = new Set<number>();
-
-          matchedTxs.forEach((tx) => {
-            const txDate = tx.Date?.toDate ? tx.Date.toDate() : new Date(tx.Date);
-            let closestIndex = -1;
-            let minDiff = Infinity;
-
-            expectedInstances.forEach((inst, idx) => {
-              if (assignedIndices.has(idx)) return;
-              const diff = Math.abs(txDate.getTime() - inst.date.getTime());
-              if (diff < minDiff) {
-                minDiff = diff;
-                closestIndex = idx;
-              }
-            });
-
-            if (closestIndex !== -1) {
-              assignedIndices.add(closestIndex);
-            }
-          });
-
-          expectedInstances.forEach((inst, idx) => {
-            if (!assignedIndices.has(idx)) {
-              // Non-obvious choice: Overwrite the generic day-of-week string (like "Friday")
-              // with the exact calculated calendar date string (e.g. "May 22") for the unmatched list.
-              const dayStr = `${format(inst.date, 'MMMM')} ${inst.date.getDate()}`;
-              unmatchedList.push({
-                ...rt,
-                _instanceIndex: inst.instanceIndex,
-                projectedOccurrence: dayStr, // Overwrite with exact calculated date!
-              });
-            }
-          });
-        });
-
-        // Sort unmatched instances chronologically by their exact calculated dates
-        unmatchedList.sort((a, b) => {
-          const dayA = parseDay(a.projectedOccurrence);
-          const dayB = parseDay(b.projectedOccurrence);
-          return dayA - dayB;
-        });
 
         setUnmatched(unmatchedList);
 

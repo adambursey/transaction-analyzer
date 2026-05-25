@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from '../src/App';
 
@@ -248,6 +248,61 @@ describe('App Component', () => {
     await waitFor(() => {
       expect(lastUpdatePayload).not.toBeNull();
       expect(lastUpdatePayload.matched).toBe(true);
+    });
+  });
+
+  it('correctly filters transactions passed to ThisMonthView based on selectedAccount', async () => {
+    const currentMonthName = new Intl.DateTimeFormat('en-US', { month: 'long' }).format(new Date());
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Our Money')).toBeInTheDocument();
+    });
+
+    // Default account selected in App is 'Checking'.
+    // Under checking, 'Test TX' (id: '1', Checking) should be rendered in Matched Transactions (since it is Checking and matched).
+    // Let's first navigate to "This Month" view to see Checking.
+    let thisMonthTab: HTMLElement;
+    await waitFor(() => {
+      thisMonthTab = screen.getByRole('button', { name: currentMonthName });
+    });
+    await userEvent.click(thisMonthTab!);
+
+    await waitFor(() => {
+      expect(screen.getByText('Matched Transactions')).toBeInTheDocument();
+    });
+
+    await waitFor(() => {
+      const occurredContainer = screen
+        .getByRole('button', { name: /Matched Transactions/i })
+        .closest('div')!;
+      expect(within(occurredContainer).getByText('Test TX')).toBeInTheDocument();
+      expect(within(occurredContainer).queryByText('Savings TX')).not.toBeInTheDocument();
+    });
+
+    // Switch to Transactions view to see the selector and select 'Savings'
+    let transactionsTab: HTMLElement;
+    await waitFor(() => {
+      transactionsTab = screen.getByText('Transactions');
+    });
+    await userEvent.click(transactionsTab!);
+
+    // Change account to 'Savings' via the Transactions dropdown
+    const accountSelect = screen.getAllByLabelText(/Account/i)[0];
+    await userEvent.selectOptions(accountSelect, 'Savings');
+
+    // Navigate back to "This Month" view
+    await userEvent.click(thisMonthTab!);
+
+    // Under Savings, there are no matched Savings transactions. So 'Test TX' should be hidden,
+    // and "No Matched Transactions" should be shown.
+    await waitFor(() => {
+      const occurredContainer = screen
+        .getByRole('button', { name: /Matched Transactions/i })
+        .closest('div')!;
+      expect(within(occurredContainer).queryByText('Test TX')).not.toBeInTheDocument();
+      expect(within(occurredContainer).getByText('No Matched Transactions')).toBeInTheDocument();
     });
   });
 });

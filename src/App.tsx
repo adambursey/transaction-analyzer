@@ -3196,7 +3196,8 @@ export default function App() {
                           </th>
                           {headers
                             .filter(
-                              (h) => !/year|month|notes|type|balance|status|importid/i.test(h)
+                              (h) =>
+                                !/year|month|notes|type|balance|status|importid|matched/i.test(h)
                             )
                             .map((header) => {
                               const isCategory = header === analysis.columnsIdentified.category;
@@ -3267,7 +3268,8 @@ export default function App() {
                             </td>
                             {headers
                               .filter(
-                                (h) => !/year|month|notes|type|balance|status|importid/i.test(h)
+                                (h) =>
+                                  !/year|month|notes|type|balance|status|importid|matched/i.test(h)
                               )
                               .map((header) => {
                                 const val = tx[header];
@@ -3376,7 +3378,7 @@ export default function App() {
                         <tfoot className="bg-slate-50 font-bold border-t-2 border-slate-200 sticky bottom-0 z-20">
                           <tr>
                             {headers
-                              .filter((h) => !/year|month|notes/i.test(h))
+                              .filter((h) => !/year|month|notes|matched/i.test(h))
                               .map((header, idx) => {
                                 const isAmount = header === analysis.columnsIdentified.amount;
                                 if (idx === 0)
@@ -3433,7 +3435,7 @@ export default function App() {
         )}
         {currentView === 'this_month' && (
           <ThisMonthView
-            transactions={data}
+            transactions={analysis?.allTransactionsUnfiltered || []}
             currentBalance={analysis?.currentBalance || 0}
             onRefresh={fetchSheetData}
             analysis={analysis}

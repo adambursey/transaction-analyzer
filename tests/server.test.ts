@@ -216,7 +216,72 @@ describe('Backend API Endpoints (Hermetic)', () => {
       expect(response.body.message).toContain('Imported 1 transactions');
       expect(mockBatchSet).toHaveBeenCalledWith(
         expect.anything(),
-        expect.objectContaining({ Balance: 250.5 })
+        expect.objectContaining({ Balance: 250.5, createdAt: expect.anything() })
+      );
+      expect(mockBatchCommit).toHaveBeenCalled();
+    });
+
+    it('should successfully import transactions when Balance is empty or missing (mapping it to null to avoid Firestore crash)', async () => {
+      // Mock /api/taxonomy
+      const mockTaxonomyGet = jest.fn().mockResolvedValue({
+        exists: true,
+        data: () => ({ Income: ['Salary'] }),
+      });
+
+      // Mock existing transactions query
+      const mockTransactionsGet = jest.fn().mockResolvedValue({
+        docs: [], // No existing transactions
+      });
+
+      // Mock the collection and batch behavior
+      mockDbCollection.mockImplementation((_name) => {
+        if (_name === 'metadata') {
+          return { doc: jest.fn().mockReturnValue({ get: mockTaxonomyGet }) };
+        }
+        if (_name === 'transactions') {
+          return {
+            get: mockTransactionsGet,
+            doc: jest.fn().mockReturnValue({ id: 'mock-doc-id-2' }),
+          };
+        }
+        if (_name === 'imports') {
+          return { doc: jest.fn().mockReturnValue({ set: jest.fn() }) };
+        }
+        return {
+          doc: jest.fn().mockReturnValue({
+            get: jest.fn().mockResolvedValue({ exists: false }),
+          }),
+        };
+      });
+
+      const mockBatchSet = jest.fn();
+      const mockBatchCommit = jest.fn().mockResolvedValue([]);
+      mockDbBatch.mockReturnValue({
+        set: mockBatchSet,
+        commit: mockBatchCommit,
+      });
+
+      const payload = {
+        file_name: 'test.csv',
+        importId: 'import_123',
+        account: 'Checking',
+        // Omitted balance or empty balance string
+        transactions: [
+          { Date: '2026-05-01', Description: 'Test TX 1', Amount: 100 },
+          { Date: '2026-05-01', Description: 'Test TX 2', Amount: -50, Balance: '' },
+        ],
+      };
+
+      const response = await request(app)
+        .post('/api/import')
+        .set('Cookie', ['google_tokens={"refresh_token":"mock"}'])
+        .send(payload);
+
+      expect(response.status).toBe(200);
+      expect(response.body.message).toContain('Imported 2 transactions');
+      expect(mockBatchSet).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ Balance: null, createdAt: expect.anything() })
       );
       expect(mockBatchCommit).toHaveBeenCalled();
     });
@@ -344,6 +409,7 @@ describe('Backend API Endpoints (Hermetic)', () => {
         expect.objectContaining({
           Amount: 30,
           _category: 'Reconciliation Discrepancy',
+          createdAt: expect.anything(),
         })
       );
     });
@@ -479,6 +545,101 @@ describe('Backend API Endpoints (Hermetic)', () => {
       // Verify that 400 Bad Request error is returned
       expect(response.status).toBe(400);
       expect(response.body.error).toContain('Missing required fields');
+    });
+  });
+
+  describe('POST /api/sheet', () => {
+    it('should fetch transactions and map createdAt native Timestamp to ISO string', async () => {
+      const mockCreatedDate = new Date('2026-05-25T12:00:00.000Z');
+      const mockTxDoc = {
+        id: 'tx_sheet_1',
+        data: () => ({
+          Date: { toDate: () => new Date('2026-05-10T12:00:00.000Z') },
+          Description: 'Sheet Test TX',
+          Amount: 120.5,
+          Type: 'Expense',
+          Category: 'Food',
+          status: 'reviewed',
+          createdAt: { toDate: () => mockCreatedDate },
+        }),
+      };
+
+      const mockGet = jest.fn().mockResolvedValue({
+        docs: [mockTxDoc],
+      });
+
+      mockDbCollection.mockImplementation((name) => {
+        if (name === 'transactions') {
+          return { get: mockGet };
+        }
+        if (name === 'budgets') {
+          return { get: jest.fn().mockResolvedValue({ docs: [] }) };
+        }
+        return {};
+      });
+
+      const response = await request(app)
+        .post('/api/sheet')
+        .set('Cookie', ['google_tokens={"refresh_token":"mock"}'])
+        .send({ sheetUrl: 'https://docs.google.com/spreadsheets/d/mock-id' });
+
+      expect(response.status).toBe(200);
+      expect(response.body.data).toHaveLength(1);
+      expect(response.body.data[0]).toEqual(
+        expect.objectContaining({
+          id: 'tx_sheet_1',
+          Date: '2026-05-10T12:00:00.000Z',
+          createdAt: '2026-05-25T12:00:00.000Z',
+          Description: 'Sheet Test TX',
+          Amount: 120.5,
+        })
+      );
+    });
+  });
+
+  describe('GET /api/admin/archived-transactions', () => {
+    it('should fetch archived transactions and map createdAt native Timestamp to ISO string', async () => {
+      const mockCreatedDate = new Date('2026-05-25T12:00:00.000Z');
+      const mockTxDoc = {
+        id: 'tx_archive_1',
+        data: () => ({
+          Date: { toDate: () => new Date('2026-05-10T12:00:00.000Z') },
+          Description: 'Archived Test TX',
+          Amount: -40.0,
+          status: 'archived',
+          createdAt: { toDate: () => mockCreatedDate },
+        }),
+      };
+
+      const mockGet = jest.fn().mockResolvedValue({
+        docs: [mockTxDoc],
+      });
+
+      mockDbCollection.mockImplementation((name) => {
+        if (name === 'transactions') {
+          return {
+            where: jest.fn().mockReturnThis(),
+            get: mockGet,
+          };
+        }
+        return {};
+      });
+
+      const response = await request(app)
+        .get('/api/admin/archived-transactions')
+        .set('Cookie', ['google_tokens={"refresh_token":"mock"}']);
+
+      expect(response.status).toBe(200);
+      expect(response.body.transactions).toHaveLength(1);
+      expect(response.body.transactions[0]).toEqual(
+        expect.objectContaining({
+          id: 'tx_archive_1',
+          Date: '2026-05-10T12:00:00.000Z',
+          createdAt: '2026-05-25T12:00:00.000Z',
+          Description: 'Archived Test TX',
+          Amount: -40.0,
+        })
+      );
     });
   });
 

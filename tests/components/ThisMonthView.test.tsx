@@ -1136,4 +1136,90 @@ describe('ThisMonthView Component', () => {
     // Clean up global mock override
     (global as any).mockUnmatchedOverride = null;
   });
+
+  it('correctly calculates projected balance and starting balance when transactions are filtered to a specific account', async () => {
+    // Override the mock fetches
+    (global.fetch as jest.Mock).mockReset();
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      json: async () => ({ recurring: [] }),
+    });
+
+    // Mock checking ledger transactions.
+    // Checking current balance = 2000.
+    // Checking ledger transactions in May:
+    // - May 2: Whole Foods (-100.00)
+    // - May 10: Netflix (-50.00)
+    // Sum is -150.00. Starting balance should be 2000 - (-150) = 2150.00.
+    const mockCheckingTxs = [
+      {
+        id: 'tx_checking_1',
+        Description: 'Whole Foods',
+        Amount: -100.0,
+        Date: new Date('2026-05-02T12:00:00Z'),
+        Account: 'Checking',
+        matched: true,
+      },
+      {
+        id: 'tx_checking_2',
+        Description: 'Netflix',
+        Amount: -50.0,
+        Date: new Date('2026-05-10T12:00:00Z'),
+        Account: 'Checking',
+        matched: true,
+      },
+    ];
+
+    render(<ThisMonthView transactions={mockCheckingTxs} currentBalance={2000} />);
+
+    await waitFor(() => {
+      expect(screen.queryByText(/Loading/i)).not.toBeInTheDocument();
+    });
+
+    const chart = screen.getByTestId('this-month-line-chart');
+    const dataRaw = chart.getAttribute('data-chart-data');
+    const dailyData = JSON.parse(dataRaw!);
+
+    // The starting balance should be exactly 2150.00, meaning our filtering isolated the math perfectly.
+    expect(dailyData[0].actualBalance).toBeCloseTo(2150.0, 2);
+  });
+
+  it('correctly subtracts matched expenses from the projected balance when transactions have a negative _parsedAmount', async () => {
+    // Override mock fetches
+    (global.fetch as jest.Mock).mockReset();
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      json: async () => ({ recurring: [] }),
+    });
+
+    // Mock transaction formatted exactly as it comes from App.tsx's analysis.allTransactionsUnfiltered
+    const mockRealFormatTxs = [
+      {
+        id: 'tx_groceries_real',
+        Description: 'Whole Foods',
+        Amount: -120.5,
+        _parsedAmount: -120.5, // Negative number as parsed by parent
+        Date: new Date('2026-05-02T12:00:00Z'),
+        Category: 'Groceries',
+        matched: true,
+      },
+    ];
+
+    render(<ThisMonthView transactions={mockRealFormatTxs} currentBalance={5000} />);
+
+    await waitFor(() => {
+      expect(screen.queryByText(/Loading/i)).not.toBeInTheDocument();
+    });
+
+    const chart = screen.getByTestId('this-month-line-chart');
+    const dataRaw = chart.getAttribute('data-chart-data');
+    const dailyData = JSON.parse(dataRaw!);
+
+    // Day 1: starting balance is 5000 - (-120.5) = 5120.50
+    expect(dailyData[0].projectedBalance).toBeCloseTo(5120.5, 2);
+
+    // Day 2 (May 2): Whole Foods (-120.50) occurs, so projected balance must go DOWN back to 5000.00
+    // If the bug is present, it will treat it as positive and go up to 5120.50 + 120.5 = 5241.00.
+    expect(dailyData[1].projectedBalance).toBeCloseTo(5000.0, 2);
+  });
 });

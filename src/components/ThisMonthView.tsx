@@ -300,13 +300,22 @@ export function ThisMonthView({
       const hasValidBalance = tx.Balance !== undefined && tx.Balance !== null && tx.Balance !== '';
 
       const rawAmt = tx.Amount !== undefined ? tx.Amount : tx.amount !== undefined ? tx.amount : 0;
-      const amt = tx._parsedAmount !== undefined ? tx._parsedAmount : Number(rawAmt);
+      const amt = Math.abs(tx._parsedAmount !== undefined ? tx._parsedAmount : Number(rawAmt));
+      const isExpense =
+        tx._isExpense !== undefined
+          ? tx._isExpense
+          : tx.Amount !== undefined
+            ? tx.Amount < 0
+            : tx.amount !== undefined
+              ? tx.amount < 0
+              : true;
+      const signedAmt = isExpense ? -amt : amt;
 
       if (hasValidBalance) {
         currentBalances[account] = Number(tx.Balance);
       } else {
         const currentVal = currentBalances[account] !== undefined ? currentBalances[account] : 0;
-        currentBalances[account] = Number((currentVal + amt).toFixed(2));
+        currentBalances[account] = Number((currentVal + signedAmt).toFixed(2));
       }
     }
 
@@ -325,14 +334,23 @@ export function ThisMonthView({
       const hasValidBalance = tx.Balance !== undefined && tx.Balance !== null && tx.Balance !== '';
 
       const rawAmt = tx.Amount !== undefined ? tx.Amount : tx.amount !== undefined ? tx.amount : 0;
-      const amt = tx._parsedAmount !== undefined ? tx._parsedAmount : Number(rawAmt);
+      const amt = Math.abs(tx._parsedAmount !== undefined ? tx._parsedAmount : Number(rawAmt));
+      const isExpense =
+        tx._isExpense !== undefined
+          ? tx._isExpense
+          : tx.Amount !== undefined
+            ? tx.Amount < 0
+            : tx.amount !== undefined
+              ? tx.amount < 0
+              : true;
+      const signedAmt = isExpense ? -amt : amt;
 
       if (hasValidBalance) {
         currentBalancesAdjusted[account] = Number(tx.Balance);
       } else {
         const currentVal =
           currentBalancesAdjusted[account] !== undefined ? currentBalancesAdjusted[account] : 0;
-        currentBalancesAdjusted[account] = Number((currentVal + amt).toFixed(2));
+        currentBalancesAdjusted[account] = Number((currentVal + signedAmt).toFixed(2));
       }
 
       const calculatedTotal = Object.values(currentBalancesAdjusted).reduce(
@@ -358,8 +376,17 @@ export function ThisMonthView({
       if (!isNaN(txDate.getTime()) && txDate >= firstOfMonth) {
         const rawAmt =
           tx.Amount !== undefined ? tx.Amount : tx.amount !== undefined ? tx.amount : 0;
-        const amt = tx._parsedAmount !== undefined ? tx._parsedAmount : Number(rawAmt);
-        calculatedStartingBalance -= amt;
+        const amt = Math.abs(tx._parsedAmount !== undefined ? tx._parsedAmount : Number(rawAmt));
+        const isExpense =
+          tx._isExpense !== undefined
+            ? tx._isExpense
+            : tx.Amount !== undefined
+              ? tx.Amount < 0
+              : tx.amount !== undefined
+                ? tx.amount < 0
+                : true;
+        const signedAmt = isExpense ? -amt : amt;
+        calculatedStartingBalance -= signedAmt;
       }
     }
 
@@ -416,7 +443,9 @@ export function ThisMonthView({
 
       for (const tx of recurringOnDay) {
         const amt =
-          tx._parsedAmount !== undefined ? tx._parsedAmount : Math.abs(tx.Amount || tx.amount || 0);
+          tx._parsedAmount !== undefined
+            ? Math.abs(tx._parsedAmount)
+            : Math.abs(tx.Amount || tx.amount || 0);
         const isExpense =
           tx._isExpense !== undefined
             ? tx._isExpense

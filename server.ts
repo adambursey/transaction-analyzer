@@ -371,7 +371,10 @@ export async function createApp() {
     }
 
     try {
-      const firestore = new Firestore({ projectId: 'tx-analyzer-1777844550' });
+      const firestore = new Firestore({
+        projectId: 'tx-analyzer-1777844550',
+        ignoreUndefinedProperties: true,
+      });
       const transactionsCollection = firestore.collection('transactions');
       const importsCollection = firestore.collection('imports');
 
@@ -406,9 +409,11 @@ export async function createApp() {
           ...tx,
           Date: d ? Timestamp.fromDate(d) : null,
           Amount: isNaN(parsedAmount) ? 0 : parsedAmount,
-          Balance: isNaN(parsedBalance as number) ? undefined : parsedBalance,
+          Balance:
+            parsedBalance === undefined || isNaN(parsedBalance as number) ? null : parsedBalance,
           Account: accountStr,
           matched: false,
+          createdAt: Timestamp.now(),
         };
       });
 
@@ -633,7 +638,17 @@ ${JSON.stringify(uniqueFuzzyDescs)}
 
         chunk.forEach((tx) => {
           const docRef = transactionsCollection.doc();
-          batch.set(docRef, { ...tx, importId });
+
+          // Sanitize transaction to ensure no undefined values are written to Firestore
+          const sanitizedTx: any = {};
+          Object.keys(tx).forEach((key) => {
+            sanitizedTx[key] = tx[key] === undefined ? null : tx[key];
+          });
+          if (sanitizedTx.Balance === undefined) {
+            sanitizedTx.Balance = null;
+          }
+
+          batch.set(docRef, { ...sanitizedTx, importId });
         });
 
         await batch.commit();
@@ -909,6 +924,13 @@ ${JSON.stringify(uniqueFuzzyDescs)}
             effectiveDateVal = new Date(effectiveDateVal._seconds * 1000).toISOString();
           }
 
+          let createdAtVal = raw['createdAt'] || '';
+          if (createdAtVal && typeof createdAtVal.toDate === 'function') {
+            createdAtVal = createdAtVal.toDate().toISOString();
+          } else if (createdAtVal && createdAtVal._seconds) {
+            createdAtVal = new Date(createdAtVal._seconds * 1000).toISOString();
+          }
+
           return {
             id: doc.id,
             Date: dateVal,
@@ -924,6 +946,7 @@ ${JSON.stringify(uniqueFuzzyDescs)}
             duplicateOfId: raw['duplicateOfId'] || undefined,
             Account: raw['Account'] || 'Checking',
             matched: raw['matched'] !== undefined ? !!raw['matched'] : false,
+            createdAt: createdAtVal,
           };
         })
         .filter((tx) => tx.status !== 'archived');
@@ -1056,7 +1079,10 @@ ${JSON.stringify(uniqueFuzzyDescs)}
       // Write transactions
       let transactionsCount = 0;
       for (const item of data) {
-        await transactionsCollection.add(item);
+        await transactionsCollection.add({
+          ...item,
+          createdAt: Timestamp.now(),
+        });
         transactionsCount++;
       }
 
@@ -1585,11 +1611,18 @@ ${JSON.stringify(uniqueDescs)}
         } else if (dateVal && dateVal._seconds) {
           dateVal = new Date(dateVal._seconds * 1000).toISOString();
         }
+        let createdAtVal = raw['createdAt'] || '';
+        if (createdAtVal && typeof createdAtVal.toDate === 'function') {
+          createdAtVal = createdAtVal.toDate().toISOString();
+        } else if (createdAtVal && createdAtVal._seconds) {
+          createdAtVal = new Date(createdAtVal._seconds * 1000).toISOString();
+        }
         return {
           id: doc.id,
           ...raw,
           Date: dateVal,
           Amount: raw['Amount'] !== undefined ? raw['Amount'] : raw['amount'] || 0,
+          createdAt: createdAtVal,
         };
       });
       res.json({ transactions });
@@ -1916,7 +1949,10 @@ ${JSON.stringify(uniqueDescs)}
         return res.status(400).json({ error: 'Missing or invalid transactions payload' });
       }
 
-      const firestore = new Firestore({ projectId: 'tx-analyzer-1777844550' });
+      const firestore = new Firestore({
+        projectId: 'tx-analyzer-1777844550',
+        ignoreUndefinedProperties: true,
+      });
       let txQuery: any = firestore.collection(process.env.FIRESTORE_COLLECTION || 'transactions');
       if (account && account !== 'All') {
         txQuery = txQuery.where('Account', '==', account);
@@ -1982,6 +2018,7 @@ ${JSON.stringify(uniqueDescs)}
                   typeof tx.Balance === 'string'
                     ? parseFloat(tx.Balance.toString().replace(/[^0-9.-]+/g, ''))
                     : Number(tx.Balance);
+                const cleanBalance = isNaN(safeBalance) ? null : safeBalance;
 
                 // Add exact intra-day timestamp offset (subtracting seconds so newest is closest to 12:00:00)
                 const baseDate = parseStrictDate(tx.Date);
@@ -1991,8 +2028,8 @@ ${JSON.stringify(uniqueDescs)}
                   newDateVal = Timestamp.fromDate(baseDate);
                 }
 
-                batch.update(candidate.ref, { Balance: safeBalance, Date: newDateVal });
-                candidate.data.Balance = safeBalance; // Update in-memory so timeline sees it
+                batch.update(candidate.ref, { Balance: cleanBalance, Date: newDateVal });
+                candidate.data.Balance = cleanBalance; // Update in-memory so timeline sees it
                 candidate.data.Date = newDateVal;
                 opCount++;
                 updateCount++;
@@ -2051,6 +2088,7 @@ ${JSON.stringify(uniqueDescs)}
                 status: 'reviewed',
                 importId: 'system_reconciliation',
                 Account: account && account !== 'All' ? account : 'Checking',
+                createdAt: Timestamp.now(),
               });
               opCount++;
               discrepanciesAdded++;

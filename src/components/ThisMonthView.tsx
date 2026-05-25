@@ -24,6 +24,15 @@ import { runMatchingEngine, MatchingResult } from '../utils/matchingLogic';
 import { getUnmatchedRecurringInstances } from '../utils/projectionLogic';
 import { format } from 'date-fns';
 import { TransactionTable } from './TransactionTable';
+import {
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+} from 'recharts';
 
 /**
  * Props expected by the ThisMonthView component.
@@ -77,6 +86,10 @@ export function ThisMonthView({
   });
   const [occurredExpanded, setOccurredExpanded] = useState(() => {
     const saved = localStorage.getItem('occurredExpanded');
+    return saved !== null ? saved === 'true' : true;
+  });
+  const [projectionExpanded, setProjectionExpanded] = useState(() => {
+    const saved = localStorage.getItem('projectionExpanded');
     return saved !== null ? saved === 'true' : true;
   });
   const [matchedResults, setMatchedResults] = useState<MatchingResult[]>([]);
@@ -262,6 +275,201 @@ export function ThisMonthView({
     });
   }, [transactions]);
 
+  // Daily actual and projected balance cash flow data calculation
+  const dailyCashFlowData = React.useMemo(() => {
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth();
+
+    const firstOfMonth = new Date(currentYear, currentMonth, 1);
+    const lastOfMonth = new Date(currentYear, currentMonth + 1, 0);
+    const numDays = lastOfMonth.getDate();
+
+    // 1. Reconstruct Daily Actual Balances (Reusing Dashboard Algorithm)
+    const dateCol = defaultAnalysis.columnsIdentified.date;
+    const chronoSorted = [...transactions].sort((a, b) => {
+      const dateA = a[dateCol] ? new Date(a[dateCol]).getTime() : 0;
+      const dateB = b[dateCol] ? new Date(b[dateCol]).getTime() : 0;
+      return dateA - dateB;
+    });
+
+    // Compute a baseline running balance to find the final calculated total balance
+    const currentBalances: Record<string, number> = {};
+    for (const tx of chronoSorted) {
+      const account = tx.Account || 'Default';
+      const hasValidBalance = tx.Balance !== undefined && tx.Balance !== null && tx.Balance !== '';
+
+      const rawAmt = tx.Amount !== undefined ? tx.Amount : tx.amount !== undefined ? tx.amount : 0;
+      const amt = tx._parsedAmount !== undefined ? tx._parsedAmount : Number(rawAmt);
+
+      if (hasValidBalance) {
+        currentBalances[account] = Number(tx.Balance);
+      } else {
+        const currentVal = currentBalances[account] !== undefined ? currentBalances[account] : 0;
+        currentBalances[account] = Number((currentVal + amt).toFixed(2));
+      }
+    }
+
+    const finalCalculatedTotalBalance = Object.values(currentBalances).reduce(
+      (sum, bal) => sum + bal,
+      0
+    );
+    const balanceOffset = currentBalance - finalCalculatedTotalBalance;
+
+    const currentBalancesAdjusted: Record<string, number> = {};
+    const dailyActualMap: Record<number, number> = {};
+    let lastBalanceBeforeMonth = 0;
+
+    for (const tx of chronoSorted) {
+      const account = tx.Account || 'Default';
+      const hasValidBalance = tx.Balance !== undefined && tx.Balance !== null && tx.Balance !== '';
+
+      const rawAmt = tx.Amount !== undefined ? tx.Amount : tx.amount !== undefined ? tx.amount : 0;
+      const amt = tx._parsedAmount !== undefined ? tx._parsedAmount : Number(rawAmt);
+
+      if (hasValidBalance) {
+        currentBalancesAdjusted[account] = Number(tx.Balance);
+      } else {
+        const currentVal =
+          currentBalancesAdjusted[account] !== undefined ? currentBalancesAdjusted[account] : 0;
+        currentBalancesAdjusted[account] = Number((currentVal + amt).toFixed(2));
+      }
+
+      const calculatedTotal = Object.values(currentBalancesAdjusted).reduce(
+        (sum, bal) => sum + bal,
+        0
+      );
+      const totalBalance = calculatedTotal + balanceOffset;
+
+      const txDate = tx.Date?.toDate ? tx.Date.toDate() : new Date(tx.Date || tx.date);
+      if (!isNaN(txDate.getTime())) {
+        if (txDate < firstOfMonth) {
+          lastBalanceBeforeMonth = totalBalance;
+        } else if (txDate.getFullYear() === currentYear && txDate.getMonth() === currentMonth) {
+          dailyActualMap[txDate.getDate()] = totalBalance;
+        }
+      }
+    }
+
+    // Calculate starting balance by subtracting all transaction amounts on or after firstOfMonth from currentBalance
+    let calculatedStartingBalance = currentBalance;
+    for (const tx of chronoSorted) {
+      const txDate = tx.Date?.toDate ? tx.Date.toDate() : new Date(tx.Date || tx.date);
+      if (!isNaN(txDate.getTime()) && txDate >= firstOfMonth) {
+        const rawAmt =
+          tx.Amount !== undefined ? tx.Amount : tx.amount !== undefined ? tx.amount : 0;
+        const amt = tx._parsedAmount !== undefined ? tx._parsedAmount : Number(rawAmt);
+        calculatedStartingBalance -= amt;
+      }
+    }
+
+    const startingBalance =
+      lastBalanceBeforeMonth !== 0 ? lastBalanceBeforeMonth : calculatedStartingBalance;
+
+    // 2. Reconstruct Daily Projected Balances
+    // Pool occurred matched and mapped upcoming expected recurring instances
+    const getTxDateObj = (tx: any): Date => {
+      if (tx._date instanceof Date) return tx._date;
+      const d = tx.Date?.toDate ? tx.Date.toDate() : new Date(tx.Date || tx.date || tx._date);
+      return isNaN(d.getTime()) ? new Date() : d;
+    };
+
+    const allRecurringTxs = [...occurredTransactions, ...mappedUpcomingTransactions];
+
+    const sortedRecurring = [...allRecurringTxs].sort((a, b) => {
+      return getTxDateObj(a).getTime() - getTxDateObj(b).getTime();
+    });
+
+    // We build the data points from Day 1 to numDays
+    const isCurrentMonth = now.getFullYear() === currentYear && now.getMonth() === currentMonth;
+
+    // Find the latest day of actual transactions in the current month or today's date
+    let maxActualDay = numDays;
+    if (isCurrentMonth) {
+      maxActualDay = now.getDate();
+    } else {
+      // Find the max day among the in-month actual transactions
+      const actualDaysInMonth = Object.keys(dailyActualMap).map(Number);
+      if (actualDaysInMonth.length > 0) {
+        maxActualDay = Math.max(...actualDaysInMonth);
+      }
+    }
+
+    const dataPoints = [];
+    let runningActual = startingBalance;
+    let runningProjected = startingBalance;
+
+    for (let d = 1; d <= numDays; d++) {
+      const dateStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      const dayLabel = format(new Date(currentYear, currentMonth, d), 'MMM d');
+
+      // Update runningActual: if there was a transaction on this day, its last balance is the end-of-day balance
+      if (dailyActualMap[d] !== undefined) {
+        runningActual = dailyActualMap[d];
+      }
+
+      // Update runningProjected: apply all recurring transactions that fall on this day
+      const recurringOnDay = sortedRecurring.filter((tx) => {
+        const txDate = getTxDateObj(tx);
+        return txDate.getDate() === d;
+      });
+
+      for (const tx of recurringOnDay) {
+        const amt =
+          tx._parsedAmount !== undefined ? tx._parsedAmount : Math.abs(tx.Amount || tx.amount || 0);
+        const isExpense =
+          tx._isExpense !== undefined
+            ? tx._isExpense
+            : tx.Amount !== undefined
+              ? tx.Amount < 0
+              : tx.amount !== undefined
+                ? tx.amount < 0
+                : true;
+        const signedAmt = isExpense ? -amt : amt;
+        runningProjected = Number((runningProjected + signedAmt).toFixed(2));
+      }
+
+      dataPoints.push({
+        date: dateStr,
+        dayLabel: dayLabel,
+        day: d,
+        actualBalance: d <= maxActualDay ? Number(runningActual.toFixed(2)) : undefined,
+        projectedBalance: Number(runningProjected.toFixed(2)),
+      });
+    }
+
+    // Also compute additional metrics for the header KPI summaries
+    const latestActual =
+      maxActualDay > 0 && dailyActualMap[maxActualDay] !== undefined
+        ? dailyActualMap[maxActualDay]
+        : runningActual;
+    const projectedEnding = runningProjected;
+
+    // Variance today (or up to maxActualDay if in past month)
+    const activeActualDay = isCurrentMonth ? now.getDate() : maxActualDay;
+    const actualTodayVal =
+      dataPoints.find((p) => p.day === activeActualDay)?.actualBalance ?? latestActual;
+    const projectedTodayVal =
+      dataPoints.find((p) => p.day === activeActualDay)?.projectedBalance ?? startingBalance;
+    const varianceToday = Number((actualTodayVal - projectedTodayVal).toFixed(2));
+
+    return {
+      dataPoints,
+      startingBalance,
+      currentActualBalance: latestActual,
+      projectedEndingBalance: projectedEnding,
+      varianceToday,
+      maxActualDay,
+      isCurrentMonth,
+    };
+  }, [
+    transactions,
+    occurredTransactions,
+    mappedUpcomingTransactions,
+    defaultAnalysis,
+    currentBalance,
+  ]);
+
   useEffect(() => {
     localStorage.setItem('remainingExpanded', String(remainingExpanded));
   }, [remainingExpanded]);
@@ -273,6 +481,10 @@ export function ThisMonthView({
   useEffect(() => {
     localStorage.setItem('occurredExpanded', String(occurredExpanded));
   }, [occurredExpanded]);
+
+  useEffect(() => {
+    localStorage.setItem('projectionExpanded', String(projectionExpanded));
+  }, [projectionExpanded]);
 
   useEffect(() => {
     /**
@@ -551,6 +763,7 @@ export function ThisMonthView({
   };
 
   const currentMonthName = format(new Date(), 'MMMM');
+  const currentYear = new Date().getFullYear();
 
   if (loading) {
     return (
@@ -882,6 +1095,206 @@ export function ThisMonthView({
                 </div>
               </div>
             )}
+          </div>
+        )}
+      </div>
+
+      {/* Cash Flow Projection Chart Card */}
+      <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden animate-in fade-in duration-500">
+        <button
+          onClick={() => setProjectionExpanded(!projectionExpanded)}
+          className="w-full p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50 hover:bg-slate-100/70 transition-colors text-left focus:outline-none"
+        >
+          <div className="flex items-center gap-3">
+            <h3 className="text-xl font-bold text-slate-800">Cash Flow Projection</h3>
+            <span className="bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-sm font-semibold">
+              Projection
+            </span>
+          </div>
+          <div className="text-slate-400">
+            {projectionExpanded ? (
+              <ChevronUp className="w-6 h-6 text-slate-500" />
+            ) : (
+              <ChevronDown className="w-6 h-6 text-slate-500" />
+            )}
+          </div>
+        </button>
+
+        {projectionExpanded && (
+          <div className="p-6">
+            <p className="text-sm text-slate-500 mb-6">
+              Daily actual vs. projected cash flow for the month of {currentMonthName}
+            </p>
+
+            {/* KPI Metrics Subheader */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6 bg-slate-50 p-4 rounded-2xl border border-slate-100">
+              <div>
+                <p className="text-xs text-slate-500 font-medium">Starting Balance</p>
+                <p className="text-base font-bold text-slate-800 font-mono mt-0.5">
+                  {dailyCashFlowData.startingBalance < 0 ? '-' : ''}
+                  {formatCurrency(dailyCashFlowData.startingBalance)}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-slate-500 font-medium">Current Balance</p>
+                <p className="text-base font-bold text-slate-800 font-mono mt-0.5">
+                  {dailyCashFlowData.currentActualBalance < 0 ? '-' : ''}
+                  {formatCurrency(dailyCashFlowData.currentActualBalance)}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-slate-500 font-medium">Projected Ending</p>
+                <p className="text-base font-bold text-slate-800 font-mono mt-0.5">
+                  {dailyCashFlowData.projectedEndingBalance < 0 ? '-' : ''}
+                  {formatCurrency(dailyCashFlowData.projectedEndingBalance)}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-slate-500 font-medium">Month-to-Date Variance</p>
+                <div className="flex items-center gap-1 mt-0.5">
+                  <p
+                    className={`text-base font-bold font-mono ${dailyCashFlowData.varianceToday >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}
+                  >
+                    {dailyCashFlowData.varianceToday >= 0 ? '+' : '-'}
+                    {formatCurrency(dailyCashFlowData.varianceToday)}
+                  </p>
+                  <span
+                    className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${dailyCashFlowData.varianceToday >= 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}
+                  >
+                    {dailyCashFlowData.varianceToday >= 0 ? 'Ahead' : 'Behind'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Recharts Chart Container */}
+            <div className="h-72 w-full">
+              {dailyCashFlowData.dataPoints.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart
+                    data={dailyCashFlowData.dataPoints}
+                    margin={{ top: 5, right: 5, bottom: 5, left: -10 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                    <XAxis
+                      dataKey="day"
+                      tickFormatter={(val) => `${currentMonthName.substring(0, 3)} ${val}`}
+                      tick={{ fill: '#64748b', fontSize: 11 }}
+                      tickMargin={10}
+                      minTickGap={20}
+                      axisLine={{ stroke: '#cbd5e1' }}
+                      tickLine={{ stroke: '#cbd5e1' }}
+                    />
+                    <YAxis
+                      tickFormatter={(val) => `$${val.toLocaleString()}`}
+                      tick={{ fill: '#64748b', fontSize: 11 }}
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <Tooltip
+                      formatter={(value: number, name: string) => {
+                        const labelName =
+                          name === 'actualBalance' ? 'Actual Balance' : 'Projected Balance';
+                        const valStr = `$${value.toLocaleString(undefined, {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}`;
+                        return [valStr, labelName];
+                      }}
+                      labelFormatter={(label, items) => {
+                        if (items && items[0] && items[0].payload) {
+                          return `Date: ${items[0].payload.dayLabel}, ${currentYear}`;
+                        }
+                        return `Day ${label}`;
+                      }}
+                      content={({ active, payload }) => {
+                        if (active && payload && payload.length) {
+                          const pt = payload[0].payload;
+                          const hasActual =
+                            pt.actualBalance !== undefined && pt.actualBalance !== null;
+                          const variance = hasActual
+                            ? Number((pt.actualBalance - pt.projectedBalance).toFixed(2))
+                            : 0;
+                          return (
+                            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-lg text-sm text-slate-600 font-sans">
+                              <p className="font-semibold text-slate-800 mb-2 border-b border-slate-100 pb-1.5">
+                                {pt.dayLabel}, {currentYear}
+                              </p>
+                              <div className="space-y-1.5">
+                                {hasActual && (
+                                  <div className="flex items-center justify-between gap-6">
+                                    <span className="flex items-center gap-1.5">
+                                      <span className="w-2.5 h-2.5 rounded-full bg-blue-600 block" />
+                                      Actual Balance:
+                                    </span>
+                                    <span className="font-mono font-bold text-slate-800">
+                                      {pt.actualBalance < 0 ? '-' : ''}
+                                      {formatCurrency(pt.actualBalance)}
+                                    </span>
+                                  </div>
+                                )}
+                                <div className="flex items-center justify-between gap-6">
+                                  <span className="flex items-center gap-1.5">
+                                    <span className="w-2.5 h-2.5 rounded-full bg-indigo-500 block" />
+                                    Projected Balance:
+                                  </span>
+                                  <span className="font-mono font-bold text-slate-800">
+                                    {pt.projectedBalance < 0 ? '-' : ''}
+                                    {formatCurrency(pt.projectedBalance)}
+                                  </span>
+                                </div>
+                                {hasActual && (
+                                  <div className="flex items-center justify-between gap-6 pt-1.5 border-t border-slate-100">
+                                    <span className="text-slate-500 font-medium">Variance:</span>
+                                    <span
+                                      className={`font-mono font-bold ${variance >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}
+                                    >
+                                      {variance >= 0 ? '+' : '-'}
+                                      {formatCurrency(variance)}
+                                      <span className="text-[10px] ml-1 px-1 py-0.5 rounded bg-slate-50 uppercase font-semibold">
+                                        {variance >= 0 ? 'Ahead' : 'Behind'}
+                                      </span>
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        }
+                        return null;
+                      }}
+                      contentStyle={{
+                        borderRadius: '12px',
+                        border: '1px solid #e2e8f0',
+                        boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)',
+                      }}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="actualBalance"
+                      stroke="#2563eb"
+                      strokeWidth={3}
+                      dot={false}
+                      activeDot={{ r: 5, fill: '#2563eb', stroke: '#fff', strokeWidth: 1.5 }}
+                      connectNulls
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="projectedBalance"
+                      stroke="#6366f1"
+                      strokeWidth={3}
+                      strokeDasharray="5 5"
+                      dot={false}
+                      activeDot={{ r: 5, fill: '#6366f1', stroke: '#fff', strokeWidth: 1.5 }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex items-center justify-center h-full text-slate-400">
+                  No daily projection data available
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>

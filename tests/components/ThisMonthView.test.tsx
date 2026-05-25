@@ -2,6 +2,28 @@ import React from 'react';
 import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
 import { ThisMonthView } from '../../src/components/ThisMonthView.tsx';
 
+// Mock Recharts to render simple HTML components and expose the data dataset for assertions
+jest.mock('recharts', () => {
+  const Original = jest.requireActual('recharts');
+  return {
+    ...Original,
+    ResponsiveContainer: ({ children }: any) => (
+      <div data-testid="responsive-container">{children}</div>
+    ),
+    LineChart: ({ data, children }: any) => (
+      <div data-testid="this-month-line-chart" data-chart-data={JSON.stringify(data)}>
+        {children}
+      </div>
+    ),
+    Line: () => <div data-testid="line-element" />,
+    XAxis: () => <div data-testid="xaxis-element" />,
+    YAxis: () => <div data-testid="yaxis-element" />,
+    CartesianGrid: () => <div data-testid="grid-element" />,
+    Tooltip: () => <div data-testid="tooltip-element" />,
+    Legend: () => <div data-testid="legend-element" />,
+  };
+});
+
 jest.mock('../../src/utils/projectionLogic', () => {
   const actual = jest.requireActual('../../src/utils/projectionLogic');
   return {
@@ -993,5 +1015,125 @@ describe('ThisMonthView Component', () => {
 
     expect(rows[1].textContent).toContain('Netflix Inc');
     expect(rows[1].textContent).toContain('5/10/2026');
+  });
+
+  it('renders Cash Flow Projection line chart with correct actual vs projected balance math', async () => {
+    // Override the mock fetches
+    (global.fetch as jest.Mock).mockReset();
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      json: async () => ({ recurring: [] }),
+    });
+
+    // Today is May 24, 2026.
+    // Set up mock database ledger transactions for May
+    const mockTxs = [
+      {
+        id: 'tx_matched_groceries',
+        Description: 'Whole Foods',
+        Amount: -120.5,
+        Date: new Date('2026-05-02T12:00:00Z'),
+        Category: 'Groceries',
+        matched: true,
+      },
+      {
+        id: 'tx_unmatched_transit',
+        Description: 'Uber Ride',
+        Amount: -25.0,
+        Date: new Date('2026-05-05T12:00:00Z'),
+        Category: 'Transit',
+        matched: false,
+      },
+      {
+        id: 'tx_matched_netflix',
+        Description: 'Netflix Inc',
+        Amount: -15.99,
+        Date: new Date('2026-05-10T12:00:00Z'),
+        Category: 'Entertainment',
+        matched: true,
+      },
+    ];
+
+    // Set up mock unmatched projected expected recurring transactions
+    // (returns an expected instance on May 15 with expected amount -100)
+    (global as any).mockUnmatchedOverride = [
+      {
+        id: 'rec_rent_projected',
+        description: 'Rent Payment',
+        amountAverage: -100.0,
+        projectedOccurrence: '15',
+        _projectedDate: new Date('2026-05-15T12:00:00Z'),
+        _instanceIndex: 0,
+        exampleTransactionIds: [],
+      },
+    ];
+
+    render(<ThisMonthView transactions={mockTxs} currentBalance={5000} />);
+
+    await waitFor(() => {
+      expect(screen.queryByText(/Loading/i)).not.toBeInTheDocument();
+    });
+
+    // 1. Verify "Cash Flow Projection" section header exists
+    expect(screen.getByText('Cash Flow Projection')).toBeInTheDocument();
+
+    // 2. Retrieve Recharts line chart container and parse chart dataset
+    const chart = screen.getByTestId('this-month-line-chart');
+    expect(chart).toBeInTheDocument();
+    const dataRaw = chart.getAttribute('data-chart-data');
+    expect(dataRaw).toBeTruthy();
+    const dailyData = JSON.parse(dataRaw!);
+
+    // Should contain exactly 31 data points (one for each day of May)
+    expect(dailyData.length).toBe(31);
+
+    // Let's assert on the computed math:
+    // startingBalance back-calculated from currentBalance (5000) on today (May 24)
+    // Ledger transactions in May:
+    // - May 2: -120.50
+    // - May 5: -25.00
+    // - May 10: -15.99
+    // Sum is -161.49, so startingBalance = 5000 - (-161.49) = 5161.49
+
+    // Day 1 (May 1)
+    expect(dailyData[0].day).toBe(1);
+    expect(dailyData[0].actualBalance).toBeCloseTo(5161.49, 2);
+    expect(dailyData[0].projectedBalance).toBeCloseTo(5161.49, 2);
+
+    // Day 2 (May 2) - Whole Foods (-120.50) occurs (both actual and projected matched)
+    expect(dailyData[1].day).toBe(2);
+    expect(dailyData[1].actualBalance).toBeCloseTo(5161.49 - 120.5, 2); // 5040.99
+    expect(dailyData[1].projectedBalance).toBeCloseTo(5161.49 - 120.5, 2);
+
+    // Day 3 & 4 (May 3 & 4) - Holds flat
+    expect(dailyData[2].actualBalance).toBeCloseTo(5040.99, 2);
+    expect(dailyData[2].projectedBalance).toBeCloseTo(5040.99, 2);
+
+    // Day 5 (May 5) - Uber Ride (-25.00) occurs in actual ledger (unmatched) but not in projected/recurring
+    expect(dailyData[4].day).toBe(5);
+    expect(dailyData[4].actualBalance).toBeCloseTo(5040.99 - 25.0, 2); // 5015.99
+    expect(dailyData[4].projectedBalance).toBeCloseTo(5040.99, 2); // Projected remains 5040.99 (Coffee isn't recurring)
+
+    // Day 10 (May 10) - Netflix (-15.99) occurs (both actual and projected matched)
+    expect(dailyData[9].day).toBe(10);
+    expect(dailyData[9].actualBalance).toBeCloseTo(5015.99 - 15.99, 2); // 5000.00
+    expect(dailyData[9].projectedBalance).toBeCloseTo(5040.99 - 15.99, 2); // 5025.00
+
+    // Day 15 (May 15) - Rent Payment (-100.00) occurs in projected (upcoming) but not actual
+    expect(dailyData[14].day).toBe(15);
+    expect(dailyData[14].actualBalance).toBeCloseTo(5000.0, 2); // Actual holds flat
+    expect(dailyData[14].projectedBalance).toBeCloseTo(5025.0 - 100.0, 2); // 4925.00
+
+    // Day 24 (May 24) - Today's actual balance is currentBalance (5000)
+    expect(dailyData[23].actualBalance).toBeCloseTo(5000.0, 2);
+
+    // Day 25 (May 25) - Future day, actual balance should be undefined/null (so it's not plotted)
+    expect(dailyData[24].actualBalance).toBeUndefined();
+    // Projected balance continues to be plotted through the end of the month
+    expect(dailyData[24].projectedBalance).toBeCloseTo(4925.0, 2);
+    expect(dailyData[30].projectedBalance).toBeCloseTo(4925.0, 2);
+
+    // Clean up global mock override
+    (global as any).mockUnmatchedOverride = null;
   });
 });

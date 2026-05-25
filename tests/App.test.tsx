@@ -78,7 +78,7 @@ describe('App Component', () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByText('Analyzer')).toBeInTheDocument();
+      expect(screen.getByText('Our Money')).toBeInTheDocument();
     });
 
     await waitFor(() => {
@@ -91,7 +91,7 @@ describe('App Component', () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByText('Analyzer')).toBeInTheDocument();
+      expect(screen.getByText('Our Money')).toBeInTheDocument();
     });
 
     // Switch to Transactions view to see the full list
@@ -128,7 +128,7 @@ describe('App Component', () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByText('Analyzer')).toBeInTheDocument();
+      expect(screen.getByText('Our Money')).toBeInTheDocument();
     });
 
     let transactionsTab: HTMLElement;
@@ -210,7 +210,7 @@ describe('App Component', () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByText('Analyzer')).toBeInTheDocument();
+      expect(screen.getByText('Our Money')).toBeInTheDocument();
     });
 
     let transactionsTab: HTMLElement;

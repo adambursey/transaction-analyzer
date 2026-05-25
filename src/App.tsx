@@ -1192,7 +1192,7 @@ export default function App() {
             <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-6">
               <FileSpreadsheet className="w-8 h-8 text-blue-600" />
             </div>
-            <h1 className="text-2xl font-bold text-slate-900 mb-2">Transaction Analyzer</h1>
+            <h1 className="text-2xl font-bold text-slate-900 mb-2">Our Money</h1>
             <p className="text-slate-500 mb-8">
               Connect your Google account to analyze and visualize your Google Sheets transaction
               data.
@@ -1255,7 +1255,7 @@ export default function App() {
               <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
                 <Activity className="w-5 h-5 text-white" />
               </div>
-              <h1 className="text-xl font-bold tracking-tight text-slate-900">Analyzer</h1>
+              <h1 className="text-xl font-bold tracking-tight text-slate-900">Our Money</h1>
             </div>
 
             {analysis && (
@@ -3116,16 +3116,49 @@ export default function App() {
                   if (!txSortConfig) return 0;
                   const { key, direction } = txSortConfig;
 
-                  let valA = a[key];
-                  let valB = b[key];
+                  const actualKey =
+                    Object.keys(a).find((k) => k.toLowerCase() === key.toLowerCase()) || key;
+                  let valA = a[actualKey];
+                  let valB = b[actualKey];
 
                   // Special cases for sorting
-                  if (key === analysis.columnsIdentified.amount) {
+                  const isAmountKey =
+                    key &&
+                    analysis?.columnsIdentified?.amount &&
+                    key.toLowerCase() === analysis.columnsIdentified.amount.toLowerCase();
+                  const isDateKey =
+                    key &&
+                    analysis?.columnsIdentified?.date &&
+                    key.toLowerCase() === analysis.columnsIdentified.date.toLowerCase();
+
+                  if (isAmountKey) {
                     valA = a._parsedAmount;
                     valB = b._parsedAmount;
-                  } else if (key === analysis.columnsIdentified.date) {
-                    valA = new Date(a._date).getTime();
-                    valB = new Date(b._date).getTime();
+                  } else if (isDateKey) {
+                    const getTimeFromDate = (tx: any, keyName: string): number => {
+                      if (tx._date instanceof Date && !isNaN(tx._date.getTime())) {
+                        return tx._date.getTime();
+                      }
+                      if (
+                        typeof tx._date === 'string' ||
+                        (tx._date && typeof tx._date.getTime !== 'function')
+                      ) {
+                        const d = new Date(tx._date);
+                        if (!isNaN(d.getTime())) return d.getTime();
+                      }
+                      const val = tx[keyName];
+                      if (val instanceof Date && !isNaN(val.getTime())) {
+                        return val.getTime();
+                      }
+                      if (val) {
+                        const d = val.toDate ? val.toDate() : new Date(val);
+                        if (!isNaN(d.getTime())) return d.getTime();
+                      }
+                      return 0;
+                    };
+
+                    valA = getTimeFromDate(a, actualKey);
+                    valB = getTimeFromDate(b, actualKey);
                   } else {
                     valA = String(valA || '').toLowerCase();
                     valB = String(valB || '').toLowerCase();
@@ -3403,6 +3436,10 @@ export default function App() {
             transactions={data}
             currentBalance={analysis?.currentBalance || 0}
             onRefresh={fetchSheetData}
+            analysis={analysis}
+            taxonomy={taxonomy}
+            availableYears={availableYears}
+            headers={headers}
           />
         )}
       </main>

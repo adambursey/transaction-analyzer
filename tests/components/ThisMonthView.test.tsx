@@ -1,6 +1,19 @@
 import React from 'react';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
-import { ThisMonthView } from '../../src/components/ThisMonthView';
+import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
+import { ThisMonthView } from '../../src/components/ThisMonthView.tsx';
+
+jest.mock('../../src/utils/projectionLogic', () => {
+  const actual = jest.requireActual('../../src/utils/projectionLogic');
+  return {
+    ...actual,
+    getUnmatchedRecurringInstances: jest.fn().mockImplementation((...args) => {
+      if ((global as any).mockUnmatchedOverride) {
+        return (global as any).mockUnmatchedOverride;
+      }
+      return actual.getUnmatchedRecurringInstances(...args);
+    }),
+  };
+});
 
 // Mock the fetch call
 global.fetch = jest.fn();
@@ -303,7 +316,7 @@ describe('ThisMonthView Component', () => {
     expect(screen.queryByText('ATVs Payment')).not.toBeInTheDocument();
   });
 
-  it('renders collapsible Remaining to Occur and Matched Transactions sections', async () => {
+  it('renders collapsible Upcoming Transactions and Pending Matches sections', async () => {
     (runMatchingEngine as jest.Mock).mockReturnValue([
       {
         transaction: mockTransactions[0],
@@ -320,26 +333,26 @@ describe('ThisMonthView Component', () => {
     });
 
     // Both collapsible headers should exist
-    const remainingBtn = screen.getByRole('button', { name: /Remaining to Occur/i });
-    const matchedBtn = screen.getByRole('button', { name: /Matched/i });
+    const remainingBtn = screen.getByRole('button', { name: /Upcoming Transactions/i });
+    const matchedBtn = screen.getByRole('button', { name: /Pending Matches/i });
 
     expect(remainingBtn).toBeInTheDocument();
     expect(matchedBtn).toBeInTheDocument();
 
-    // Remaining to Occur is expanded by default, so Rent should be visible initially
+    // Upcoming Transactions is expanded by default, so Rent should be visible initially
     expect(screen.getByText('Rent')).toBeInTheDocument();
 
-    // Matched Transactions is collapsed by default, so Netflix should NOT be visible initially
+    // Pending Matches is collapsed by default, so Netflix should NOT be visible initially
     expect(screen.queryByText('Netflix')).not.toBeInTheDocument();
 
-    // Click Matched Transactions header to expand it
+    // Click Pending Matches header to expand it
     matchedBtn.click();
     await waitFor(() => {
       // Netflix should now be visible in the matched list!
       expect(screen.getAllByText('Netflix').length).toBeGreaterThan(0);
     });
 
-    // Click Remaining to Occur header to collapse it
+    // Click Upcoming Transactions header to collapse it
     remainingBtn.click();
     await waitFor(() => {
       // Rent should no longer be visible
@@ -402,8 +415,8 @@ describe('ThisMonthView Component', () => {
       expect(screen.queryByText(/Loading/i)).not.toBeInTheDocument();
     });
 
-    // Expand Matched Transactions
-    const matchedBtn = screen.getByRole('button', { name: /Matched/i });
+    // Expand Pending Matches
+    const matchedBtn = screen.getByRole('button', { name: /Pending Matches/i });
     matchedBtn.click();
 
     // The Save button should exist inside the expanded candidate Netflix card
@@ -500,11 +513,14 @@ describe('ThisMonthView Component', () => {
       expect(screen.queryByText(/Loading/i)).not.toBeInTheDocument();
     });
 
-    // Netflix should NOT be in the unmatched list ("Remaining to Occur") because it is already matched
-    expect(screen.queryByText('Netflix')).not.toBeInTheDocument();
+    // Netflix should NOT be in the unmatched list ("Upcoming Transactions") because it is already matched
+    const upcomingContainer = screen
+      .getByRole('button', { name: /Upcoming Transactions/i })
+      .closest('div')!;
+    expect(within(upcomingContainer).queryByText('Netflix')).not.toBeInTheDocument();
 
     // Rent should be in the list
-    expect(screen.getByText('Rent')).toBeInTheDocument();
+    expect(within(upcomingContainer).getByText('Rent')).toBeInTheDocument();
   });
 
   /**
@@ -573,11 +589,14 @@ describe('ThisMonthView Component', () => {
       expect(screen.queryByText(/Loading/i)).not.toBeInTheDocument();
     });
 
-    // Netflix should NOT be in the unmatched list ("Remaining to Occur") because it is already matched dynamically
-    expect(screen.queryByText('Netflix')).not.toBeInTheDocument();
+    // Netflix should NOT be in the unmatched list ("Upcoming Transactions") because it is already matched dynamically
+    const upcomingContainer = screen
+      .getByRole('button', { name: /Upcoming Transactions/i })
+      .closest('div')!;
+    expect(within(upcomingContainer).queryByText('Netflix')).not.toBeInTheDocument();
 
     // Rent should be in the list
-    expect(screen.getByText('Rent')).toBeInTheDocument();
+    expect(within(upcomingContainer).getByText('Rent')).toBeInTheDocument();
   });
 
   /**
@@ -655,8 +674,8 @@ describe('ThisMonthView Component', () => {
       expect(screen.queryByText(/Loading/i)).not.toBeInTheDocument();
     });
 
-    // Expand Matched Transactions section
-    const matchedBtn = screen.getByRole('button', { name: /Matched Transactions/i });
+    // Expand Pending Matches section
+    const matchedBtn = screen.getByRole('button', { name: /Pending Matches/i });
     fireEvent.click(matchedBtn);
 
     // Verify "Save All Matches" button exists
@@ -678,5 +697,301 @@ describe('ThisMonthView Component', () => {
     await waitFor(() => {
       expect(mockOnRefresh).toHaveBeenCalled();
     });
+  });
+
+  it('does not duplicate rows or leak nodes when changing sort order for recurring profiles with multiple expected occurrences in the same month', async () => {
+    const weeklyProfile = [
+      {
+        id: 'r_weekly',
+        description: 'Weekly Coffee',
+        amountAverage: -5.0,
+        projectedOccurrence: 'Friday',
+        frequency: 'weekly',
+        status: 'active',
+        exampleTransactionIds: [],
+      },
+    ];
+
+    (global.fetch as jest.Mock).mockReset();
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      json: async () => ({ recurring: weeklyProfile }),
+    });
+
+    (global as any).mockUnmatchedOverride = [
+      {
+        id: 'r_weekly',
+        description: 'Weekly Coffee',
+        amountAverage: -5.0,
+        projectedOccurrence: 'May 1',
+        frequency: 'weekly',
+        status: 'active',
+        _instanceIndex: 0,
+        _projectedDate: new Date('2026-05-01T12:00:00Z'),
+      },
+      {
+        id: 'r_weekly',
+        description: 'Weekly Coffee',
+        amountAverage: -5.0,
+        projectedOccurrence: 'May 8',
+        frequency: 'weekly',
+        status: 'active',
+        _instanceIndex: 0,
+        _projectedDate: new Date('2026-05-08T12:00:00Z'),
+      },
+      {
+        id: 'r_weekly',
+        description: 'Weekly Coffee',
+        amountAverage: -5.0,
+        projectedOccurrence: 'May 15',
+        frequency: 'weekly',
+        status: 'active',
+        _instanceIndex: 0,
+        _projectedDate: new Date('2026-05-15T12:00:00Z'),
+      },
+      {
+        id: 'r_weekly',
+        description: 'Weekly Coffee',
+        amountAverage: -5.0,
+        projectedOccurrence: 'May 22',
+        frequency: 'weekly',
+        status: 'active',
+        _instanceIndex: 0,
+        _projectedDate: new Date('2026-05-22T12:00:00Z'),
+      },
+      {
+        id: 'r_weekly',
+        description: 'Weekly Coffee',
+        amountAverage: -5.0,
+        projectedOccurrence: 'May 29',
+        frequency: 'weekly',
+        status: 'active',
+        _instanceIndex: 0,
+        _projectedDate: new Date('2026-05-29T12:00:00Z'),
+      },
+    ];
+
+    render(<ThisMonthView transactions={[]} currentBalance={5000} />);
+
+    await waitFor(() => {
+      expect(screen.queryByText(/Loading/i)).not.toBeInTheDocument();
+    });
+
+    // Verify there are multiple rows for Weekly Coffee
+    const coffeeRows = screen.getAllByText('Weekly Coffee');
+    expect(coffeeRows.length).toBe(5);
+
+    // Let's get the number of table row elements (tr) in the table body
+    const tableBody = screen.getByRole('table').querySelector('tbody');
+    const initialRowCount = tableBody ? tableBody.querySelectorAll('tr').length : 0;
+    expect(initialRowCount).toBe(5);
+
+    // Now, find the "Date" header and click it to change the sort order
+    const dateHeader = screen.getByRole('columnheader', { name: /Date/i });
+    fireEvent.click(dateHeader);
+
+    // Verify the row count remains exactly the same and does not double or increase!
+    const rowCountAfterSort = tableBody ? tableBody.querySelectorAll('tr').length : 0;
+    expect(rowCountAfterSort).toBe(5);
+
+    // Click it again to toggle sorting direction
+    fireEvent.click(dateHeader);
+    const rowCountAfterSecondSort = tableBody ? tableBody.querySelectorAll('tr').length : 0;
+    expect(rowCountAfterSecondSort).toBe(5);
+
+    // Clean up override
+    (global as any).mockUnmatchedOverride = null;
+  });
+
+  it('default sorts the upcoming transactions in date ascending (chronological) order', async () => {
+    (global.fetch as jest.Mock).mockReset();
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      json: async () => ({ recurring: [] }),
+    });
+
+    (global as any).mockUnmatchedOverride = [
+      {
+        id: 'r1',
+        description: 'Netflix',
+        amountAverage: -15.99,
+        projectedOccurrence: 'May 15',
+        frequency: 'monthly',
+        status: 'active',
+        _instanceIndex: 0,
+        _projectedDate: new Date('2026-05-15T12:00:00Z'),
+      },
+      {
+        id: 'r2',
+        description: 'Rent',
+        amountAverage: -1500,
+        projectedOccurrence: 'May 1',
+        frequency: 'monthly',
+        status: 'active',
+        _instanceIndex: 0,
+        _projectedDate: new Date('2026-05-01T12:00:00Z'),
+      },
+      {
+        id: 'r3',
+        description: 'Salary',
+        amountAverage: 3000,
+        projectedOccurrence: 'May 25',
+        frequency: 'monthly',
+        status: 'active',
+        _instanceIndex: 0,
+        _projectedDate: new Date('2026-05-25T12:00:00Z'),
+      },
+    ];
+
+    render(<ThisMonthView transactions={[]} currentBalance={5000} />);
+
+    await waitFor(() => {
+      expect(screen.queryByText(/Loading/i)).not.toBeInTheDocument();
+    });
+
+    // Check that upcoming transactions are rendered in chronological ascending order:
+    // 1. Rent (May 1)
+    // 2. Netflix (May 15)
+    // 3. Salary (May 25)
+    const tableBody = screen.getByRole('table').querySelector('tbody');
+    const rows = tableBody ? tableBody.querySelectorAll('tr') : [];
+    expect(rows.length).toBe(3);
+
+    // Verify first row is Rent (May 1)
+    expect(rows[0].textContent).toContain('Rent');
+    expect(rows[0].textContent).toContain('5/1/2026');
+
+    // Verify second row is Netflix (May 15)
+    expect(rows[1].textContent).toContain('Netflix');
+    expect(rows[1].textContent).toContain('5/15/2026');
+
+    // Verify third row is Salary (May 25)
+    expect(rows[2].textContent).toContain('Salary');
+    expect(rows[2].textContent).toContain('5/25/2026');
+
+    (global as any).mockUnmatchedOverride = null;
+  });
+
+  it('populates the category and subcategory fields of upcoming transactions based on their example transactions', async () => {
+    (global.fetch as jest.Mock).mockReset();
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      json: async () => ({ recurring: [] }),
+    });
+
+    const mockTxs = [
+      {
+        id: 'tx_example_rent',
+        Description: 'Apartment Rent',
+        Amount: -1500,
+        Date: new Date('2026-04-01T12:00:00Z'),
+        Category: 'Housing',
+        Subcategory: 'Rent Payment',
+        matched: true,
+      },
+    ];
+
+    (global as any).mockUnmatchedOverride = [
+      {
+        id: 'r_rent',
+        description: 'Apartment Rent',
+        amountAverage: -1500,
+        projectedOccurrence: 'Day 1',
+        frequency: 'monthly',
+        status: 'active',
+        exampleTransactionIds: ['tx_example_rent'],
+        category: '', // Empty in profile
+        subcategory: '', // Empty in profile
+        _instanceIndex: 0,
+        _projectedDate: new Date('2026-05-01T12:00:00Z'),
+      },
+    ];
+
+    render(<ThisMonthView transactions={mockTxs} currentBalance={5000} />);
+
+    await waitFor(() => {
+      expect(screen.queryByText(/Loading/i)).not.toBeInTheDocument();
+    });
+
+    // Check that upcoming transactions populated category ('Housing') and subcategory ('Rent Payment')
+    const tableBody = screen.getByRole('table').querySelector('tbody');
+    const rows = tableBody ? tableBody.querySelectorAll('tr') : [];
+    expect(rows.length).toBe(1);
+
+    expect(rows[0].textContent).toContain('Housing');
+    expect(rows[0].textContent).toContain('Rent Payment');
+
+    (global as any).mockUnmatchedOverride = null;
+  });
+
+  it('renders "Matched Transactions" section containing matched transactions in the current month sorted ascending', async () => {
+    (global.fetch as jest.Mock).mockReset();
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      json: async () => ({ recurring: [] }),
+    });
+
+    const mockTxs = [
+      {
+        id: 'tx_netflix_may',
+        Description: 'Netflix Inc',
+        Amount: -15.99,
+        Date: new Date('2026-05-10T12:00:00Z'),
+        Category: 'Entertainment',
+        matched: true,
+      },
+      {
+        id: 'tx_groceries_may',
+        Description: 'Whole Foods',
+        Amount: -120.5,
+        Date: new Date('2026-05-02T12:00:00Z'),
+        Category: 'Groceries',
+        matched: true,
+      },
+      {
+        id: 'tx_unmatched_may',
+        Description: 'Uber Ride',
+        Amount: -25.0,
+        Date: new Date('2026-05-15T12:00:00Z'),
+        Category: 'Transit',
+        matched: false,
+      },
+      {
+        id: 'tx_matched_april',
+        Description: 'Spotify',
+        Amount: -10.99,
+        Date: new Date('2026-04-15T12:00:00Z'),
+        Category: 'Entertainment',
+        matched: true,
+      },
+    ];
+
+    render(<ThisMonthView transactions={mockTxs} currentBalance={5000} />);
+
+    await waitFor(() => {
+      expect(screen.queryByText(/Loading/i)).not.toBeInTheDocument();
+    });
+
+    // Verify collapsible matched transactions section header and count
+    const occurredHeader = screen.getByRole('button', { name: /Matched Transactions/i });
+    expect(occurredHeader).toBeInTheDocument();
+    expect(occurredHeader.textContent).toContain('2 Items');
+
+    // Retrieve Matched Transactions table rows
+    const occurredContainer = occurredHeader.closest('div');
+    const tableBody = occurredContainer ? occurredContainer.querySelector('tbody') : null;
+    const rows = tableBody ? tableBody.querySelectorAll('tr') : [];
+
+    // Should contain exactly 2 matched transactions of May:
+    // 1. Whole Foods (May 2)
+    // 2. Netflix Inc (May 10)
+    expect(rows.length).toBe(2);
+
+    // Verify chronological date ascending order (Whole Foods on May 2 first, then Netflix on May 10 second)
+    expect(rows[0].textContent).toContain('Whole Foods');
+    expect(rows[0].textContent).toContain('5/2/2026');
+
+    expect(rows[1].textContent).toContain('Netflix Inc');
+    expect(rows[1].textContent).toContain('5/10/2026');
   });
 });

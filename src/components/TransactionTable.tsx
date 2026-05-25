@@ -24,6 +24,9 @@ export interface TransactionTableProps {
   onBulkUpdate?: (updates: any[]) => void;
   onRowClick?: (tx: any) => void;
   hideTotalsToggle?: boolean;
+  hideFilters?: boolean;
+  /** Optional direction for default sorting on date. Defaults to 'desc'. */
+  defaultSortDirection?: 'asc' | 'desc';
 }
 
 export function TransactionTable({
@@ -45,18 +48,22 @@ export function TransactionTable({
   onBulkUpdate,
   onRowClick,
   hideTotalsToggle = false,
+  hideFilters = false,
+  defaultSortDirection = 'desc',
 }: TransactionTableProps) {
   const [txSearchText, setTxSearchText] = useState('');
   const [txFilterCategory, setTxFilterCategory] = useState('');
   const [txFilterSubcategory, setTxFilterSubcategory] = useState('');
   const [txFilterType, setTxFilterType] = useState<'all' | 'income' | 'expense'>('all');
   const [txFilterMatched, setTxFilterMatched] = useState<'all' | 'matched' | 'unmatched'>('all');
+
+  // Set default sorting config on date. Uses defaultSortDirection prop (e.g. 'desc' or 'asc').
   const [txSortConfig, setTxSortConfig] = useState<{
     key: string;
     direction: 'asc' | 'desc';
   } | null>({
     key: analysis.columnsIdentified.date,
-    direction: 'desc',
+    direction: defaultSortDirection,
   });
   const [showTxTotals, setShowTxTotals] = useState(false);
   const [isBulkEditingTx, setIsBulkEditingTx] = useState(false);
@@ -113,17 +120,47 @@ export function TransactionTable({
       if (!txSortConfig) return 0;
       const { key, direction } = txSortConfig;
 
-      let valA = a[key];
-      let valB = b[key];
+      const actualKey = Object.keys(a).find((k) => k.toLowerCase() === key.toLowerCase()) || key;
+      let valA = a[actualKey];
+      let valB = b[actualKey];
 
-      if (key === analysis.columnsIdentified.amount) {
+      const isAmountKey =
+        key &&
+        analysis?.columnsIdentified?.amount &&
+        key.toLowerCase() === analysis.columnsIdentified.amount.toLowerCase();
+      const isDateKey =
+        key &&
+        analysis?.columnsIdentified?.date &&
+        key.toLowerCase() === analysis.columnsIdentified.date.toLowerCase();
+
+      if (isAmountKey) {
         valA = a._parsedAmount;
         valB = b._parsedAmount;
-      } else if (key === analysis.columnsIdentified.date) {
-        const dateA = a._date instanceof Date ? a._date : new Date(a._date || a[key]);
-        const dateB = b._date instanceof Date ? b._date : new Date(b._date || b[key]);
-        valA = dateA.getTime();
-        valB = dateB.getTime();
+      } else if (isDateKey) {
+        const getTimeFromDate = (tx: any, keyName: string): number => {
+          if (tx._date instanceof Date && !isNaN(tx._date.getTime())) {
+            return tx._date.getTime();
+          }
+          if (
+            typeof tx._date === 'string' ||
+            (tx._date && typeof tx._date.getTime !== 'function')
+          ) {
+            const d = new Date(tx._date);
+            if (!isNaN(d.getTime())) return d.getTime();
+          }
+          const val = tx[keyName];
+          if (val instanceof Date && !isNaN(val.getTime())) {
+            return val.getTime();
+          }
+          if (val) {
+            const d = val.toDate ? val.toDate() : new Date(val);
+            if (!isNaN(d.getTime())) return d.getTime();
+          }
+          return 0;
+        };
+
+        valA = getTimeFromDate(a, actualKey);
+        valB = getTimeFromDate(b, actualKey);
       } else {
         valA = String(valA || '').toLowerCase();
         valB = String(valB || '').toLowerCase();
@@ -137,176 +174,178 @@ export function TransactionTable({
   return (
     <div className="space-y-6">
       {/* Filters */}
-      <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-        <div className="grid grid-cols-1 md:grid-cols-8 gap-4">
-          <div className="col-span-1 md:col-span-2">
-            <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">
-              Search
-            </label>
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-400">
-                <Search className="w-4 h-4" />
+      {!hideFilters && (
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+          <div className="grid grid-cols-1 md:grid-cols-8 gap-4">
+            <div className="col-span-1 md:col-span-2">
+              <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">
+                Search
+              </label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-400">
+                  <Search className="w-4 h-4" />
+                </div>
+                <input
+                  type="text"
+                  className="bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full pl-9 p-2.5"
+                  placeholder="Search description, amount..."
+                  value={txSearchText}
+                  onChange={(e) => setTxSearchText(e.target.value)}
+                />
               </div>
-              <input
-                type="text"
-                className="bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full pl-9 p-2.5"
-                placeholder="Search description, amount..."
-                value={txSearchText}
-                onChange={(e) => setTxSearchText(e.target.value)}
-              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">
+                Account
+              </label>
+              <select
+                value={selectedAccount}
+                onChange={(e) => setSelectedAccount(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
+              >
+                <option value="All">All Accounts</option>
+                <option value="Checking">Checking</option>
+                <option value="Savings">Savings</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">
+                Year
+              </label>
+              <select
+                value={selectedYear}
+                onChange={(e) => {
+                  setSelectedYear(e.target.value);
+                  setSelectedMonth('All Months');
+                }}
+                className="w-full bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
+              >
+                <option value="All">All</option>
+                {availableYears.map((year) => (
+                  <option key={year} value={year}>
+                    {year}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">
+                Month
+              </label>
+              <select
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
+              >
+                <option value="All Months">All</option>
+                {analysis.sortedMonths.map((month: string) => (
+                  <option key={month} value={month}>
+                    {month.split(' ')[0]}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">
+                Category
+              </label>
+              <select
+                value={txFilterCategory}
+                onChange={(e) => {
+                  setTxFilterCategory(e.target.value);
+                  setTxFilterSubcategory('');
+                }}
+                className="w-full bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
+              >
+                <option value="">All</option>
+                {analysis.categories.map((cat: string) => (
+                  <option key={cat} value={cat}>
+                    {cat}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">
+                Subcategory
+              </label>
+              <select
+                value={txFilterSubcategory}
+                onChange={(e) => setTxFilterSubcategory(e.target.value)}
+                disabled={!txFilterCategory}
+                className={`w-full bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 ${!txFilterCategory ? 'opacity-50 cursor-not-allowed' : ''}`}
+              >
+                <option value="">All</option>
+                {filteredSubcategories.map((sub: string) => (
+                  <option key={sub} value={sub}>
+                    {sub}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">
+                Type
+              </label>
+              <select
+                value={txFilterType}
+                onChange={(e) => setTxFilterType(e.target.value as any)}
+                className="w-full bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
+              >
+                <option value="all">All</option>
+                <option value="income">Income Only</option>
+                <option value="expense">Expense Only</option>
+              </select>
+            </div>
+            <div>
+              <label
+                htmlFor="table-transactions-matched-select"
+                className="block text-xs font-semibold text-slate-500 uppercase mb-2"
+              >
+                Matched Status
+              </label>
+              <select
+                id="table-transactions-matched-select"
+                value={txFilterMatched}
+                onChange={(e) => setTxFilterMatched(e.target.value as any)}
+                className="w-full bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
+              >
+                <option value="all">All</option>
+                <option value="matched">Matched Only</option>
+                <option value="unmatched">Unmatched Only</option>
+              </select>
+            </div>
+            <div className="flex items-end gap-4">
+              {!hideTotalsToggle && (
+                <label className="flex items-center gap-2 cursor-pointer group mb-0.5">
+                  <input
+                    type="checkbox"
+                    checked={showTxTotals}
+                    onChange={(e) => setShowTxTotals(e.target.checked)}
+                    className="w-4 h-4 text-blue-600 bg-slate-100 border-slate-300 rounded focus:ring-blue-500 transition-colors"
+                  />
+                  <span className="text-sm font-medium text-slate-600 group-hover:text-slate-900 transition-colors whitespace-nowrap">
+                    Totals
+                  </span>
+                </label>
+              )}
+              <button
+                onClick={() => {
+                  setTxFilterCategory('');
+                  setTxFilterSubcategory('');
+                  setTxFilterType('all');
+                  setTxFilterMatched('all');
+                  setSelectedYear('All');
+                  setSelectedMonth('All Months');
+                }}
+                className="mb-1 text-xs font-semibold text-blue-600 hover:text-blue-800 transition-colors uppercase tracking-wider"
+              >
+                Reset
+              </button>
             </div>
           </div>
-          <div>
-            <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">
-              Account
-            </label>
-            <select
-              value={selectedAccount}
-              onChange={(e) => setSelectedAccount(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
-            >
-              <option value="All">All Accounts</option>
-              <option value="Checking">Checking</option>
-              <option value="Savings">Savings</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">
-              Year
-            </label>
-            <select
-              value={selectedYear}
-              onChange={(e) => {
-                setSelectedYear(e.target.value);
-                setSelectedMonth('All Months');
-              }}
-              className="w-full bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
-            >
-              <option value="All">All</option>
-              {availableYears.map((year) => (
-                <option key={year} value={year}>
-                  {year}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">
-              Month
-            </label>
-            <select
-              value={selectedMonth}
-              onChange={(e) => setSelectedMonth(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
-            >
-              <option value="All Months">All</option>
-              {analysis.sortedMonths.map((month: string) => (
-                <option key={month} value={month}>
-                  {month.split(' ')[0]}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">
-              Category
-            </label>
-            <select
-              value={txFilterCategory}
-              onChange={(e) => {
-                setTxFilterCategory(e.target.value);
-                setTxFilterSubcategory('');
-              }}
-              className="w-full bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
-            >
-              <option value="">All</option>
-              {analysis.categories.map((cat: string) => (
-                <option key={cat} value={cat}>
-                  {cat}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">
-              Subcategory
-            </label>
-            <select
-              value={txFilterSubcategory}
-              onChange={(e) => setTxFilterSubcategory(e.target.value)}
-              disabled={!txFilterCategory}
-              className={`w-full bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 ${!txFilterCategory ? 'opacity-50 cursor-not-allowed' : ''}`}
-            >
-              <option value="">All</option>
-              {filteredSubcategories.map((sub: string) => (
-                <option key={sub} value={sub}>
-                  {sub}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">
-              Type
-            </label>
-            <select
-              value={txFilterType}
-              onChange={(e) => setTxFilterType(e.target.value as any)}
-              className="w-full bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
-            >
-              <option value="all">All</option>
-              <option value="income">Income Only</option>
-              <option value="expense">Expense Only</option>
-            </select>
-          </div>
-          <div>
-            <label
-              htmlFor="table-transactions-matched-select"
-              className="block text-xs font-semibold text-slate-500 uppercase mb-2"
-            >
-              Matched Status
-            </label>
-            <select
-              id="table-transactions-matched-select"
-              value={txFilterMatched}
-              onChange={(e) => setTxFilterMatched(e.target.value as any)}
-              className="w-full bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
-            >
-              <option value="all">All</option>
-              <option value="matched">Matched Only</option>
-              <option value="unmatched">Unmatched Only</option>
-            </select>
-          </div>
-          <div className="flex items-end gap-4">
-            {!hideTotalsToggle && (
-              <label className="flex items-center gap-2 cursor-pointer group mb-0.5">
-                <input
-                  type="checkbox"
-                  checked={showTxTotals}
-                  onChange={(e) => setShowTxTotals(e.target.checked)}
-                  className="w-4 h-4 text-blue-600 bg-slate-100 border-slate-300 rounded focus:ring-blue-500 transition-colors"
-                />
-                <span className="text-sm font-medium text-slate-600 group-hover:text-slate-900 transition-colors whitespace-nowrap">
-                  Totals
-                </span>
-              </label>
-            )}
-            <button
-              onClick={() => {
-                setTxFilterCategory('');
-                setTxFilterSubcategory('');
-                setTxFilterType('all');
-                setTxFilterMatched('all');
-                setSelectedYear('All');
-                setSelectedMonth('All Months');
-              }}
-              className="mb-1 text-xs font-semibold text-blue-600 hover:text-blue-800 transition-colors uppercase tracking-wider"
-            >
-              Reset
-            </button>
-          </div>
         </div>
-      </div>
+      )}
 
       {/* Bulk Edit Banner */}
       {!hideBulkActions && selectedTxIds.size > 0 && (

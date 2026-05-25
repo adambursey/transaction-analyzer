@@ -11,7 +11,6 @@ import {
   TrendingUp,
   TrendingDown,
   Wallet,
-  ArrowRight,
   Clock,
   Loader2,
   CheckCircle2,
@@ -24,6 +23,7 @@ import {
 import { runMatchingEngine, MatchingResult } from '../utils/matchingLogic';
 import { getUnmatchedRecurringInstances } from '../utils/projectionLogic';
 import { format } from 'date-fns';
+import { TransactionTable } from './TransactionTable';
 
 /**
  * Props expected by the ThisMonthView component.
@@ -35,6 +35,14 @@ interface ThisMonthViewProps {
   currentBalance: number;
   /** Callback triggered when a transaction matching is manually saved */
   onRefresh?: () => void;
+  /** Data analysis metadata */
+  analysis?: any;
+  /** Custom category taxonomy classification mapping */
+  taxonomy?: Record<string, string[]>;
+  /** Years list for custom dropdown filtering */
+  availableYears?: string[];
+  /** Expected headers list for sheets table cells mapping */
+  headers?: string[];
 }
 
 /**
@@ -46,7 +54,15 @@ interface ThisMonthViewProps {
  * @param props - Component props containing transaction list and current balance.
  * @returns Renders the dashboard projection cards and chronological remaining transaction items.
  */
-export function ThisMonthView({ transactions, currentBalance, onRefresh }: ThisMonthViewProps) {
+export function ThisMonthView({
+  transactions,
+  currentBalance,
+  onRefresh,
+  analysis,
+  taxonomy,
+  availableYears,
+  headers,
+}: ThisMonthViewProps) {
   const [loading, setLoading] = useState(true);
   const [unmatched, setUnmatched] = useState<any[]>([]);
   const [projectedBalance, setProjectedBalance] = useState<number>(currentBalance);
@@ -59,10 +75,192 @@ export function ThisMonthView({ transactions, currentBalance, onRefresh }: ThisM
     const saved = localStorage.getItem('matchedExpanded');
     return saved !== null ? saved === 'true' : false;
   });
+  const [occurredExpanded, setOccurredExpanded] = useState(() => {
+    const saved = localStorage.getItem('occurredExpanded');
+    return saved !== null ? saved === 'true' : true;
+  });
   const [matchedResults, setMatchedResults] = useState<MatchingResult[]>([]);
   const [recurringProfiles, setRecurringProfiles] = useState<any[]>([]);
   const [savingMap, setSavingMap] = useState<Record<string, boolean>>({});
   const [savingAll, setSavingAll] = useState(false);
+
+  // Local state for upcoming transactions table controls
+  const [tableAccount, setTableAccount] = useState('All');
+  const [tableYear, setTableYear] = useState('All');
+  const [tableMonth, setTableMonth] = useState('All Months');
+  const [tableSelectedTxIds, setTableSelectedTxIds] = useState<Set<string>>(new Set());
+
+  // Local state for occurred/matched transactions table controls
+  const [occurredTableAccount, setOccurredTableAccount] = useState('All');
+  const [occurredTableYear, setOccurredTableYear] = useState('All');
+  const [occurredTableMonth, setOccurredTableMonth] = useState('All Months');
+  const [occurredTableSelectedTxIds, setOccurredTableSelectedTxIds] = useState<Set<string>>(
+    new Set()
+  );
+
+  // Create robust default values in case props are not passed (e.g. in older unit tests)
+  const defaultAnalysis = React.useMemo(() => {
+    return {
+      columnsIdentified: {
+        date: 'Date',
+        description: 'Description',
+        amount: 'Amount',
+        category: 'Category',
+        subcategory: 'Subcategory',
+      },
+      categories: [],
+      sortedMonths: [],
+      currentBalance: currentBalance,
+      ...(analysis || {}),
+    };
+  }, [analysis, currentBalance]);
+
+  const defaultTaxonomy = taxonomy || {};
+  const defaultAvailableYears = availableYears || [];
+  const defaultHeaders = headers || [
+    'Date',
+    'Description',
+    'Amount',
+    'Category',
+    'Subcategory',
+    'matched',
+  ];
+
+  // Map unmatched recurring instances into a format compatible with TransactionTable
+  const mappedUpcomingTransactions = React.useMemo(() => {
+    const dateCol = defaultAnalysis.columnsIdentified.date;
+    const descCol = defaultAnalysis.columnsIdentified.description;
+    const amtCol = defaultAnalysis.columnsIdentified.amount;
+    const catCol = defaultAnalysis.columnsIdentified.category;
+    const subcatCol = defaultAnalysis.columnsIdentified.subcategory;
+
+    return unmatched.map((rt) => {
+      const isIncome = (rt.amountAverage || 0) > 0;
+      const parsedAmount = Math.abs(rt.amountAverage || 0);
+
+      // Try to determine a safe projected date
+      let dateVal: Date;
+      if (rt._projectedDate) {
+        dateVal =
+          rt._projectedDate instanceof Date ? rt._projectedDate : new Date(rt._projectedDate);
+      } else {
+        const expectedDay = parseDay(rt.projectedOccurrence);
+        const now = new Date();
+        const y = now.getFullYear();
+        const m = now.getMonth();
+        dateVal = expectedDay === 99 ? new Date(y, m, 28) : new Date(y, m, expectedDay);
+      }
+
+      // Look up linked example transaction instances in the global transactions list
+      // to dynamically resolve category and subcategory if they are not explicitly set in the profile itself.
+      const examples = (rt.exampleTransactionIds || [])
+        .map((id: string) => transactions.find((t: any) => t.id === id))
+        .filter(Boolean);
+
+      let resolvedCategory = rt.category || '';
+      let resolvedSubcategory = rt.subcategory || '';
+
+      // Check example transactions first for non-empty category/subcategory
+      if (!resolvedCategory || !resolvedSubcategory) {
+        for (const ex of examples) {
+          if (!resolvedCategory && ex.Category) {
+            resolvedCategory = ex.Category;
+          }
+          if (!resolvedSubcategory && ex.Subcategory) {
+            resolvedSubcategory = ex.Subcategory;
+          }
+          if (resolvedCategory && resolvedSubcategory) {
+            break;
+          }
+        }
+      }
+
+      // Fallback: If still empty, search the historical ledger for transactions matching this profile description
+      if (!resolvedCategory || !resolvedSubcategory) {
+        const similarTxs = transactions.filter(
+          (tx) =>
+            tx.Description &&
+            rt.description &&
+            tx.Description.toUpperCase().includes(rt.description.toUpperCase())
+        );
+        for (const tx of similarTxs) {
+          if (!resolvedCategory && tx.Category) {
+            resolvedCategory = tx.Category;
+          }
+          if (!resolvedSubcategory && tx.Subcategory) {
+            resolvedSubcategory = tx.Subcategory;
+          }
+          if (resolvedCategory && resolvedSubcategory) {
+            break;
+          }
+        }
+      }
+
+      return {
+        // Generate a 100% globally unique virtual transaction ID by appending the projected date timestamp.
+        // This is critical to prevent React VDOM reconciler duplicate key collisions and subsequent DOM leakage/duplication
+        // when sorting or displaying multiple expected occurrences of the same recurring transaction profile in the same month.
+        id: `${rt.id}-${rt._instanceIndex || 0}-${dateVal.getTime()}`,
+        [dateCol]: dateVal,
+        [descCol]: rt.description || '',
+        [amtCol]: parsedAmount,
+        [catCol]: resolvedCategory,
+        [subcatCol]: resolvedSubcategory,
+        matched: false,
+
+        // Underlying parsed helper fields expected by TransactionTable
+        _parsedAmount: parsedAmount,
+        _isExpense: !isIncome,
+        _date: dateVal,
+        _category: resolvedCategory,
+        _subcategory: resolvedSubcategory,
+        status: 'pending_review',
+      };
+    });
+  }, [unmatched, defaultAnalysis, transactions]);
+
+  // Filter transactions to select all matched (matched === true) transactions for the current calendar month
+  const occurredTransactions = React.useMemo(() => {
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth();
+
+    const filtered = transactions.filter((tx) => {
+      // Must be matched
+      if (!tx.matched) return false;
+
+      // Extract transaction date
+      const txDate = tx.Date?.toDate ? tx.Date.toDate() : new Date(tx.Date || tx.date);
+      if (isNaN(txDate.getTime())) return false;
+
+      // Must be in the current calendar month
+      return txDate.getFullYear() === currentYear && txDate.getMonth() === currentMonth;
+    });
+
+    // Map each occurred transaction to ensure all sub-helper fields expected by TransactionTable are safely populated
+    return filtered.map((tx) => {
+      const dateVal = tx.Date?.toDate ? tx.Date.toDate() : new Date(tx.Date || tx.date);
+      const parsedAmount =
+        tx._parsedAmount !== undefined ? tx._parsedAmount : Math.abs(tx.Amount || tx.amount || 0);
+      const isExpense =
+        tx._isExpense !== undefined
+          ? tx._isExpense
+          : tx.Amount !== undefined
+            ? tx.Amount < 0
+            : tx.amount !== undefined
+              ? tx.amount < 0
+              : true;
+
+      return {
+        ...tx,
+        _parsedAmount: parsedAmount,
+        _isExpense: isExpense,
+        _date: dateVal,
+        _category: tx._category || tx.Category || tx.category || 'Uncategorized',
+        _subcategory: tx._subcategory || tx.Subcategory || tx.subcategory || '',
+      };
+    });
+  }, [transactions]);
 
   useEffect(() => {
     localStorage.setItem('remainingExpanded', String(remainingExpanded));
@@ -71,6 +269,10 @@ export function ThisMonthView({ transactions, currentBalance, onRefresh }: ThisM
   useEffect(() => {
     localStorage.setItem('matchedExpanded', String(matchedExpanded));
   }, [matchedExpanded]);
+
+  useEffect(() => {
+    localStorage.setItem('occurredExpanded', String(occurredExpanded));
+  }, [occurredExpanded]);
 
   useEffect(() => {
     /**
@@ -430,7 +632,7 @@ export function ThisMonthView({ transactions, currentBalance, onRefresh }: ThisM
           className="w-full p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50 hover:bg-slate-100/70 transition-colors text-left focus:outline-none"
         >
           <div className="flex items-center gap-3">
-            <h3 className="text-xl font-bold text-slate-800">Remaining to Occur</h3>
+            <h3 className="text-xl font-bold text-slate-800">Upcoming Transactions</h3>
             <span className="bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-sm font-semibold">
               {unmatched.length} Items
             </span>
@@ -454,58 +656,83 @@ export function ThisMonthView({ transactions, currentBalance, onRefresh }: ThisM
               <p>All expected recurring transactions for this month have been matched.</p>
             </div>
           ) : (
-            <div className="divide-y divide-slate-100">
-              {unmatched.map((rt) => {
-                const isIncome = (rt.amountAverage || 0) > 0;
-                const expectedDay = parseDay(rt.projectedOccurrence);
-                const dayStr =
-                  expectedDay === 99 ? 'Date Unknown' : `${currentMonthName} ${expectedDay}`;
+            <div className="p-6">
+              <TransactionTable
+                transactions={mappedUpcomingTransactions}
+                analysis={defaultAnalysis}
+                taxonomy={defaultTaxonomy}
+                availableYears={defaultAvailableYears}
+                headers={defaultHeaders}
+                selectedAccount={tableAccount}
+                setSelectedAccount={setTableAccount}
+                selectedYear={tableYear}
+                setSelectedYear={setTableYear}
+                selectedMonth={tableMonth}
+                setSelectedMonth={setTableMonth}
+                selectedTxIds={tableSelectedTxIds}
+                setSelectedTxIds={setTableSelectedTxIds}
+                hideFilters={true}
+                hideBulkActions={true}
+                hideTotalsToggle={true}
+                // Default sort upcoming/projected transactions in chronological ascending order
+                defaultSortDirection="asc"
+              />
+            </div>
+          ))}
+      </div>
 
-                return (
-                  <div
-                    key={`${rt.id}-${rt._instanceIndex || 0}`}
-                    className="p-4 md:p-6 hover:bg-slate-50 transition-colors flex flex-col md:flex-row md:items-center justify-between gap-4 group"
-                  >
-                    <div className="flex items-center gap-4">
-                      <div
-                        className={`w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 shadow-inner ${isIncome ? 'bg-emerald-100 text-emerald-600' : 'bg-rose-100 text-rose-600'}`}
-                      >
-                        {isIncome ? (
-                          <TrendingUp className="w-6 h-6" />
-                        ) : (
-                          <TrendingDown className="w-6 h-6" />
-                        )}
-                      </div>
-                      <div>
-                        <h4 className="font-semibold text-lg text-slate-900 group-hover:text-blue-600 transition-colors">
-                          {rt.description}
-                        </h4>
-                        <div className="flex items-center gap-3 text-sm text-slate-500 mt-1">
-                          <span className="flex items-center gap-1 font-medium bg-slate-100 px-2 py-0.5 rounded-md">
-                            <CalendarDays className="w-3.5 h-3.5" />
-                            {dayStr}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
+      {/* Occurred Transactions List */}
+      <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden animate-in fade-in duration-500">
+        <button
+          onClick={() => setOccurredExpanded(!occurredExpanded)}
+          className="w-full p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50 hover:bg-slate-100/70 transition-colors text-left focus:outline-none"
+        >
+          <div className="flex items-center gap-3">
+            <h3 className="text-xl font-bold text-slate-800">Matched Transactions</h3>
+            <span className="bg-emerald-100 text-emerald-700 px-3 py-1 rounded-full text-sm font-semibold">
+              {occurredTransactions.length} Items
+            </span>
+          </div>
+          <div className="text-slate-400">
+            {occurredExpanded ? (
+              <ChevronUp className="w-6 h-6 text-slate-500" />
+            ) : (
+              <ChevronDown className="w-6 h-6 text-slate-500" />
+            )}
+          </div>
+        </button>
 
-                    <div className="flex items-center justify-between md:justify-end gap-6 w-full md:w-auto mt-2 md:mt-0 pl-16 md:pl-0">
-                      <div className="text-right">
-                        <p className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
-                          Expected Amount
-                        </p>
-                        <p
-                          className={`font-mono text-lg font-bold ${isIncome ? 'text-emerald-600' : 'text-slate-900'}`}
-                        >
-                          {isIncome ? '+' : '-'}
-                          {formatCurrency(rt.amountAverage || 0)}
-                        </p>
-                      </div>
-                      <ArrowRight className="w-5 h-5 text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity hidden md:block transform group-hover:translate-x-1" />
-                    </div>
-                  </div>
-                );
-              })}
+        {occurredExpanded &&
+          (occurredTransactions.length === 0 ? (
+            <div className="p-12 text-center text-slate-500 flex flex-col items-center">
+              <div className="w-16 h-16 bg-slate-100 text-slate-400 rounded-full flex items-center justify-center mb-4">
+                <CheckCircle2 className="w-8 h-8" />
+              </div>
+              <p className="text-xl font-semibold text-slate-800 mb-1">No Matched Transactions</p>
+              <p>No matched transactions have occurred yet this month.</p>
+            </div>
+          ) : (
+            <div className="p-6">
+              <TransactionTable
+                transactions={occurredTransactions}
+                analysis={defaultAnalysis}
+                taxonomy={defaultTaxonomy}
+                availableYears={defaultAvailableYears}
+                headers={defaultHeaders}
+                selectedAccount={occurredTableAccount}
+                setSelectedAccount={setOccurredTableAccount}
+                selectedYear={occurredTableYear}
+                setSelectedYear={setOccurredTableYear}
+                selectedMonth={occurredTableMonth}
+                setSelectedMonth={setOccurredTableMonth}
+                selectedTxIds={occurredTableSelectedTxIds}
+                setSelectedTxIds={setOccurredTableSelectedTxIds}
+                hideFilters={true}
+                hideBulkActions={true}
+                hideTotalsToggle={true}
+                // Default sort occurred transactions in chronological ascending order
+                defaultSortDirection="asc"
+              />
             </div>
           ))}
       </div>
@@ -517,7 +744,7 @@ export function ThisMonthView({ transactions, currentBalance, onRefresh }: ThisM
           className="w-full p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50 hover:bg-slate-100/70 transition-colors text-left focus:outline-none"
         >
           <div className="flex items-center gap-3">
-            <h3 className="text-xl font-bold text-slate-800">Matched Transactions</h3>
+            <h3 className="text-xl font-bold text-slate-800">Pending Matches</h3>
             <span className="bg-emerald-100 text-emerald-700 px-3 py-1 rounded-full text-sm font-semibold">
               {matchedResults.length} Items
             </span>
@@ -535,7 +762,7 @@ export function ThisMonthView({ transactions, currentBalance, onRefresh }: ThisM
           <div className="p-6 bg-slate-50/50 border-t border-slate-100">
             {matchedResults.length === 0 ? (
               <div className="text-center text-slate-500 py-12">
-                No matched transactions found for this month.
+                No pending matches found for this month.
               </div>
             ) : (
               <div className="space-y-4">

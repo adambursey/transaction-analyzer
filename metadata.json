@@ -1,5 +1,5 @@
 {
-  "name": "Transaction Analyzer",
+  "name": "Our Money",
   "description": "A web app that analyzes and visualizes transactions from a Google Sheet.",
   "requestFramePermissions": []
 }

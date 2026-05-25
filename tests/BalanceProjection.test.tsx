@@ -101,7 +101,7 @@ describe('Balance Projection Chart Integration', () => {
 
     // Wait for the main page to load
     await waitFor(() => {
-      expect(screen.getByText('Analyzer')).toBeInTheDocument();
+      expect(screen.getByText('Our Money')).toBeInTheDocument();
     });
 
     // Check that the line chart is rendered and retrieve its dataset
@@ -137,7 +137,7 @@ describe('Balance Projection Chart Integration', () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByText('Analyzer')).toBeInTheDocument();
+      expect(screen.getByText('Our Money')).toBeInTheDocument();
     });
 
     // Locate the select dropdown for selectedMonth and select a different month (e.g. April 2026 or a non-current month)

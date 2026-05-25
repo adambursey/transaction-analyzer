@@ -4,6 +4,7 @@ import {
   calculateTokenOverlap,
   getLongestCommonSubstring,
   runMatchingEngine,
+  getInstancesPerPeriod,
 } from '../../src/utils/matchingLogic';
 
 describe('Matching Engine Utils', () => {
@@ -178,6 +179,91 @@ describe('Matching Engine Utils', () => {
         r.matches.some((m) => m.recurringId === 'p3')
       ).length;
       expect(matchCount).toBe(1); // Only one of them should get the match!
+    });
+
+    it('should scale maxInstances for weekly profiles to match multiple times in a month', () => {
+      // 4 transactions in May on different Mondays, all matching the Allowance profile
+      const allowanceTxs = [
+        {
+          id: 'a1',
+          Description: 'Allowance Nate',
+          Amount: -25.0,
+          Date: new Date('2026-05-04T12:00:00Z'),
+        },
+        {
+          id: 'a2',
+          Description: 'Allowance Nate',
+          Amount: -25.0,
+          Date: new Date('2026-05-11T12:00:00Z'),
+        },
+        {
+          id: 'a3',
+          Description: 'Allowance Nate',
+          Amount: -25.0,
+          Date: new Date('2026-05-18T12:00:00Z'),
+        },
+        {
+          id: 'a4',
+          Description: 'Allowance Nate',
+          Amount: -25.0,
+          Date: new Date('2026-05-25T12:00:00Z'),
+        },
+      ];
+
+      const weeklyProfile = [
+        {
+          id: 'p_allowance',
+          description: 'Allowance - Nate',
+          projectedOccurrence: 'Monday',
+          frequency: 'weekly',
+          instancesPerPeriod: 1, // Only 1 instance per cycle (week)
+          amountAverage: -25.0,
+          exampleTransactionIds: ['a1'],
+        },
+      ];
+
+      const results = runMatchingEngine(
+        allowanceTxs,
+        weeklyProfile,
+        2026,
+        4, // May
+        31, // Full month
+        allowanceTxs
+      );
+
+      // It should successfully match all 4 transactions in the month because cyclesInMonth = 4 (4 Mondays in May 2026)
+      const matchCount = results.filter((r) =>
+        r.matches.some((m) => m.recurringId === 'p_allowance')
+      ).length;
+      expect(matchCount).toBe(4);
+    });
+  });
+
+  describe('getInstancesPerPeriod', () => {
+    it('should respect explicitly defined instancesPerPeriod in the database', () => {
+      const rtExplicit = { frequency: 'bi-weekly', instancesPerPeriod: 1 };
+      expect(getInstancesPerPeriod(rtExplicit)).toBe(1);
+
+      const rtZero = { frequency: 'monthly', instancesPerPeriod: 0 };
+      expect(getInstancesPerPeriod(rtZero)).toBe(0);
+    });
+
+    it('should fall back to 1 for bi-weekly frequency when instancesPerPeriod is not defined', () => {
+      const rtBiWeekly = { frequency: 'bi-weekly' };
+      expect(getInstancesPerPeriod(rtBiWeekly)).toBe(1);
+    });
+
+    it('should fall back to 1 for weekly frequency when instancesPerPeriod is not defined', () => {
+      const rtWeekly = { frequency: 'weekly' };
+      expect(getInstancesPerPeriod(rtWeekly)).toBe(1);
+    });
+
+    it('should fall back to 1 for monthly or other frequencies when instancesPerPeriod is not defined', () => {
+      const rtMonthly = { frequency: 'monthly' };
+      expect(getInstancesPerPeriod(rtMonthly)).toBe(1);
+
+      const rtYearly = { frequency: 'yearly' };
+      expect(getInstancesPerPeriod(rtYearly)).toBe(1);
     });
   });
 });

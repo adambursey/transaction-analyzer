@@ -42,6 +42,29 @@ export interface MatchingResult {
 }
 
 /**
+ * Resolves the number of expected occurrences for a recurring transaction profile within a single period/cycle.
+ * If instancesPerPeriod is explicitly defined in the profile database entry, that value is respected.
+ * Otherwise, it defaults to 1 instance per cycle for all frequencies (weekly, bi-weekly, monthly, yearly).
+ * This ensures that a bi-weekly or weekly transaction is treated as expecting one occurrence per calendar cycle.
+ *
+ * @param rt - The recurring transaction profile.
+ * @returns The resolved expected instances count per period.
+ */
+export function getInstancesPerPeriod(rt: any): number {
+  // If the profile explicitly defines instancesPerPeriod (even if 0 or a customized number), we respect it.
+  if (rt.instancesPerPeriod !== undefined && rt.instancesPerPeriod !== null) {
+    return rt.instancesPerPeriod;
+  }
+
+  // Non-obvious choice: Default to 1 instance per cycle for all profiles.
+  // Previously, this fell back to 2 for bi-weekly and 4 for weekly under the assumption
+  // that the cap was evaluated on a monthly basis. Now that we scale the monthly cap
+  // dynamically based on the number of actual cycles/weeks in the target month,
+  // the base instance count per cycle period is always 1.
+  return 1;
+}
+
+/**
  * Sanitizes and tokenizes a string into discrete words, preserving critical identifiers.
  *
  * @param str - The raw transaction description.
@@ -439,11 +462,16 @@ export function runMatchingEngine(
   const txMatchesMap = new Map();
   const profileMatchCount = new Map();
   profiles.forEach((p) => profileMatchCount.set(p.id, 0));
-
   allPairwise.forEach((pair) => {
     const pId = pair.profile.id;
-    // How many times can this recurring profile occur in a single month? Defaults to 1.
-    const maxInstances = pair.profile.instancesPerPeriod || 1;
+
+    // Non-obvious choice: Calculate expected occurrences in this specific calendar month.
+    // Since some frequencies like weekly or bi-weekly occur multiple times per month,
+    // we must scale the maximum allowed slots by the number of expected occurrences (cycles) in the month.
+    // This prevents later weekly/bi-weekly transactions from going unmatched when instancesPerPeriod is 1.
+    const expectedDates = getExpectedDatesInMonth(pair.profile, allTransactions, year, month);
+    const cyclesInMonth = expectedDates.length || 1;
+    const maxInstances = getInstancesPerPeriod(pair.profile) * cyclesInMonth;
 
     // If the profile's slots are fully consumed by higher-confidence matches, ignore this weaker attempt.
     if (profileMatchCount.get(pId) >= maxInstances) return;
@@ -503,4 +531,179 @@ export function runMatchingEngine(
   });
 
   return matchResults;
+}
+
+/**
+ * Generates the list of expected calendar dates for a recurring transaction profile in a given month.
+ * Handles weekly, bi-weekly, monthly, yearly, and semi-annual profiles.
+ *
+ * @param rt - The recurring transaction profile.
+ * @param transactions - The full transaction corpus, used to find baseline dates if needed.
+ * @param year - The calendar year.
+ * @param month - The calendar month (0-indexed).
+ * @returns An array of Date objects representing each expected occurrence date.
+ */
+export function getExpectedDatesInMonth(
+  rt: any,
+  transactions: any[],
+  year: number,
+  month: number
+): Date[] {
+  const baselineDates: Date[] = [];
+
+  // Gather baseline dates from profile examples
+  const examples = (rt.exampleTransactionIds || [])
+    .map((id: string) => transactions.find((t: any) => t.id === id))
+    .filter(Boolean);
+
+  examples.forEach((ex: any) => {
+    const d = ex.Date?.toDate ? ex.Date.toDate() : new Date(ex.Date);
+    if (!isNaN(d.getTime())) baselineDates.push(d);
+  });
+
+  // Fallback: look at similar transactions in the global corpus if no explicit examples are selected
+  if (baselineDates.length === 0 && rt.description) {
+    transactions.forEach((tx: any) => {
+      if (tx.Description && tx.Description.toUpperCase().includes(rt.description.toUpperCase())) {
+        const d = tx.Date?.toDate ? tx.Date.toDate() : new Date(tx.Date);
+        if (!isNaN(d.getTime())) baselineDates.push(d);
+      }
+    });
+  }
+
+  // Generate all candidate calendar days in the target month
+  const candidateDates: Date[] = [];
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  for (let day = 1; day <= daysInMonth; day++) {
+    // Generate dates in the local time zone at midday to avoid UTC offsets shifting the day
+    candidateDates.push(new Date(year, month, day, 12, 0, 0));
+  }
+
+  const expected: Date[] = [];
+
+  if (rt.frequency === 'weekly' || rt.frequency === 'bi-weekly') {
+    // Weekly and bi-weekly profiles expect occurrences on a specific day of the week (e.g., Friday).
+    const daysOfWeek = [
+      'sunday',
+      'monday',
+      'tuesday',
+      'wednesday',
+      'thursday',
+      'friday',
+      'saturday',
+    ];
+    const occurrenceLower = (rt.projectedOccurrence || '').toLowerCase().trim();
+    let targetDayOfWeek = daysOfWeek.indexOf(occurrenceLower);
+
+    // If day of week is not explicitly a valid name, fall back to the day of week of the first baseline transaction
+    if (targetDayOfWeek === -1 && baselineDates.length > 0) {
+      targetDayOfWeek = baselineDates[0].getDay();
+    }
+
+    if (targetDayOfWeek !== -1) {
+      if (rt.frequency === 'weekly') {
+        // Weekly: all days matching the target day of week are expected
+        candidateDates.forEach((d) => {
+          if (d.getDay() === targetDayOfWeek) expected.push(d);
+        });
+      } else {
+        // Bi-weekly: days matching the target day of week are expected only if they are a multiple of 14 days
+        // apart from one of our baseline/example transactions.
+        if (baselineDates.length > 0) {
+          const baseTime = baselineDates[0].getTime();
+          candidateDates.forEach((d) => {
+            if (d.getDay() === targetDayOfWeek) {
+              const diffDays = Math.round((d.getTime() - baseTime) / (1000 * 60 * 60 * 24));
+              if (Math.abs(diffDays) % 14 === 0) {
+                expected.push(d);
+              }
+            }
+          });
+        } else {
+          // If no baseline exists, we assume every other matching weekday is expected starting with the first one in the month
+          let firstMatch: Date | null = null;
+          candidateDates.forEach((d) => {
+            if (d.getDay() === targetDayOfWeek) {
+              if (!firstMatch) {
+                firstMatch = d;
+                expected.push(d);
+              } else {
+                const diffDays = Math.round(
+                  (d.getTime() - firstMatch.getTime()) / (1000 * 60 * 60 * 24)
+                );
+                if (Math.abs(diffDays) % 14 === 0) {
+                  expected.push(d);
+                }
+              }
+            }
+          });
+        }
+      }
+    }
+  } else if (rt.frequency === 'monthly' || rt.frequency === 'semi-annual') {
+    // Monthly: expected on a specific day of the month (e.g. Day 5)
+    let expectedDay = 99;
+    if (rt.projectedOccurrence && rt.projectedOccurrence !== 'Unknown') {
+      const match = rt.projectedOccurrence.match(/(?:Day\s+)?(\d+)/i);
+      if (match) expectedDay = parseInt(match[1]);
+    }
+
+    if (expectedDay === 99 && baselineDates.length > 0) {
+      expectedDay = baselineDates[0].getDate();
+    }
+
+    if (expectedDay !== 99 && expectedDay <= daysInMonth) {
+      expected.push(new Date(year, month, expectedDay, 12, 0, 0));
+    }
+  } else if (rt.frequency === 'yearly') {
+    // Yearly: check if target month matches yearly projected occurrence month name
+    const monthNames = [
+      'january',
+      'february',
+      'march',
+      'april',
+      'may',
+      'june',
+      'july',
+      'august',
+      'september',
+      'october',
+      'november',
+      'december',
+    ];
+    const shortMonthNames = [
+      'jan',
+      'feb',
+      'mar',
+      'apr',
+      'may',
+      'jun',
+      'jul',
+      'aug',
+      'sep',
+      'oct',
+      'nov',
+      'dec',
+    ];
+    const occurrence = (rt.projectedOccurrence || '').toLowerCase();
+    const isExpectedMonth =
+      occurrence.includes(monthNames[month]) || occurrence.includes(shortMonthNames[month]);
+
+    if (isExpectedMonth) {
+      let expectedDay = 99;
+      const match = occurrence.match(/(?:\b\d+\b)/);
+      if (match) expectedDay = parseInt(match[0]);
+
+      if (expectedDay === 99 && baselineDates.length > 0) {
+        expectedDay = baselineDates[0].getDate();
+      }
+
+      if (expectedDay !== 99 && expectedDay <= daysInMonth) {
+        expected.push(new Date(year, month, expectedDay, 12, 0, 0));
+      }
+    }
+  }
+
+  // Sort expected dates chronologically
+  return expected.sort((a, b) => a.getTime() - b.getTime());
 }

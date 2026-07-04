@@ -423,7 +423,7 @@ export function AdminView({
     return (
       <div className="flex flex-col items-center justify-center min-h-[400px] gap-4">
         <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
-        <p className="text-slate-500 font-medium">Loading admin data...</p>
+        <p className="text-slate-500 dark:text-slate-400 font-medium">Loading admin data...</p>
       </div>
     );
   }
@@ -431,17 +431,20 @@ export function AdminView({
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
       <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold text-slate-900">Admin Controls</h2>
+        <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Admin Controls</h2>
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2">
-            <label htmlFor="admin-account-select" className="text-sm font-medium text-slate-700">
+            <label
+              htmlFor="admin-account-select"
+              className="text-sm font-medium text-slate-700 dark:text-slate-300"
+            >
               Account:
             </label>
             <select
               id="admin-account-select"
               value={selectedAccount}
               onChange={(e) => setSelectedAccount(e.target.value as any)}
-              className="bg-white border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2 transition-all shadow-sm"
+              className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2 transition-all shadow-sm"
             >
               <option value="Checking">Checking</option>
               <option value="Savings">Savings</option>
@@ -449,35 +452,38 @@ export function AdminView({
           </div>
           <button
             onClick={fetchData}
-            className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors shadow-sm"
+            className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-slate-600 dark:text-slate-400 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800/50 dark:bg-slate-950 transition-colors shadow-sm"
           >
             <RefreshCw className="w-4 h-4" /> Refresh Data
           </button>
         </div>
       </div>
 
-      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 mb-8">
-        <h3 className="font-bold text-slate-800 mb-4 text-lg">Maintenance Actions</h3>
+      <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 p-6 mb-8">
+        <h3 className="font-bold text-slate-800 dark:text-slate-200 mb-4 text-lg">
+          Maintenance Actions
+        </h3>
         <div className="space-y-4">
-          <div className="flex items-center justify-between p-4 bg-slate-50 border border-slate-100 rounded-xl">
+          <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-950 border border-slate-100 dark:border-slate-800 rounded-xl">
             <div className="flex-1 mr-8">
-              <h4 className="font-semibold text-slate-700">
+              <h4 className="font-semibold text-slate-700 dark:text-slate-300">
                 Reclassify Uncategorized Transactions
               </h4>
-              <p className="text-sm text-slate-500 mt-1">
-                Found <strong className="text-slate-700">{uncategorizedCount}</strong> transactions
-                currently missing a category. Running this will use AI to automatically classify
-                them based on your history and place them in the Review Queue.
+              <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                Found{' '}
+                <strong className="text-slate-700 dark:text-slate-300">{uncategorizedCount}</strong>{' '}
+                transactions currently missing a category. Running this will use AI to automatically
+                classify them based on your history and place them in the Review Queue.
               </p>
               {reclassifyProgress && (
                 <div className="mt-3">
-                  <div className="flex justify-between text-xs text-slate-500 mb-1">
+                  <div className="flex justify-between text-xs text-slate-500 dark:text-slate-400 mb-1">
                     <span>Classifying...</span>
                     <span>
                       {reclassifyProgress.processed} / {reclassifyProgress.total}
                     </span>
                   </div>
-                  <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
+                  <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2 overflow-hidden">
                     <div
                       className="bg-blue-600 h-2 transition-all duration-300"
                       style={{
@@ -502,10 +508,12 @@ export function AdminView({
             </button>
           </div>
 
-          <div className="flex items-center justify-between p-4 bg-slate-50 border border-slate-100 rounded-xl">
+          <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-950 border border-slate-100 dark:border-slate-800 rounded-xl">
             <div className="flex-1 mr-8">
-              <h4 className="font-semibold text-slate-700">Deduplicate Database</h4>
-              <p className="text-sm text-slate-500 mt-1">
+              <h4 className="font-semibold text-slate-700 dark:text-slate-300">
+                Deduplicate Database
+              </h4>
+              <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
                 Found <strong className="text-orange-600">{duplicateCount}</strong> duplicate
                 transactions in your database. Running this will move redundant copies to the
                 Archive below while preserving your categorized ones.
@@ -525,10 +533,12 @@ export function AdminView({
             </button>
           </div>
 
-          <div className="flex items-center justify-between p-4 bg-slate-50 border border-slate-100 rounded-xl">
+          <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-950 border border-slate-100 dark:border-slate-800 rounded-xl">
             <div className="flex-1 mr-8">
-              <h4 className="font-semibold text-slate-700">Scan for Potential Duplicates</h4>
-              <p className="text-sm text-slate-500 mt-1">
+              <h4 className="font-semibold text-slate-700 dark:text-slate-300">
+                Scan for Potential Duplicates
+              </h4>
+              <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
                 Scans existing active transactions for date and amount collisions (with differing
                 descriptions). Flags them for your review in the queue above.
               </p>
@@ -547,10 +557,12 @@ export function AdminView({
             </button>
           </div>
 
-          <div className="flex items-center justify-between p-4 bg-slate-50 border border-slate-100 rounded-xl">
+          <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-950 border border-slate-100 dark:border-slate-800 rounded-xl">
             <div className="flex-1 mr-8">
-              <h4 className="font-semibold text-slate-700">Match Internal Transfers</h4>
-              <p className="text-sm text-slate-500 mt-1">
+              <h4 className="font-semibold text-slate-700 dark:text-slate-300">
+                Match Internal Transfers
+              </h4>
+              <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
                 Scans all Checking and Savings transactions for internal transfers based on date,
                 amount, and description. Matched transactions will be linked and removed from net
                 cash flow calculations.
@@ -570,10 +582,12 @@ export function AdminView({
             </button>
           </div>
 
-          <div className="flex items-center justify-between p-4 bg-slate-50 border border-slate-100 rounded-xl">
+          <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-950 border border-slate-100 dark:border-slate-800 rounded-xl">
             <div className="flex-1 mr-8">
-              <h4 className="font-semibold text-slate-700">Save Classification Dictionary</h4>
-              <p className="text-sm text-slate-500 mt-1">
+              <h4 className="font-semibold text-slate-700 dark:text-slate-300">
+                Save Classification Dictionary
+              </h4>
+              <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
                 Save the current relationship between descriptions and categories/subcategories.
                 {savedMappingStatus.exists && (
                   <span className="block mt-2 text-emerald-600 font-medium">
@@ -600,10 +614,12 @@ export function AdminView({
             </button>
           </div>
 
-          <div className="flex items-center justify-between p-4 bg-slate-50 border border-slate-100 rounded-xl">
+          <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-950 border border-slate-100 dark:border-slate-800 rounded-xl">
             <div className="flex-1 mr-8">
-              <h4 className="font-semibold text-slate-700">Database Reconciliation & Backfill</h4>
-              <p className="text-sm text-slate-500 mt-1 mb-3">
+              <h4 className="font-semibold text-slate-700 dark:text-slate-300">
+                Database Reconciliation & Backfill
+              </h4>
+              <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 mb-3">
                 Upload a CSV bank export to backfill historical balances and automatically generate
                 System Reconciliation Discrepancies for any detected mathematical gaps.
               </p>
@@ -616,7 +632,7 @@ export function AdminView({
               />
               <label
                 htmlFor="backfill-upload"
-                className="inline-flex items-center gap-2 px-3 py-1.5 bg-white border border-slate-300 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-50 cursor-pointer transition-colors"
+                className="inline-flex items-center gap-2 px-3 py-1.5 bg-white dark:bg-slate-900 border border-slate-300 text-slate-700 dark:text-slate-300 text-sm font-medium rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800/50 dark:bg-slate-950 cursor-pointer transition-colors"
                 aria-label="Upload Backfill CSV"
               >
                 <Upload className="w-4 h-4" />
@@ -641,9 +657,9 @@ export function AdminView({
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
         {/* Archived Transactions */}
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col h-[600px]">
-          <div className="p-4 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
-            <h3 className="font-bold text-slate-800 flex items-center gap-2">
+        <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden flex flex-col h-[600px]">
+          <div className="p-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 flex items-center justify-between">
+            <h3 className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
               <Archive className="w-5 h-5 text-slate-400" />
               Archived Transactions ({archivedTxs.length})
             </h3>
@@ -670,9 +686,9 @@ export function AdminView({
               </div>
             ) : (
               <table className="w-full text-sm text-left border-separate border-spacing-0">
-                <thead className="text-xs text-slate-500 uppercase bg-white sticky top-0 z-10 shadow-sm">
+                <thead className="text-xs text-slate-500 dark:text-slate-400 uppercase bg-white dark:bg-slate-900 sticky top-0 z-10 shadow-sm">
                   <tr>
-                    <th className="px-4 py-3 font-semibold border-b border-slate-100 w-10 text-center">
+                    <th className="px-4 py-3 font-semibold border-b border-slate-100 dark:border-slate-800 w-10 text-center">
                       <input
                         type="checkbox"
                         checked={
@@ -683,21 +699,26 @@ export function AdminView({
                             setSelectedTxIds(new Set(archivedTxs.map((t) => t.id)));
                           else setSelectedTxIds(new Set());
                         }}
-                        className="rounded border-slate-300 bg-white text-blue-600"
+                        className="rounded border-slate-300 bg-white dark:bg-slate-900 text-blue-600"
                       />
                     </th>
-                    <th className="px-4 py-3 font-semibold border-b border-slate-100">Date</th>
-                    <th className="px-4 py-3 font-semibold border-b border-slate-100">
+                    <th className="px-4 py-3 font-semibold border-b border-slate-100 dark:border-slate-800">
+                      Date
+                    </th>
+                    <th className="px-4 py-3 font-semibold border-b border-slate-100 dark:border-slate-800">
                       Description
                     </th>
-                    <th className="px-4 py-3 font-semibold border-b border-slate-100 text-right">
+                    <th className="px-4 py-3 font-semibold border-b border-slate-100 dark:border-slate-800 text-right">
                       Amount
                     </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50">
                   {archivedTxs.map((tx) => (
-                    <tr key={tx.id} className="hover:bg-slate-50/50 transition-colors">
+                    <tr
+                      key={tx.id}
+                      className="hover:bg-slate-50 dark:hover:bg-slate-800/50 dark:bg-slate-950/50 transition-colors"
+                    >
                       <td className="px-4 py-3 text-center">
                         <input
                           type="checkbox"
@@ -708,19 +729,19 @@ export function AdminView({
                             else newSet.delete(tx.id);
                             setSelectedTxIds(newSet);
                           }}
-                          className="rounded border-slate-300 bg-white text-blue-600"
+                          className="rounded border-slate-300 bg-white dark:bg-slate-900 text-blue-600"
                         />
                       </td>
-                      <td className="px-4 py-3 text-slate-600 font-mono text-xs">
+                      <td className="px-4 py-3 text-slate-600 dark:text-slate-400 font-mono text-xs">
                         {tx.Date ? format(new Date(tx.Date), 'MM/dd/yyyy') : 'Unknown'}
                       </td>
                       <td
-                        className="px-4 py-3 text-slate-800 font-medium truncate max-w-[200px]"
+                        className="px-4 py-3 text-slate-800 dark:text-slate-200 font-medium truncate max-w-[200px]"
                         title={tx.Description}
                       >
                         {tx.Description}
                       </td>
-                      <td className="px-4 py-3 text-right font-mono text-slate-900">
+                      <td className="px-4 py-3 text-right font-mono text-slate-900 dark:text-slate-100">
                         $
                         {Number(
                           typeof tx.Amount === 'string'
@@ -737,9 +758,9 @@ export function AdminView({
         </div>
 
         {/* System Reconciliation Adjustments */}
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col h-[600px]">
-          <div className="p-4 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
-            <h3 className="font-bold text-slate-800 flex items-center gap-2">
+        <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden flex flex-col h-[600px]">
+          <div className="p-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 flex items-center justify-between">
+            <h3 className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
               <RefreshCw className="w-5 h-5 text-slate-400" />
               System Reconciliation Adjustments ({reconciliationAdjustments.length})
             </h3>
@@ -752,30 +773,35 @@ export function AdminView({
               </div>
             ) : (
               <table className="w-full text-sm text-left border-separate border-spacing-0">
-                <thead className="text-xs text-slate-500 uppercase bg-white sticky top-0 z-10 shadow-sm">
+                <thead className="text-xs text-slate-500 dark:text-slate-400 uppercase bg-white dark:bg-slate-900 sticky top-0 z-10 shadow-sm">
                   <tr>
-                    <th className="px-4 py-3 font-semibold border-b border-slate-100">Date</th>
-                    <th className="px-4 py-3 font-semibold border-b border-slate-100">
+                    <th className="px-4 py-3 font-semibold border-b border-slate-100 dark:border-slate-800">
+                      Date
+                    </th>
+                    <th className="px-4 py-3 font-semibold border-b border-slate-100 dark:border-slate-800">
                       Description
                     </th>
-                    <th className="px-4 py-3 font-semibold border-b border-slate-100 text-right">
+                    <th className="px-4 py-3 font-semibold border-b border-slate-100 dark:border-slate-800 text-right">
                       Amount
                     </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50">
                   {reconciliationAdjustments.map((tx) => (
-                    <tr key={tx.id} className="hover:bg-slate-50/50 transition-colors">
-                      <td className="px-4 py-3 text-slate-600 font-mono text-xs">
+                    <tr
+                      key={tx.id}
+                      className="hover:bg-slate-50 dark:hover:bg-slate-800/50 dark:bg-slate-950/50 transition-colors"
+                    >
+                      <td className="px-4 py-3 text-slate-600 dark:text-slate-400 font-mono text-xs">
                         {tx.Date ? format(new Date(tx.Date), 'MM/dd/yyyy') : 'Unknown'}
                       </td>
                       <td
-                        className="px-4 py-3 text-slate-800 font-medium truncate max-w-[200px]"
+                        className="px-4 py-3 text-slate-800 dark:text-slate-200 font-medium truncate max-w-[200px]"
                         title={tx.Description}
                       >
                         {tx.Description}
                       </td>
-                      <td className="px-4 py-3 text-right font-mono text-slate-900">
+                      <td className="px-4 py-3 text-right font-mono text-slate-900 dark:text-slate-100">
                         {Number(tx.Amount) < 0 ? '-' : ''}$
                         {Math.abs(
                           Number(
@@ -816,7 +842,7 @@ export function AdminView({
                 return (
                   <div
                     key={dupe.id}
-                    className="bg-white border border-orange-200 rounded-lg p-4 shadow-sm relative overflow-hidden"
+                    className="bg-white dark:bg-slate-900 border border-orange-200 rounded-lg p-4 shadow-sm relative overflow-hidden"
                   >
                     {/* Similarity Badge */}
                     <div
@@ -839,13 +865,13 @@ export function AdminView({
                         <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
                           Existing Record
                         </div>
-                        <div className="text-sm font-medium text-slate-900 break-words">
+                        <div className="text-sm font-medium text-slate-900 dark:text-slate-100 break-words">
                           {original.Description}
                         </div>
-                        <div className="text-sm text-slate-500 mt-1">
+                        <div className="text-sm text-slate-500 dark:text-slate-400 mt-1">
                           {original._effectiveDateStr || original.Date} • ${original.Amount}
                         </div>
-                        <div className="mt-2 inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-slate-100 text-xs font-medium text-slate-600">
+                        <div className="mt-2 inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-slate-100 dark:bg-slate-800 text-xs font-medium text-slate-600 dark:text-slate-400">
                           {original._category || 'Uncategorized'}
                           {original._subcategory && ` • ${original._subcategory}`}
                         </div>
@@ -856,10 +882,10 @@ export function AdminView({
                         <div className="text-xs font-semibold text-blue-500 uppercase tracking-wider mb-2">
                           New Incoming Record
                         </div>
-                        <div className="text-sm font-medium text-slate-900 break-words">
+                        <div className="text-sm font-medium text-slate-900 dark:text-slate-100 break-words">
                           {dupe.Description}
                         </div>
-                        <div className="text-sm text-slate-500 mt-1">
+                        <div className="text-sm text-slate-500 dark:text-slate-400 mt-1">
                           {dupe.Date} • ${dupe.Amount}
                         </div>
 
@@ -869,7 +895,7 @@ export function AdminView({
                               handleResolveDuplicate(dupe.id, original.id, 'keep_original')
                             }
                             disabled={isResolvingDupe === dupe.id}
-                            className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-medium rounded-md transition-colors"
+                            className="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 text-sm font-medium rounded-md transition-colors"
                             title="Delete the new record and keep the existing one exactly as is."
                           >
                             Ignore New
@@ -905,9 +931,9 @@ export function AdminView({
         )}
 
         {/* All Imports Log */}
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col h-[600px]">
-          <div className="p-4 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
-            <h3 className="font-bold text-slate-800 flex items-center gap-2">
+        <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden flex flex-col h-[600px]">
+          <div className="p-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 flex items-center justify-between">
+            <h3 className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
               <Archive className="w-5 h-5 text-slate-400" />
               All Import Logs ({allImports.length})
             </h3>
@@ -922,11 +948,11 @@ export function AdminView({
               allImports.map((imp) => (
                 <div
                   key={imp.id}
-                  className={`p-4 border rounded-xl flex items-center justify-between gap-4 ${imp.archived ? 'bg-red-50/30 border-red-100' : 'bg-slate-50/50 border-slate-100'}`}
+                  className={`p-4 border rounded-xl flex items-center justify-between gap-4 ${imp.archived ? 'bg-red-50/30 border-red-100' : 'bg-slate-50 dark:bg-slate-950/50 border-slate-100 dark:border-slate-800'}`}
                 >
                   <div>
                     <div className="flex items-center gap-2 mb-1">
-                      <span className="font-mono text-xs font-semibold text-slate-500 bg-white px-2 py-0.5 rounded border border-slate-200">
+                      <span className="font-mono text-xs font-semibold text-slate-500 dark:text-slate-400 bg-white dark:bg-slate-900 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700">
                         {imp.id}
                       </span>
                       <span className="font-mono text-xs font-semibold px-2 py-0.5 rounded border bg-blue-50 text-blue-600 border-blue-200">
@@ -938,10 +964,10 @@ export function AdminView({
                         </span>
                       )}
                     </div>
-                    <p className="text-sm font-medium text-slate-800">
+                    <p className="text-sm font-medium text-slate-800 dark:text-slate-200">
                       {format(new Date(imp.date), "PPP 'at' p")}
                     </p>
-                    <p className="text-xs text-slate-500 mt-0.5">
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                       {imp.transactionCount} transactions parsed, {imp.duplicateCount || 0}{' '}
                       duplicates skipped.
                     </p>

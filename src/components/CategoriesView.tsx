@@ -312,19 +312,21 @@ export function CategoriesView({
       )}
 
       {/* Recurring Transactions Section */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm p-6">
         <div
           className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6 cursor-pointer group"
           onClick={() => setIsRecurringExpanded(!isRecurringExpanded)}
         >
           <div>
-            <h2 className="text-xl font-bold text-slate-900">Recurring Transactions</h2>
-            <p className="text-sm text-slate-500 mt-1">
+            <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">
+              Recurring Transactions
+            </h2>
+            <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
               Manage recurring income and expenses for balance forecasting.
             </p>
           </div>
           <div className="flex items-center gap-4">
-            <button className="p-1 rounded text-slate-400 group-hover:text-slate-600 transition-colors">
+            <button className="p-1 rounded text-slate-400 group-hover:text-slate-600 dark:text-slate-400 transition-colors">
               {isRecurringExpanded ? (
                 <ChevronUp className="w-5 h-5" />
               ) : (
@@ -338,14 +340,16 @@ export function CategoriesView({
           <div className="space-y-4">
             <div className="flex justify-between items-center">
               <div className="flex items-center gap-2">
-                <span className="text-sm font-medium text-slate-500">Sort by:</span>
+                <span className="text-sm font-medium text-slate-500 dark:text-slate-400">
+                  Sort by:
+                </span>
                 <select
                   value={`${recurringSort.key}-${recurringSort.dir}`}
                   onChange={(e) => {
                     const [key, dir] = e.target.value.split('-');
                     setRecurringSort({ key: key as any, dir: dir as any });
                   }}
-                  className="bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 p-2"
+                  className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 p-2"
                 >
                   <option value="amount-desc">Amount (Highest to Lowest)</option>
                   <option value="amount-asc">Amount (Lowest to Highest)</option>
@@ -362,11 +366,11 @@ export function CategoriesView({
             </div>
 
             {recurringTransactions.length === 0 ? (
-              <div className="p-8 border-2 border-dashed border-slate-200 rounded-xl flex items-center justify-center text-slate-500 bg-slate-50">
+              <div className="p-8 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl flex items-center justify-center text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-950">
                 <p>No recurring transactions found. Add one above.</p>
               </div>
             ) : (
-              <div className="bg-white rounded-xl border border-slate-200 overflow-hidden divide-y divide-slate-100">
+              <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden divide-y divide-slate-100 dark:divide-slate-800">
                 {[...recurringTransactions]
                   .sort((a, b) => {
                     if (recurringSort.key === 'amount') {
@@ -401,7 +405,7 @@ export function CategoriesView({
                     return (
                       <div key={rt.id} className="group">
                         <div
-                          className="px-6 py-4 flex items-center justify-between hover:bg-slate-50 cursor-pointer transition-colors"
+                          className="px-6 py-4 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-800/50 dark:bg-slate-950 cursor-pointer transition-colors"
                           onClick={() => {
                             const next = new Set(expandedRecurringIds);
                             if (next.has(rt.id)) next.delete(rt.id);
@@ -410,7 +414,7 @@ export function CategoriesView({
                           }}
                         >
                           <div className="flex items-center gap-4">
-                            <button className="text-slate-400 hover:text-slate-600">
+                            <button className="text-slate-400 hover:text-slate-600 dark:text-slate-400">
                               {isExpanded ? (
                                 <ChevronUp className="w-5 h-5" />
                               ) : (
@@ -424,7 +428,7 @@ export function CategoriesView({
                                     type="text"
                                     value={editingDescriptionValue}
                                     onChange={(e) => setEditingDescriptionValue(e.target.value)}
-                                    className="bg-white border border-slate-300 font-semibold text-slate-900 text-sm rounded px-2 py-0.5 focus:ring-blue-500 focus:border-blue-500"
+                                    className="bg-white dark:bg-slate-900 border border-slate-300 font-semibold text-slate-900 dark:text-slate-100 text-sm rounded px-2 py-0.5 focus:ring-blue-500 focus:border-blue-500"
                                     onClick={(e) => e.stopPropagation()}
                                     autoFocus
                                   />
@@ -444,14 +448,16 @@ export function CategoriesView({
                                       e.stopPropagation();
                                       setEditingDescriptionId(null);
                                     }}
-                                    className="ml-1 text-slate-400 hover:text-slate-600"
+                                    className="ml-1 text-slate-400 hover:text-slate-600 dark:text-slate-400"
                                   >
                                     <X className="w-4 h-4" />
                                   </button>
                                 </div>
                               ) : (
                                 <div className="flex items-center group/title">
-                                  <h3 className="font-semibold text-slate-900">{rt.description}</h3>
+                                  <h3 className="font-semibold text-slate-900 dark:text-slate-100">
+                                    {rt.description}
+                                  </h3>
                                   <button
                                     onClick={(e) => {
                                       e.stopPropagation();
@@ -465,7 +471,7 @@ export function CategoriesView({
                                   </button>
                                 </div>
                               )}
-                              <div className="flex items-center text-sm text-slate-500 capitalize">
+                              <div className="flex items-center text-sm text-slate-500 dark:text-slate-400 capitalize">
                                 <span>{rt.frequency}</span>
                                 {editingProjectionId === rt.id ? (
                                   <div className="flex items-center ml-2">
@@ -474,7 +480,7 @@ export function CategoriesView({
                                       type="text"
                                       value={editingProjectionValue}
                                       onChange={(e) => setEditingProjectionValue(e.target.value)}
-                                      className="bg-white border border-slate-300 text-slate-900 text-xs rounded px-2 py-0.5 ml-1 focus:ring-blue-500 focus:border-blue-500"
+                                      className="bg-white dark:bg-slate-900 border border-slate-300 text-slate-900 dark:text-slate-100 text-xs rounded px-2 py-0.5 ml-1 focus:ring-blue-500 focus:border-blue-500"
                                       onClick={(e) => e.stopPropagation()}
                                     />
                                     <button
@@ -493,7 +499,7 @@ export function CategoriesView({
                                         e.stopPropagation();
                                         setEditingProjectionId(null);
                                       }}
-                                      className="ml-1 text-slate-400 hover:text-slate-600"
+                                      className="ml-1 text-slate-400 hover:text-slate-600 dark:text-slate-400"
                                     >
                                       <X className="w-4 h-4" />
                                     </button>
@@ -504,7 +510,7 @@ export function CategoriesView({
                                       rt.projectedOccurrence !== 'Unknown' && (
                                         <>
                                           <span className="font-medium text-slate-400 mx-1">•</span>
-                                          <span className="font-medium text-slate-600 ml-1">
+                                          <span className="font-medium text-slate-600 dark:text-slate-400 ml-1">
                                             {rt.projectedOccurrence}
                                           </span>
                                           <button
@@ -537,7 +543,7 @@ export function CategoriesView({
                                                 Math.max(1, parseInt(e.target.value) || 1)
                                               )
                                             }
-                                            className="bg-white border border-slate-300 text-slate-900 text-xs rounded px-2 py-0.5 ml-1 focus:ring-blue-500 focus:border-blue-500 w-16"
+                                            className="bg-white dark:bg-slate-900 border border-slate-300 text-slate-900 dark:text-slate-100 text-xs rounded px-2 py-0.5 ml-1 focus:ring-blue-500 focus:border-blue-500 w-16"
                                             onClick={(e) => e.stopPropagation()}
                                           />
                                           <button
@@ -556,7 +562,7 @@ export function CategoriesView({
                                               e.stopPropagation();
                                               setEditingInstancesId(null);
                                             }}
-                                            className="ml-1 text-slate-400 hover:text-slate-600"
+                                            className="ml-1 text-slate-400 hover:text-slate-600 dark:text-slate-400"
                                           >
                                             <X className="w-4 h-4" />
                                           </button>
@@ -564,7 +570,7 @@ export function CategoriesView({
                                       ) : (
                                         <>
                                           <span className="font-medium text-slate-400 mx-1">•</span>
-                                          <span className="font-medium text-slate-600 ml-1">
+                                          <span className="font-medium text-slate-600 dark:text-slate-400 ml-1">
                                             {rt.instancesPerPeriod || 1}x per period
                                           </span>
                                           <button
@@ -589,7 +595,7 @@ export function CategoriesView({
                           <div className="flex items-center gap-6">
                             <div className="text-right">
                               <p
-                                className={`font-mono font-semibold ${rt.amountAverage < 0 ? 'text-slate-900' : 'text-emerald-600'}`}
+                                className={`font-mono font-semibold ${rt.amountAverage < 0 ? 'text-slate-900 dark:text-slate-100' : 'text-emerald-600'}`}
                               >
                                 $
                                 {Math.abs(rt.amountAverage).toLocaleString(undefined, {
@@ -597,7 +603,9 @@ export function CategoriesView({
                                   maximumFractionDigits: 2,
                                 })}
                               </p>
-                              <p className="text-xs text-slate-500">avg per occurrence</p>
+                              <p className="text-xs text-slate-500 dark:text-slate-400">
+                                avg per occurrence
+                              </p>
                             </div>
                             <button
                               onClick={(e) => {
@@ -613,8 +621,8 @@ export function CategoriesView({
                         </div>
 
                         {isExpanded && (
-                          <div className="bg-slate-50 px-6 py-4 border-t border-slate-100 pl-16">
-                            <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
+                          <div className="bg-slate-50 dark:bg-slate-950 px-6 py-4 border-t border-slate-100 dark:border-slate-800 pl-16">
+                            <h4 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-3">
                               Example Transactions ({rt.exampleTransactionIds?.length || 0})
                             </h4>
                             {rt.exampleTransactionIds && rt.exampleTransactionIds.length > 0 ? (
@@ -646,13 +654,13 @@ export function CategoriesView({
                                     return (
                                       <li
                                         key={id}
-                                        className="flex justify-between items-center text-sm bg-white p-2 rounded border border-slate-200"
+                                        className="flex justify-between items-center text-sm bg-white dark:bg-slate-900 p-2 rounded border border-slate-200 dark:border-slate-700"
                                       >
-                                        <span className="text-slate-600">
+                                        <span className="text-slate-600 dark:text-slate-400">
                                           {dateStr} - {tx.Description}
                                         </span>
                                         <span
-                                          className={`font-mono ${tx._isExpense ? 'text-slate-900' : 'text-emerald-600'}`}
+                                          className={`font-mono ${tx._isExpense ? 'text-slate-900 dark:text-slate-100' : 'text-emerald-600'}`}
                                         >
                                           ${tx._parsedAmount?.toFixed(2)}
                                         </span>
@@ -661,7 +669,9 @@ export function CategoriesView({
                                   })}
                               </ul>
                             ) : (
-                              <p className="text-sm text-slate-500">No examples selected.</p>
+                              <p className="text-sm text-slate-500 dark:text-slate-400">
+                                No examples selected.
+                              </p>
                             )}
                           </div>
                         )}
@@ -675,14 +685,14 @@ export function CategoriesView({
       </div>
 
       {/* Categories Section */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm p-6">
         <div
           className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6 cursor-pointer group"
           onClick={() => setIsCategoriesExpanded(!isCategoriesExpanded)}
         >
           <div>
-            <h2 className="text-xl font-bold text-slate-900">Categories</h2>
-            <p className="text-sm text-slate-500 mt-1">
+            <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">Categories</h2>
+            <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
               Manage the categories and subcategories available for transactions.
             </p>
           </div>
@@ -704,7 +714,7 @@ export function CategoriesView({
                 Auto-build from Transactions
               </button>
             )}
-            <button className="p-1 rounded text-slate-400 group-hover:text-slate-600 transition-colors">
+            <button className="p-1 rounded text-slate-400 group-hover:text-slate-600 dark:text-slate-400 transition-colors">
               {isCategoriesExpanded ? (
                 <ChevronUp className="w-5 h-5" />
               ) : (
@@ -734,7 +744,7 @@ export function CategoriesView({
               </button>
             </div>
 
-            <div className="divide-y divide-slate-100 border border-slate-200 rounded-xl overflow-hidden">
+            <div className="divide-y divide-slate-100 dark:divide-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
               {Object.keys(taxonomy)
                 .sort()
                 .map((cat) => {
@@ -742,11 +752,11 @@ export function CategoriesView({
                   const isEditingCat = editingCategory?.old === cat;
 
                   return (
-                    <div key={cat} className="bg-white">
-                      <div className="flex items-center gap-3 p-4 hover:bg-slate-50 group">
+                    <div key={cat} className="bg-white dark:bg-slate-900">
+                      <div className="flex items-center gap-3 p-4 hover:bg-slate-50 dark:hover:bg-slate-800/50 dark:bg-slate-950 group">
                         <button
                           onClick={() => toggleExpand(cat)}
-                          className="p-1 hover:bg-slate-200 rounded text-slate-400"
+                          className="p-1 hover:bg-slate-200 dark:bg-slate-700 rounded text-slate-400"
                         >
                           {isExpanded ? (
                             <ChevronDown className="w-4 h-4" />
@@ -778,7 +788,7 @@ export function CategoriesView({
                           </div>
                         ) : (
                           <div
-                            className={`flex-1 font-medium text-slate-900 flex items-center gap-2 ${onCategorySelect ? 'cursor-pointer hover:text-blue-600' : ''}`}
+                            className={`flex-1 font-medium text-slate-900 dark:text-slate-100 flex items-center gap-2 ${onCategorySelect ? 'cursor-pointer hover:text-blue-600' : ''}`}
                             onClick={() => onCategorySelect && onCategorySelect(cat)}
                           >
                             {cat}
@@ -812,13 +822,13 @@ export function CategoriesView({
                       </div>
 
                       {isExpanded && (
-                        <div className="bg-slate-50 pl-12 pr-4 py-3 border-t border-slate-100">
+                        <div className="bg-slate-50 dark:bg-slate-950 pl-12 pr-4 py-3 border-t border-slate-100 dark:border-slate-800">
                           <ul className="space-y-1">
                             {transactions.filter((t) => t._category === cat && !t._subcategory)
                               .length > 0 && (
-                              <li className="flex items-center gap-2 py-1.5 px-2 hover:bg-slate-100 rounded group/sub">
+                              <li className="flex items-center gap-2 py-1.5 px-2 hover:bg-slate-100 dark:hover:bg-slate-800 dark:bg-slate-800 rounded group/sub">
                                 <span
-                                  className={`flex-1 text-sm text-slate-500 italic ${onCategorySelect ? 'cursor-pointer hover:text-blue-600' : ''}`}
+                                  className={`flex-1 text-sm text-slate-500 dark:text-slate-400 italic ${onCategorySelect ? 'cursor-pointer hover:text-blue-600' : ''}`}
                                   onClick={() => onCategorySelect && onCategorySelect(cat, '')}
                                 >
                                   No Subcategory
@@ -832,7 +842,7 @@ export function CategoriesView({
                               return (
                                 <li
                                   key={subcat}
-                                  className="flex items-center gap-2 py-1.5 px-2 hover:bg-slate-100 rounded group/sub"
+                                  className="flex items-center gap-2 py-1.5 px-2 hover:bg-slate-100 dark:hover:bg-slate-800 dark:bg-slate-800 rounded group/sub"
                                 >
                                   {isEditingSub ? (
                                     <div className="flex-1 flex gap-2">
@@ -866,7 +876,7 @@ export function CategoriesView({
                                   ) : (
                                     <>
                                       <span
-                                        className={`flex-1 text-sm text-slate-600 ${onCategorySelect ? 'cursor-pointer hover:text-blue-600' : ''}`}
+                                        className={`flex-1 text-sm text-slate-600 dark:text-slate-400 ${onCategorySelect ? 'cursor-pointer hover:text-blue-600' : ''}`}
                                         onClick={() =>
                                           onCategorySelect && onCategorySelect(cat, subcat)
                                         }

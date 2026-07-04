@@ -175,10 +175,10 @@ export function TransactionTable({
     <div className="space-y-6">
       {/* Filters */}
       {!hideFilters && (
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+        <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700">
           <div className="grid grid-cols-1 md:grid-cols-8 gap-4">
             <div className="col-span-1 md:col-span-2">
-              <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">
+              <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-2">
                 Search
               </label>
               <div className="relative">
@@ -187,7 +187,7 @@ export function TransactionTable({
                 </div>
                 <input
                   type="text"
-                  className="bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full pl-9 p-2.5"
+                  className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full pl-9 p-2.5"
                   placeholder="Search description, amount..."
                   value={txSearchText}
                   onChange={(e) => setTxSearchText(e.target.value)}
@@ -195,13 +195,13 @@ export function TransactionTable({
               </div>
             </div>
             <div>
-              <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">
+              <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-2">
                 Account
               </label>
               <select
                 value={selectedAccount}
                 onChange={(e) => setSelectedAccount(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
+                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
               >
                 <option value="All">All Accounts</option>
                 <option value="Checking">Checking</option>
@@ -209,7 +209,7 @@ export function TransactionTable({
               </select>
             </div>
             <div>
-              <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">
+              <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-2">
                 Year
               </label>
               <select
@@ -218,7 +218,7 @@ export function TransactionTable({
                   setSelectedYear(e.target.value);
                   setSelectedMonth('All Months');
                 }}
-                className="w-full bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
+                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
               >
                 <option value="All">All</option>
                 {availableYears.map((year) => (
@@ -229,13 +229,13 @@ export function TransactionTable({
               </select>
             </div>
             <div>
-              <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">
+              <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-2">
                 Month
               </label>
               <select
                 value={selectedMonth}
                 onChange={(e) => setSelectedMonth(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
+                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
               >
                 <option value="All Months">All</option>
                 {analysis.sortedMonths.map((month: string) => (
@@ -246,7 +246,7 @@ export function TransactionTable({
               </select>
             </div>
             <div>
-              <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">
+              <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-2">
                 Category
               </label>
               <select
@@ -255,7 +255,7 @@ export function TransactionTable({
                   setTxFilterCategory(e.target.value);
                   setTxFilterSubcategory('');
                 }}
-                className="w-full bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
+                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
               >
                 <option value="">All</option>
                 {analysis.categories.map((cat: string) => (
@@ -266,14 +266,14 @@ export function TransactionTable({
               </select>
             </div>
             <div>
-              <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">
+              <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-2">
                 Subcategory
               </label>
               <select
                 value={txFilterSubcategory}
                 onChange={(e) => setTxFilterSubcategory(e.target.value)}
                 disabled={!txFilterCategory}
-                className={`w-full bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 ${!txFilterCategory ? 'opacity-50 cursor-not-allowed' : ''}`}
+                className={`w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 ${!txFilterCategory ? 'opacity-50 cursor-not-allowed' : ''}`}
               >
                 <option value="">All</option>
                 {filteredSubcategories.map((sub: string) => (
@@ -284,13 +284,13 @@ export function TransactionTable({
               </select>
             </div>
             <div>
-              <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">
+              <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-2">
                 Type
               </label>
               <select
                 value={txFilterType}
                 onChange={(e) => setTxFilterType(e.target.value as any)}
-                className="w-full bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
+                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
               >
                 <option value="all">All</option>
                 <option value="income">Income Only</option>
@@ -300,7 +300,7 @@ export function TransactionTable({
             <div>
               <label
                 htmlFor="table-transactions-matched-select"
-                className="block text-xs font-semibold text-slate-500 uppercase mb-2"
+                className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-2"
               >
                 Matched Status
               </label>
@@ -308,7 +308,7 @@ export function TransactionTable({
                 id="table-transactions-matched-select"
                 value={txFilterMatched}
                 onChange={(e) => setTxFilterMatched(e.target.value as any)}
-                className="w-full bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
+                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
               >
                 <option value="all">All</option>
                 <option value="matched">Matched Only</option>
@@ -322,9 +322,9 @@ export function TransactionTable({
                     type="checkbox"
                     checked={showTxTotals}
                     onChange={(e) => setShowTxTotals(e.target.checked)}
-                    className="w-4 h-4 text-blue-600 bg-slate-100 border-slate-300 rounded focus:ring-blue-500 transition-colors"
+                    className="w-4 h-4 text-blue-600 bg-slate-100 dark:bg-slate-800 border-slate-300 rounded focus:ring-blue-500 transition-colors"
                   />
-                  <span className="text-sm font-medium text-slate-600 group-hover:text-slate-900 transition-colors whitespace-nowrap">
+                  <span className="text-sm font-medium text-slate-600 dark:text-slate-400 group-hover:text-slate-900 dark:hover:text-white dark:text-slate-100 transition-colors whitespace-nowrap">
                     Totals
                   </span>
                 </label>
@@ -469,12 +469,12 @@ export function TransactionTable({
       )}
 
       {/* Transaction Table */}
-      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+      <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
         <div className="overflow-x-auto max-h-[700px]">
           <table className="w-full text-sm text-left border-separate border-spacing-0">
-            <thead className="text-xs text-slate-500 uppercase bg-slate-50 sticky top-0 z-20">
+            <thead className="text-xs text-slate-500 dark:text-slate-400 uppercase bg-slate-50 dark:bg-slate-950 sticky top-0 z-20">
               <tr>
-                <th className="px-4 py-4 font-semibold border-b border-slate-100 bg-slate-50 w-10 text-center">
+                <th className="px-4 py-4 font-semibold border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 w-10 text-center">
                   <input
                     type="checkbox"
                     checked={
@@ -490,7 +490,7 @@ export function TransactionTable({
                         setSelectedTxIds(new Set());
                       }
                     }}
-                    className="rounded border-slate-300 bg-white"
+                    className="rounded border-slate-300 bg-white dark:bg-slate-900"
                   />
                 </th>
                 {headers
@@ -508,7 +508,7 @@ export function TransactionTable({
                     return (
                       <th
                         key={header}
-                        className={`px-6 py-4 font-semibold border-b border-slate-100 bg-slate-50 cursor-pointer hover:bg-slate-200 transition-colors ${widthClass}`}
+                        className={`px-6 py-4 font-semibold border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 cursor-pointer hover:bg-slate-200 dark:bg-slate-700 transition-colors ${widthClass}`}
                         onClick={() => {
                           setTxSortConfig((current) => ({
                             key: header,
@@ -532,14 +532,14 @@ export function TransactionTable({
                   })}
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
               {filteredAndSortedTransactions.map((tx: any, idx: number) => (
                 <tr
                   key={tx.id || idx}
-                  className={`hover:bg-slate-50 transition-colors group ${selectedTxIds.has(tx.id) ? 'bg-blue-50/50' : tx._category === 'Reconciliation Discrepancy' ? 'bg-red-50/50' : ''}`}
+                  className={`hover:bg-slate-50 dark:hover:bg-slate-800/50 dark:bg-slate-950 transition-colors group ${selectedTxIds.has(tx.id) ? 'bg-blue-50/50' : tx._category === 'Reconciliation Discrepancy' ? 'bg-red-50/50' : ''}`}
                 >
                   <td
-                    className="px-4 py-4 border-b border-slate-100 text-center"
+                    className="px-4 py-4 border-b border-slate-100 dark:border-slate-800 text-center"
                     onClick={(e) => e.stopPropagation()}
                   >
                     <input
@@ -551,7 +551,7 @@ export function TransactionTable({
                         else next.add(tx.id);
                         setSelectedTxIds(next);
                       }}
-                      className="rounded border-slate-300 bg-white"
+                      className="rounded border-slate-300 bg-white dark:bg-slate-900"
                     />
                   </td>
                   {headers
@@ -577,7 +577,7 @@ export function TransactionTable({
                       return (
                         <td
                           key={header}
-                          className={`px-6 py-4 border-b border-slate-100 ${cellClass} cursor-pointer`}
+                          className={`px-6 py-4 border-b border-slate-100 dark:border-slate-800 ${cellClass} cursor-pointer`}
                           onClick={(e) => {
                             if (isCategory || isSubcategory) {
                               e.stopPropagation();
@@ -591,7 +591,9 @@ export function TransactionTable({
                           {isAmount ? (
                             <span
                               className={
-                                tx._isExpense ? 'text-slate-900' : 'text-emerald-600 font-bold'
+                                tx._isExpense
+                                  ? 'text-slate-900 dark:text-slate-100'
+                                  : 'text-emerald-600 font-bold'
                               }
                             >
                               $
@@ -603,7 +605,9 @@ export function TransactionTable({
                           ) : isMatched ? (
                             <span
                               className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                                val ? 'bg-green-100 text-green-800' : 'bg-slate-100 text-slate-800'
+                                val
+                                  ? 'bg-green-100 text-green-800'
+                                  : 'bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200'
                               }`}
                             >
                               {val ? 'Matched' : 'Unmatched'}
@@ -636,7 +640,7 @@ export function TransactionTable({
               ))}
             </tbody>
             {showTxTotals && (
-              <tfoot className="bg-slate-50 font-bold border-t-2 border-slate-200 sticky bottom-0 z-20">
+              <tfoot className="bg-slate-50 dark:bg-slate-950 font-bold border-t-2 border-slate-200 dark:border-slate-700 sticky bottom-0 z-20">
                 <tr>
                   {headers
                     .filter((h) => !/year|month|notes/i.test(h))
@@ -646,7 +650,7 @@ export function TransactionTable({
                         return (
                           <td
                             key={header}
-                            className="px-6 py-4 border-t border-slate-200"
+                            className="px-6 py-4 border-t border-slate-200 dark:border-slate-700"
                             colSpan={2}
                           >
                             TOTAL ({filteredAndSortedTransactions.length})
@@ -662,7 +666,7 @@ export function TransactionTable({
                         return (
                           <td
                             key={header}
-                            className={`px-6 py-4 border-t border-slate-200 text-right font-mono ${total < 0 ? 'text-slate-900' : 'text-emerald-600'}`}
+                            className={`px-6 py-4 border-t border-slate-200 dark:border-slate-700 text-right font-mono ${total < 0 ? 'text-slate-900 dark:text-slate-100' : 'text-emerald-600'}`}
                           >
                             $
                             {Math.abs(total).toLocaleString(undefined, {
@@ -672,7 +676,12 @@ export function TransactionTable({
                           </td>
                         );
                       }
-                      return <td key={header} className="px-6 py-4 border-t border-slate-200"></td>;
+                      return (
+                        <td
+                          key={header}
+                          className="px-6 py-4 border-t border-slate-200 dark:border-slate-700"
+                        ></td>
+                      );
                     })}
                 </tr>
               </tfoot>

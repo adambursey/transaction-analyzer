@@ -471,10 +471,14 @@ export function ReviewQueue({
                   ) : (
                     <>
                       <td className="p-3 text-blue-400 font-medium">
-                        {tx.Category || <span className="text-slate-500 italic">None</span>}
+                        {tx.Category || (
+                          <span className="text-slate-500 dark:text-slate-400 italic">None</span>
+                        )}
                       </td>
                       <td className="p-3 text-sky-400 font-medium">
-                        {tx.Subcategory || <span className="text-slate-500 italic">None</span>}
+                        {tx.Subcategory || (
+                          <span className="text-slate-500 dark:text-slate-400 italic">None</span>
+                        )}
                       </td>
                       <td className="p-3 flex gap-2 justify-center">
                         <button
@@ -505,7 +509,9 @@ export function ReviewQueue({
           </tbody>
         </table>
         {filteredAndSorted.length === 0 && (
-          <div className="text-center py-8 text-slate-500">No transactions match the filter.</div>
+          <div className="text-center py-8 text-slate-500 dark:text-slate-400">
+            No transactions match the filter.
+          </div>
         )}
       </div>
     </div>

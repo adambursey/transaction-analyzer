@@ -240,26 +240,28 @@ export function AddRecurringModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
       <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={onClose} />
 
-      <div className="relative bg-slate-50 w-full max-w-6xl max-h-[90vh] rounded-2xl shadow-xl flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
-        <div className="flex items-center justify-between p-6 border-b border-slate-200 bg-white">
+      <div className="relative bg-slate-50 dark:bg-slate-950 w-full max-w-6xl max-h-[90vh] rounded-2xl shadow-xl flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
+        <div className="flex items-center justify-between p-6 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">
           <div>
-            <h2 className="text-xl font-bold text-slate-900">Add Recurring Transaction</h2>
-            <p className="text-sm text-slate-500 mt-1">
+            <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">
+              Add Recurring Transaction
+            </h2>
+            <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
               Define the schedule and select example occurrences.
             </p>
           </div>
           <button
             onClick={onClose}
-            className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-colors"
+            className="p-2 text-slate-400 hover:text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 dark:bg-slate-800 rounded-full transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         <div className="p-6 overflow-y-auto flex-1 flex flex-col gap-6">
-          <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <div className="bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-2">
+              <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
                 Description / Nickname
               </label>
               <input
@@ -267,18 +269,20 @@ export function AddRecurringModal({
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="e.g. Netflix Subscription"
-                className="w-full h-[54px] bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
+                className="w-full h-[54px] bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
               />
             </div>
             <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-2">Frequency</label>
+              <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
+                Frequency
+              </label>
               <select
                 value={frequency}
                 onChange={(e) => {
                   setFrequency(e.target.value);
                   setIsFrequencyTouched(true);
                 }}
-                className="w-full h-[54px] bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
+                className="w-full h-[54px] bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
               >
                 <option value="weekly">Weekly</option>
                 <option value="bi-weekly">Bi-weekly</option>
@@ -289,7 +293,7 @@ export function AddRecurringModal({
               </select>
             </div>
             <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-2">
+              <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
                 Projected Schedule
               </label>
               <input
@@ -297,11 +301,11 @@ export function AddRecurringModal({
                 value={projectedOccurrence}
                 onChange={(e) => setProjectedOccurrence(e.target.value)}
                 placeholder="Auto-calculates..."
-                className="w-full h-[54px] bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
+                className="w-full h-[54px] bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
               />
             </div>
             <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-2">
+              <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
                 Instances per Period
               </label>
               <input
@@ -309,13 +313,13 @@ export function AddRecurringModal({
                 min="1"
                 value={instancesPerPeriod}
                 onChange={(e) => setInstancesPerPeriod(Math.max(1, parseInt(e.target.value) || 1))}
-                className="w-full h-[54px] bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
+                className="w-full h-[54px] bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
               />
             </div>
           </div>
 
           <div className="flex-1 min-h-[400px]">
-            <h3 className="text-lg font-semibold text-slate-800 mb-4">
+            <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-200 mb-4">
               Select Example Transactions
             </h3>
             {analysis ? (
@@ -343,23 +347,25 @@ export function AddRecurringModal({
                 }}
               />
             ) : (
-              <div className="flex items-center justify-center h-48 bg-white rounded-xl border border-slate-200">
+              <div className="flex items-center justify-center h-48 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700">
                 <Loader2 className="w-8 h-8 animate-spin text-slate-300" />
               </div>
             )}
           </div>
         </div>
 
-        <div className="p-6 border-t border-slate-200 bg-white flex items-center justify-between mt-auto shrink-0">
-          <div className="flex items-center gap-2 text-sm text-slate-600 bg-slate-50 px-4 py-2 rounded-lg border border-slate-200">
+        <div className="p-6 border-t border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 flex items-center justify-between mt-auto shrink-0">
+          <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-950 px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-700">
             <Calculator className="w-4 h-4 text-blue-500" />
-            <span className="font-semibold text-slate-900">{selectedTxIds.size}</span> selected
-            examples
+            <span className="font-semibold text-slate-900 dark:text-slate-100">
+              {selectedTxIds.size}
+            </span>{' '}
+            selected examples
           </div>
           <div className="flex items-center gap-3">
             <button
               onClick={onClose}
-              className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors"
+              className="px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 dark:bg-slate-800 rounded-lg transition-colors"
             >
               Cancel
             </button>

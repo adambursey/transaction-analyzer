@@ -1,6 +1,9 @@
 const fs = require('fs');
 const Papa = require('papaparse');
-const csvContent = fs.readFileSync('/Users/adambursey/Documents/local repository/transaction-analyzer/csv/Chase4765_Activity_20260703.csv', 'utf8');
+const csvContent = fs.readFileSync(
+  '/Users/adambursey/Documents/local repository/transaction-analyzer/csv/Chase4765_Activity_20260703.csv',
+  'utf8'
+);
 const parsed = Papa.parse(csvContent, { header: true, skipEmptyLines: true });
 const tx = parsed.data[10]; // PayPal Instacart
 console.log(tx);
@@ -14,7 +17,10 @@ function generateSignature(transaction) {
       dateStr = `${parts[2]}-${parts[0].padStart(2, '0')}-${parts[1].padStart(2, '0')}`;
     }
   }
-  const desc = String(transaction.Description || '').trim().replace(/\s+/g, ' ').toLowerCase();
+  const desc = String(transaction.Description || '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toLowerCase();
   let parsedAmount = 0;
   if (typeof transaction.Amount === 'string') {
     parsedAmount = Number(transaction.Amount.replace(/[^0-9.-]+/g, ''));

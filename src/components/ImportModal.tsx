@@ -287,7 +287,9 @@ export function ImportModal({
               <span className="text-slate-300 font-medium">
                 {file ? file.name : 'Click to select a CSV file'}
               </span>
-              <span className="text-slate-500 text-sm">Chase format supported</span>
+              <span className="text-slate-500 dark:text-slate-400 text-sm">
+                Chase format supported
+              </span>
             </label>
           </div>
 

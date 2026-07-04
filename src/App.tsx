@@ -45,6 +45,8 @@ import {
   ArrowUpRight,
   Scale,
   CalendarDays,
+  Moon,
+  Sun,
 } from 'lucide-react';
 import { format, isValid, parse } from 'date-fns';
 import { getUnmatchedRecurringInstances } from './utils/projectionLogic';
@@ -104,6 +106,21 @@ const getCategoryColor = (categoryName: string) => {
  * and performs data aggregation and analysis for dashboard metrics.
  */
 export default function App() {
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    const saved = localStorage.getItem('theme');
+    if (saved === 'light' || saved === 'dark') return saved;
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  });
+
+  useEffect(() => {
+    if (theme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+    localStorage.setItem('theme', theme);
+  }, [theme]);
+
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1178,7 +1195,7 @@ export default function App() {
 
   if (isAuthenticated === null) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
       </div>
     );
@@ -1186,21 +1203,23 @@ export default function App() {
 
   if (!isAuthenticated) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 p-4">
-        <div className="max-w-md w-full bg-white rounded-2xl shadow-xl overflow-hidden">
+      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-950 p-4">
+        <div className="max-w-md w-full bg-white dark:bg-slate-900 rounded-2xl shadow-xl overflow-hidden">
           <div className="p-8 text-center">
             <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-6">
               <FileSpreadsheet className="w-8 h-8 text-blue-600" />
             </div>
-            <h1 className="text-2xl font-bold text-slate-900 mb-2">Our Money</h1>
-            <p className="text-slate-500 mb-8">
+            <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100 mb-2">
+              Our Money
+            </h1>
+            <p className="text-slate-500 dark:text-slate-400 mb-8">
               Connect your Google account to analyze and visualize your Google Sheets transaction
               data.
             </p>
 
             <button
               onClick={handleLogin}
-              className="w-full flex items-center justify-center gap-3 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-medium py-3 px-4 rounded-xl transition-colors"
+              className="w-full flex items-center justify-center gap-3 bg-white dark:bg-slate-900 border border-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/50 dark:bg-slate-950 text-slate-700 dark:text-slate-300 font-medium py-3 px-4 rounded-xl transition-colors"
             >
               <svg className="w-5 h-5" viewBox="0 0 24 24">
                 <path
@@ -1224,16 +1243,16 @@ export default function App() {
               Sign in with Google
             </button>
           </div>
-          <div className="bg-slate-50 p-6 border-t border-slate-100">
-            <h3 className="text-sm font-semibold text-slate-700 mb-2 flex items-center gap-2">
+          <div className="bg-slate-50 dark:bg-slate-950 p-6 border-t border-slate-100 dark:border-slate-800">
+            <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2 flex items-center gap-2">
               <Settings className="w-4 h-4" /> Setup Required
             </h3>
-            <ol className="text-xs text-slate-600 space-y-2 list-decimal list-inside">
+            <ol className="text-xs text-slate-600 dark:text-slate-400 space-y-2 list-decimal list-inside">
               <li>Open Google Cloud Console</li>
               <li>Create OAuth 2.0 Client ID</li>
               <li>
                 Add authorized redirect URI: <br />
-                <code className="bg-slate-200 px-1 py-0.5 rounded text-slate-800 break-all">
+                <code className="bg-slate-200 dark:bg-slate-700 px-1 py-0.5 rounded text-slate-800 dark:text-slate-200 break-all">
                   {window.location.origin}/auth/callback
                 </code>
               </li>
@@ -1245,17 +1264,24 @@ export default function App() {
     );
   }
 
+  const expensesBudgetAnalysis =
+    analysis?.budgetAnalysis?.filter(
+      (r: any) => r.name !== 'Reconciliation Adjustment' && r.name !== 'Reconciliation Discrepancy'
+    ) || [];
+
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans">
       {/* Header */}
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-50">
+      <header className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-8">
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
                 <Activity className="w-5 h-5 text-white" />
               </div>
-              <h1 className="text-xl font-bold tracking-tight text-slate-900">Our Money</h1>
+              <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
+                Our Money
+              </h1>
             </div>
 
             {analysis && (
@@ -1265,7 +1291,7 @@ export default function App() {
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${
                     currentView === 'dashboard'
                       ? 'bg-blue-50 text-blue-600'
-                      : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50'
+                      : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800/50 dark:bg-slate-950'
                   }`}
                 >
                   <LayoutDashboard className="w-4 h-4" />
@@ -1276,7 +1302,7 @@ export default function App() {
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${
                     currentView === 'this_month'
                       ? 'bg-blue-50 text-blue-600'
-                      : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50'
+                      : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800/50 dark:bg-slate-950'
                   }`}
                 >
                   <CalendarDays className="w-4 h-4" />
@@ -1287,7 +1313,7 @@ export default function App() {
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${
                     currentView === 'transactions'
                       ? 'bg-blue-50 text-blue-600'
-                      : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50'
+                      : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800/50 dark:bg-slate-950'
                   }`}
                 >
                   <List className="w-4 h-4" />
@@ -1298,7 +1324,7 @@ export default function App() {
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${
                     currentView === 'budget'
                       ? 'bg-blue-50 text-blue-600'
-                      : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50'
+                      : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800/50 dark:bg-slate-950'
                   }`}
                 >
                   <Wallet className="w-4 h-4" />
@@ -1309,7 +1335,7 @@ export default function App() {
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${
                     currentView === 'categories'
                       ? 'bg-blue-50 text-blue-600'
-                      : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50'
+                      : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800/50 dark:bg-slate-950'
                   }`}
                 >
                   <FolderTree className="w-4 h-4" />
@@ -1320,7 +1346,7 @@ export default function App() {
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${
                     currentView === 'admin'
                       ? 'bg-blue-50 text-blue-600'
-                      : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50'
+                      : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800/50 dark:bg-slate-950'
                   }`}
                 >
                   <Settings className="w-4 h-4" />
@@ -1340,8 +1366,15 @@ export default function App() {
               </button>
             )}
             <button
+              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+              className="p-1.5 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white dark:text-slate-100 transition-colors"
+              aria-label="Toggle dark mode"
+            >
+              {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+            </button>
+            <button
               onClick={handleLogout}
-              className="flex items-center gap-2 text-sm font-medium text-slate-500 hover:text-slate-900 transition-colors"
+              className="flex items-center gap-2 text-sm font-medium text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white dark:text-slate-100 transition-colors"
             >
               <LogOut className="w-4 h-4" />
               <span className="hidden sm:inline">Sign Out</span>
@@ -1387,7 +1420,7 @@ export default function App() {
         )}
 
         {loading && !analysis && (
-          <div className="flex flex-col items-center justify-center py-20 text-slate-500">
+          <div className="flex flex-col items-center justify-center py-20 text-slate-500 dark:text-slate-400">
             <RefreshCw className="w-8 h-8 animate-spin mb-4 text-blue-600" />
             <p>Analyzing your spreadsheet...</p>
           </div>
@@ -1447,15 +1480,17 @@ export default function App() {
         {analysis && currentView === 'dashboard' && (
           <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
             {/* Filter Bar */}
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
               <div>
-                <h2 className="text-lg font-bold text-slate-900">Financial Overview</h2>
+                <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">
+                  Financial Overview
+                </h2>
               </div>
               <div className="flex items-center gap-4">
                 <div className="flex items-center gap-2">
                   <label
                     htmlFor="account-select-dashboard"
-                    className="text-sm font-medium text-slate-700"
+                    className="text-sm font-medium text-slate-700 dark:text-slate-300"
                   >
                     Account:
                   </label>
@@ -1463,7 +1498,7 @@ export default function App() {
                     id="account-select-dashboard"
                     value={selectedAccount}
                     onChange={(e) => setSelectedAccount(e.target.value as any)}
-                    className="bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2 transition-all hover:bg-white"
+                    className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2 transition-all hover:bg-white dark:bg-slate-900"
                   >
                     <option value="All">All Accounts</option>
                     <option value="Checking">Checking</option>
@@ -1473,7 +1508,7 @@ export default function App() {
                 <div className="flex items-center gap-2">
                   <label
                     htmlFor="year-select-dashboard"
-                    className="text-sm font-medium text-slate-700"
+                    className="text-sm font-medium text-slate-700 dark:text-slate-300"
                   >
                     Year:
                   </label>
@@ -1484,7 +1519,7 @@ export default function App() {
                       setSelectedYear(e.target.value);
                       setSelectedMonth('All Months');
                     }}
-                    className="bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2 transition-all hover:bg-white"
+                    className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2 transition-all hover:bg-white dark:bg-slate-900"
                   >
                     <option value="All">All</option>
                     {availableYears.map((year) => (
@@ -1497,7 +1532,7 @@ export default function App() {
                 <div className="flex items-center gap-2">
                   <label
                     htmlFor="month-select-dashboard"
-                    className="text-sm font-medium text-slate-700"
+                    className="text-sm font-medium text-slate-700 dark:text-slate-300"
                   >
                     Month:
                   </label>
@@ -1505,7 +1540,7 @@ export default function App() {
                     id="month-select-dashboard"
                     value={selectedMonth}
                     onChange={(e) => setSelectedMonth(e.target.value)}
-                    className="bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2 transition-all hover:bg-white"
+                    className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2 transition-all hover:bg-white dark:bg-slate-900"
                   >
                     <option value="All Months">All</option>
                     {analysis.sortedMonths.map((month) => (
@@ -1520,14 +1555,16 @@ export default function App() {
 
             {/* KPI Cards */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+              <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
                 <div className="flex items-center gap-4">
                   <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
                     <Wallet className="w-6 h-6 text-blue-600" />
                   </div>
                   <div>
-                    <p className="text-sm font-medium text-slate-500">Current Balance</p>
-                    <p className="text-2xl font-bold text-slate-900 whitespace-nowrap">
+                    <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
+                      Current Balance
+                    </p>
+                    <p className="text-2xl font-bold text-slate-900 dark:text-slate-100 whitespace-nowrap">
                       {analysis.currentBalance !== null ? (
                         `$${analysis.currentBalance.toLocaleString(undefined, {
                           minimumFractionDigits: 2,
@@ -1541,14 +1578,16 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+              <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
                 <div className="flex items-center gap-4">
                   <div className="w-12 h-12 bg-emerald-100 rounded-full flex items-center justify-center">
                     <TrendingUp className="w-6 h-6 text-emerald-600" />
                   </div>
                   <div>
-                    <p className="text-sm font-medium text-slate-500">Total Income</p>
-                    <p className="text-2xl font-bold text-slate-900 whitespace-nowrap">
+                    <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
+                      Total Income
+                    </p>
+                    <p className="text-2xl font-bold text-slate-900 dark:text-slate-100 whitespace-nowrap">
                       $
                       {analysis.totalIncome.toLocaleString(undefined, {
                         minimumFractionDigits: 2,
@@ -1559,14 +1598,16 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+              <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
                 <div className="flex items-center gap-4">
                   <div className="w-12 h-12 bg-rose-100 rounded-full flex items-center justify-center">
                     <TrendingDown className="w-6 h-6 text-rose-600" />
                   </div>
                   <div>
-                    <p className="text-sm font-medium text-slate-500">Total Expenses</p>
-                    <p className="text-2xl font-bold text-slate-900 whitespace-nowrap">
+                    <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
+                      Total Expenses
+                    </p>
+                    <p className="text-2xl font-bold text-slate-900 dark:text-slate-100 whitespace-nowrap">
                       $
                       {analysis.totalExpense.toLocaleString(undefined, {
                         minimumFractionDigits: 2,
@@ -1577,13 +1618,15 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+              <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
                 <div className="flex items-center gap-4">
                   <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
                     <DollarSign className="w-6 h-6 text-blue-600" />
                   </div>
                   <div>
-                    <p className="text-sm font-medium text-slate-500">Net Cash Flow</p>
+                    <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
+                      Net Cash Flow
+                    </p>
                     <p
                       className={`text-2xl font-bold whitespace-nowrap ${analysis.net >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}
                     >
@@ -1601,12 +1644,12 @@ export default function App() {
             {/* Charts */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* Category Breakdown */}
-              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+              <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
                 <div
-                  className={`p-6 flex items-center justify-between cursor-pointer hover:bg-slate-50 transition-colors ${isTopExpensesExpanded ? 'border-b border-slate-100' : ''}`}
+                  className={`p-6 flex items-center justify-between cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50 dark:bg-slate-950 transition-colors ${isTopExpensesExpanded ? 'border-b border-slate-100 dark:border-slate-800' : ''}`}
                   onClick={() => setIsTopExpensesExpanded(!isTopExpensesExpanded)}
                 >
-                  <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                  <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
                     <PieChartIcon className="w-5 h-5 text-slate-400" />
                     Top Expenses by Category
                   </h3>
@@ -1663,7 +1706,7 @@ export default function App() {
                       {analysis.categoryChartData.map((item: any) => (
                         <div
                           key={item.name}
-                          className="flex items-center justify-between text-sm cursor-pointer hover:bg-slate-50 p-1 rounded transition-all"
+                          className="flex items-center justify-between text-sm cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50 dark:bg-slate-950 p-1 rounded transition-all"
                           style={{
                             opacity:
                               hoveredCategory === null || hoveredCategory === item.name ? 1 : 0.3,
@@ -1678,7 +1721,7 @@ export default function App() {
                               style={{ backgroundColor: getCategoryColor(item.name) || '#cbd5e1' }}
                             />
                             <span
-                              className="text-slate-600 font-medium truncate max-w-[150px]"
+                              className="text-slate-600 dark:text-slate-400 font-medium truncate max-w-[150px]"
                               title={item.name}
                             >
                               {item.name}
@@ -1691,7 +1734,7 @@ export default function App() {
                                 : '0.0'}
                               %
                             </span>
-                            <span className="font-semibold text-slate-900">
+                            <span className="font-semibold text-slate-900 dark:text-slate-100">
                               $
                               {item.value.toLocaleString(undefined, {
                                 minimumFractionDigits: 2,
@@ -1707,9 +1750,9 @@ export default function App() {
               </div>
 
               {/* Balance History Chart */}
-              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-                <div className="p-6 flex items-center justify-between border-b border-slate-100">
-                  <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+              <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
+                <div className="p-6 flex items-center justify-between border-b border-slate-100 dark:border-slate-800">
+                  <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
                     <Activity className="w-5 h-5 text-slate-400" />
                     Account Balance History
                   </h3>
@@ -1799,12 +1842,12 @@ export default function App() {
             </div>
 
             {/* Category Table */}
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+            <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
               <div
-                className="p-6 flex items-center justify-between cursor-pointer border-b border-slate-100"
+                className="p-6 flex items-center justify-between cursor-pointer border-b border-slate-100 dark:border-slate-800"
                 onClick={() => setIsCategoryTableExpanded(!isCategoryTableExpanded)}
               >
-                <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
                   <LayoutList className="w-5 h-5 text-slate-400" />
                   All Expenses by Category
                 </h3>
@@ -1818,9 +1861,9 @@ export default function App() {
                         type="checkbox"
                         checked={showTableTotals}
                         onChange={(e) => setShowTableTotals(e.target.checked)}
-                        className="w-4 h-4 text-blue-600 bg-slate-100 border-slate-300 rounded focus:ring-blue-500 transition-colors"
+                        className="w-4 h-4 text-blue-600 bg-slate-100 dark:bg-slate-800 border-slate-300 rounded focus:ring-blue-500 transition-colors"
                       />
-                      <span className="text-sm font-medium text-slate-600 group-hover:text-slate-900 transition-colors">
+                      <span className="text-sm font-medium text-slate-600 dark:text-slate-400 group-hover:text-slate-900 dark:hover:text-white dark:text-slate-100 transition-colors">
                         Show Totals
                       </span>
                     </label>
@@ -1835,12 +1878,12 @@ export default function App() {
               {isCategoryTableExpanded && (
                 <div className="overflow-x-auto max-h-[600px]">
                   <table className="w-full text-sm text-left border-separate border-spacing-0">
-                    <thead className="text-xs text-slate-500 uppercase bg-slate-50 sticky top-0 z-20">
+                    <thead className="text-xs text-slate-500 dark:text-slate-400 uppercase bg-slate-50 dark:bg-slate-950 sticky top-0 z-20">
                       <tr>
-                        <th className="px-6 py-4 font-semibold sticky left-0 top-0 bg-slate-50 z-30 border-b border-slate-100">
+                        <th className="px-6 py-4 font-semibold sticky left-0 top-0 bg-slate-50 dark:bg-slate-950 z-30 border-b border-slate-100 dark:border-slate-800">
                           Category
                         </th>
-                        <th className="px-6 py-4 font-semibold text-right border-b border-slate-100">
+                        <th className="px-6 py-4 font-semibold text-right border-b border-slate-100 dark:border-slate-800">
                           %
                         </th>
                         {analysis.sortedMonths
@@ -1850,7 +1893,7 @@ export default function App() {
                           .map((month: string) => (
                             <th
                               key={month}
-                              className="px-6 py-4 font-semibold text-right whitespace-nowrap border-b border-slate-100 cursor-pointer hover:bg-slate-100 transition-colors"
+                              className="px-6 py-4 font-semibold text-right whitespace-nowrap border-b border-slate-100 dark:border-slate-800 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 dark:bg-slate-800 transition-colors"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setSelectedMonth(month);
@@ -1860,13 +1903,13 @@ export default function App() {
                             </th>
                           ))}
                         {showTableTotals && selectedMonth === 'All Months' && (
-                          <th className="px-6 py-4 font-semibold text-right whitespace-nowrap bg-slate-50 border-b border-slate-100">
+                          <th className="px-6 py-4 font-semibold text-right whitespace-nowrap bg-slate-50 dark:bg-slate-950 border-b border-slate-100 dark:border-slate-800">
                             {selectedMonth === 'All Months' ? 'Total' : `${selectedMonth} Total`}
                           </th>
                         )}
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100">
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                       {analysis.categoryTableData.map((row: any) => {
                         const dotColor = getCategoryColor(row.name);
                         const isExpanded = expandedCategories.has(row.name);
@@ -1875,10 +1918,10 @@ export default function App() {
                         return (
                           <React.Fragment key={row.name}>
                             <tr
-                              className="hover:bg-slate-50 transition-colors cursor-pointer group"
+                              className="hover:bg-slate-50 dark:hover:bg-slate-800/50 dark:bg-slate-950 transition-colors cursor-pointer group"
                               onClick={() => navigateToTransactions(row.name)}
                             >
-                              <td className="px-6 py-4 font-medium text-slate-900 sticky left-0 bg-white group-hover:bg-slate-50 z-10 border-r border-slate-50 border-b border-slate-100">
+                              <td className="px-6 py-4 font-medium text-slate-900 dark:text-slate-100 sticky left-0 bg-white dark:bg-slate-900 group-hover:bg-slate-50 dark:hover:bg-slate-800/50 dark:bg-slate-950 z-10 border-r border-slate-50 border-b border-slate-100 dark:border-slate-800">
                                 <div className="flex items-center gap-2">
                                   <div className="w-6 flex-shrink-0 flex items-center justify-center">
                                     {hasSubcategories && (
@@ -1891,7 +1934,7 @@ export default function App() {
                                           else newExpanded.add(row.name);
                                           setExpandedCategories(newExpanded);
                                         }}
-                                        className="p-1 hover:bg-slate-100 rounded transition-colors text-slate-400 hover:text-slate-600"
+                                        className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 dark:bg-slate-800 rounded transition-colors text-slate-400 hover:text-slate-600 dark:text-slate-400"
                                       >
                                         {isExpanded ? (
                                           <ChevronUp className="w-4 h-4" />
@@ -1910,7 +1953,7 @@ export default function App() {
                                   {row.name}
                                 </div>
                               </td>
-                              <td className="px-6 py-4 text-right text-slate-400 text-xs font-medium border-b border-slate-100">
+                              <td className="px-6 py-4 text-right text-slate-400 text-xs font-medium border-b border-slate-100 dark:border-slate-800">
                                 {row.percentage.toFixed(1)}%
                               </td>
                               {analysis.sortedMonths
@@ -1921,7 +1964,7 @@ export default function App() {
                                 .map((month: string) => (
                                   <td
                                     key={month}
-                                    className="px-6 py-4 text-right text-slate-600 font-mono border-b border-slate-100"
+                                    className="px-6 py-4 text-right text-slate-600 dark:text-slate-400 font-mono border-b border-slate-100 dark:border-slate-800"
                                   >
                                     {row.monthly[month]
                                       ? `$${row.monthly[month].toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -1929,7 +1972,7 @@ export default function App() {
                                   </td>
                                 ))}
                               {showTableTotals && selectedMonth === 'All Months' && (
-                                <td className="px-6 py-4 text-right font-bold text-slate-900 bg-slate-50/50 font-mono border-b border-slate-100">
+                                <td className="px-6 py-4 text-right font-bold text-slate-900 dark:text-slate-100 bg-slate-50 dark:bg-slate-950/50 font-mono border-b border-slate-100 dark:border-slate-800">
                                   $
                                   {row.total.toLocaleString(undefined, {
                                     minimumFractionDigits: 2,
@@ -1942,13 +1985,13 @@ export default function App() {
                               row.subcategories.map((sub: any) => (
                                 <tr
                                   key={`${row.name}-${sub.name}`}
-                                  className="bg-slate-50/30 text-xs hover:bg-slate-100 transition-colors cursor-pointer group/sub"
+                                  className="bg-slate-50 dark:bg-slate-950/30 text-xs hover:bg-slate-100 dark:hover:bg-slate-800 dark:bg-slate-800 transition-colors cursor-pointer group/sub"
                                   onClick={() => navigateToTransactions(row.name, sub.name)}
                                 >
-                                  <td className="pl-12 pr-6 py-2 text-slate-500 italic sticky left-0 bg-slate-50/30 group-hover/sub:bg-slate-100 z-10 border-r border-slate-50 border-b border-slate-100">
+                                  <td className="pl-12 pr-6 py-2 text-slate-500 dark:text-slate-400 italic sticky left-0 bg-slate-50 dark:bg-slate-950/30 group-hover/sub:bg-slate-100 dark:bg-slate-800 z-10 border-r border-slate-50 border-b border-slate-100 dark:border-slate-800">
                                     {sub.name}
                                   </td>
-                                  <td className="px-6 py-2 text-right text-slate-400 border-b border-slate-100">
+                                  <td className="px-6 py-2 text-right text-slate-400 border-b border-slate-100 dark:border-slate-800">
                                     {((sub.total / row.total) * 100).toFixed(1)}%
                                   </td>
                                   {analysis.sortedMonths
@@ -1959,7 +2002,7 @@ export default function App() {
                                     .map((month: string) => (
                                       <td
                                         key={month}
-                                        className="px-6 py-2 text-right text-slate-400 font-mono border-b border-slate-100"
+                                        className="px-6 py-2 text-right text-slate-400 font-mono border-b border-slate-100 dark:border-slate-800"
                                       >
                                         {sub.monthly[month]
                                           ? `$${sub.monthly[month].toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -1967,7 +2010,7 @@ export default function App() {
                                       </td>
                                     ))}
                                   {showTableTotals && selectedMonth === 'All Months' && (
-                                    <td className="px-6 py-2 text-right font-medium text-slate-500 bg-slate-50/20 font-mono border-b border-slate-100">
+                                    <td className="px-6 py-2 text-right font-medium text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-950/20 font-mono border-b border-slate-100 dark:border-slate-800">
                                       $
                                       {sub.total.toLocaleString(undefined, {
                                         minimumFractionDigits: 2,
@@ -1982,12 +2025,12 @@ export default function App() {
                       })}
                     </tbody>
                     {(showTableTotals || selectedMonth !== 'All Months') && (
-                      <tfoot className="bg-slate-50 font-bold border-t-2 border-slate-200 sticky bottom-0 z-20">
+                      <tfoot className="bg-slate-50 dark:bg-slate-950 font-bold border-t-2 border-slate-200 dark:border-slate-700 sticky bottom-0 z-20">
                         <tr>
-                          <td className="px-6 py-4 sticky left-0 bottom-0 bg-slate-50 z-30 border-t border-slate-200">
+                          <td className="px-6 py-4 sticky left-0 bottom-0 bg-slate-50 dark:bg-slate-950 z-30 border-t border-slate-200 dark:border-slate-700">
                             {selectedMonth === 'All Months' ? 'Total' : `${selectedMonth} Total`}
                           </td>
-                          <td className="px-6 py-4 text-right text-slate-400 text-xs font-bold border-t border-slate-200">
+                          <td className="px-6 py-4 text-right text-slate-400 text-xs font-bold border-t border-slate-200 dark:border-slate-700">
                             100%
                           </td>
                           {analysis.sortedMonths
@@ -2001,7 +2044,7 @@ export default function App() {
                               return (
                                 <td
                                   key={month}
-                                  className="px-6 py-4 text-right font-mono border-t border-slate-200"
+                                  className="px-6 py-4 text-right font-mono border-t border-slate-200 dark:border-slate-700"
                                 >
                                   $
                                   {monthTotal.toLocaleString(undefined, {
@@ -2012,7 +2055,7 @@ export default function App() {
                               );
                             })}
                           {showTableTotals && selectedMonth === 'All Months' && (
-                            <td className="px-6 py-4 text-right font-mono bg-slate-100 border-t border-slate-200">
+                            <td className="px-6 py-4 text-right font-mono bg-slate-100 dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700">
                               $
                               {analysis.totalExpense.toLocaleString(undefined, {
                                 minimumFractionDigits: 2,
@@ -2033,8 +2076,8 @@ export default function App() {
               (analysis.transfersIn > 0 ||
                 analysis.transfersOut > 0 ||
                 analysis.transfersVolume > 0) && (
-                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
-                  <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
+                <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
+                  <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100 mb-4 flex items-center gap-2">
                     <ArrowRightLeft className="w-5 h-5 text-indigo-500" />
                     Internal Money Movement
                   </h3>
@@ -2044,8 +2087,10 @@ export default function App() {
                         <RefreshCw className="w-6 h-6 text-indigo-600" />
                       </div>
                       <div>
-                        <p className="text-sm font-medium text-slate-500">Total Volume Moved</p>
-                        <p className="text-2xl font-bold text-slate-900 whitespace-nowrap">
+                        <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
+                          Total Volume Moved
+                        </p>
+                        <p className="text-2xl font-bold text-slate-900 dark:text-slate-100 whitespace-nowrap">
                           $
                           {(analysis.transfersVolume / 2).toLocaleString(undefined, {
                             minimumFractionDigits: 2,
@@ -2064,8 +2109,10 @@ export default function App() {
                           <ArrowDownLeft className="w-5 h-5 text-emerald-600" />
                         </div>
                         <div>
-                          <p className="text-sm font-medium text-slate-500">Transferred In</p>
-                          <p className="text-xl font-bold text-slate-900 whitespace-nowrap">
+                          <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
+                            Transferred In
+                          </p>
+                          <p className="text-xl font-bold text-slate-900 dark:text-slate-100 whitespace-nowrap">
                             +$
                             {analysis.transfersIn.toLocaleString(undefined, {
                               minimumFractionDigits: 2,
@@ -2079,8 +2126,10 @@ export default function App() {
                           <ArrowUpRight className="w-5 h-5 text-rose-600" />
                         </div>
                         <div>
-                          <p className="text-sm font-medium text-slate-500">Transferred Out</p>
-                          <p className="text-xl font-bold text-slate-900 whitespace-nowrap">
+                          <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
+                            Transferred Out
+                          </p>
+                          <p className="text-xl font-bold text-slate-900 dark:text-slate-100 whitespace-nowrap">
                             -$
                             {analysis.transfersOut.toLocaleString(undefined, {
                               minimumFractionDigits: 2,
@@ -2094,7 +2143,9 @@ export default function App() {
                           <Scale className="w-5 h-5 text-indigo-600" />
                         </div>
                         <div>
-                          <p className="text-sm font-medium text-slate-500">Net Transfer Flow</p>
+                          <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
+                            Net Transfer Flow
+                          </p>
                           <p
                             className={`text-xl font-bold whitespace-nowrap ${analysis.transfersIn - analysis.transfersOut >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}
                           >
@@ -2116,21 +2167,23 @@ export default function App() {
         {analysis && currentView === 'budget' && (
           <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
             {/* Filter Bar */}
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
               <div className="flex items-center gap-3">
                 <button
                   onClick={() => setCurrentView('dashboard')}
-                  className="p-2 hover:bg-slate-100 rounded-lg transition-colors text-slate-500"
+                  className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 dark:bg-slate-800 rounded-lg transition-colors text-slate-500 dark:text-slate-400"
                 >
                   <ArrowLeft className="w-5 h-5" />
                 </button>
-                <h2 className="text-lg font-bold text-slate-900">Budget Analysis</h2>
+                <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">
+                  Budget Analysis
+                </h2>
               </div>
               <div className="flex items-center gap-4">
                 <div className="flex items-center gap-2">
                   <label
                     htmlFor="year-select-budget"
-                    className="text-sm font-medium text-slate-700"
+                    className="text-sm font-medium text-slate-700 dark:text-slate-300"
                   >
                     Year:
                   </label>
@@ -2141,7 +2194,7 @@ export default function App() {
                       setSelectedYear(e.target.value);
                       setSelectedMonth('All Months');
                     }}
-                    className="bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2 transition-all hover:bg-white"
+                    className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2 transition-all hover:bg-white dark:bg-slate-900"
                   >
                     <option value="All">All</option>
                     {availableYears.map((year) => (
@@ -2154,7 +2207,7 @@ export default function App() {
                 <div className="flex items-center gap-2">
                   <label
                     htmlFor="month-select-budget"
-                    className="text-sm font-medium text-slate-700"
+                    className="text-sm font-medium text-slate-700 dark:text-slate-300"
                   >
                     Month:
                   </label>
@@ -2162,7 +2215,7 @@ export default function App() {
                     id="month-select-budget"
                     value={selectedMonth}
                     onChange={(e) => setSelectedMonth(e.target.value)}
-                    className="bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2 transition-all hover:bg-white"
+                    className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2 transition-all hover:bg-white dark:bg-slate-900"
                   >
                     <option value="All Months">All</option>
                     {analysis.sortedMonths.map((month) => (
@@ -2177,7 +2230,7 @@ export default function App() {
                   className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-all text-xs font-bold uppercase tracking-wider ${
                     showBudgetAverage
                       ? 'bg-slate-900 border-slate-900 text-white shadow-sm'
-                      : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                      : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50 dark:bg-slate-950'
                   }`}
                 >
                   <BarChart3 className="w-3.5 h-3.5" />
@@ -2186,15 +2239,15 @@ export default function App() {
               </div>
             </div>
 
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+            <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
               <div
-                className="p-6 border-b border-slate-100 flex items-center justify-between cursor-pointer hover:bg-slate-50 transition-colors"
+                className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50 dark:bg-slate-950 transition-colors"
                 onClick={() => setIsBudgetExpensesExpanded(!isBudgetExpensesExpanded)}
               >
                 <div className="flex items-center gap-3">
                   <TrendingDown className="w-5 h-5 text-red-500" />
                   <div>
-                    <h3 className="text-lg font-bold text-slate-900">
+                    <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100">
                       Expenses: Actual vs. Budgeted{' '}
                       {analysis.periodMonths > 1 && `(${analysis.periodMonths} Months)`}
                     </h3>
@@ -2207,10 +2260,10 @@ export default function App() {
                         <div className="text-[10px] uppercase text-slate-400 font-sans font-bold">
                           Budgeted
                         </div>
-                        <div className="text-slate-900">
+                        <div className="text-slate-900 dark:text-slate-100">
                           $
                           {Math.round(
-                            analysis.budgetAnalysis.reduce(
+                            expensesBudgetAnalysis.reduce(
                               (sum: number, r: any) => sum + r.actual,
                               0
                             )
@@ -2222,10 +2275,10 @@ export default function App() {
                           <div className="text-[10px] uppercase text-slate-400 font-sans font-bold">
                             Average
                           </div>
-                          <div className="text-slate-900">
+                          <div className="text-slate-900 dark:text-slate-100">
                             $
                             {Math.round(
-                              analysis.budgetAnalysis.reduce(
+                              expensesBudgetAnalysis.reduce(
                                 (sum: number, r: any) => sum + r.monthlyAverage,
                                 0
                               )
@@ -2237,10 +2290,10 @@ export default function App() {
                         <div className="text-[10px] uppercase text-slate-400 font-sans font-bold">
                           Budgeted
                         </div>
-                        <div className="text-slate-900">
+                        <div className="text-slate-900 dark:text-slate-100">
                           $
                           {Math.round(
-                            analysis.budgetAnalysis.reduce(
+                            expensesBudgetAnalysis.reduce(
                               (sum: number, r: any) => sum + r.budget,
                               0
                             )
@@ -2253,7 +2306,7 @@ export default function App() {
                         </div>
                         <div
                           className={
-                            analysis.budgetAnalysis.reduce(
+                            expensesBudgetAnalysis.reduce(
                               (sum: number, r: any) => sum + r.diff,
                               0
                             ) > 0
@@ -2262,7 +2315,7 @@ export default function App() {
                           }
                         >
                           {(() => {
-                            const totalDiff = analysis.budgetAnalysis.reduce(
+                            const totalDiff = expensesBudgetAnalysis.reduce(
                               (sum: number, r: any) => sum + r.diff,
                               0
                             );
@@ -2285,38 +2338,41 @@ export default function App() {
               {isBudgetExpensesExpanded && (
                 <div className="overflow-x-auto max-h-[700px] animate-in slide-in-from-top-2 duration-200">
                   <table className="w-full text-sm text-left border-separate border-spacing-0">
-                    <thead className="text-xs text-slate-500 uppercase bg-slate-50 sticky top-0 z-20">
+                    <thead className="text-xs text-slate-500 dark:text-slate-400 uppercase bg-slate-50 dark:bg-slate-950 sticky top-0 z-20">
                       <tr>
-                        <th className="px-6 py-4 font-semibold border-b border-slate-100 sticky top-0 bg-slate-50 z-10">
+                        <th className="px-6 py-4 font-semibold border-b border-slate-100 dark:border-slate-800 sticky top-0 bg-slate-50 dark:bg-slate-950 z-10">
                           Category
                         </th>
-                        <th className="px-6 py-4 font-semibold text-right border-b border-slate-100 sticky top-0 bg-slate-50 z-10">
+                        <th className="px-6 py-4 font-semibold text-right border-b border-slate-100 dark:border-slate-800 sticky top-0 bg-slate-50 dark:bg-slate-950 z-10">
                           Actual
                         </th>
                         {showBudgetAverage && (
-                          <th className="px-6 py-4 font-semibold text-right border-b border-slate-100 sticky top-0 bg-slate-50 z-10">
+                          <th className="px-6 py-4 font-semibold text-right border-b border-slate-100 dark:border-slate-800 sticky top-0 bg-slate-50 dark:bg-slate-950 z-10">
                             Average
                           </th>
                         )}
-                        <th className="px-6 py-4 font-semibold text-right border-b border-slate-100 sticky top-0 bg-slate-50 z-10">
+                        <th className="px-6 py-4 font-semibold text-right border-b border-slate-100 dark:border-slate-800 sticky top-0 bg-slate-50 dark:bg-slate-950 z-10">
                           Budgeted
                         </th>
-                        <th className="px-6 py-4 font-semibold text-right border-b border-slate-100 sticky top-0 bg-slate-50 z-10">
+                        <th className="px-6 py-4 font-semibold text-right border-b border-slate-100 dark:border-slate-800 sticky top-0 bg-slate-50 dark:bg-slate-950 z-10">
                           Difference
                         </th>
-                        <th className="px-6 py-4 font-semibold text-center border-b border-slate-100 sticky top-0 bg-slate-50 z-10">
+                        <th className="px-6 py-4 font-semibold text-center border-b border-slate-100 dark:border-slate-800 sticky top-0 bg-slate-50 dark:bg-slate-950 z-10">
                           Status
                         </th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {analysis.budgetAnalysis.map((row: any) => {
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                      {expensesBudgetAnalysis.map((row: any) => {
                         const isWithinTenDollars = row.budget > 0 && Math.abs(row.diff) < 10;
                         const isOverBudget = row.budget > 0 && row.diff >= 10;
 
                         return (
-                          <tr key={row.name} className="hover:bg-slate-50 transition-colors">
-                            <td className="px-6 py-4 font-medium text-slate-900 border-b border-slate-100">
+                          <tr
+                            key={row.name}
+                            className="hover:bg-slate-50 dark:hover:bg-slate-800/50 dark:bg-slate-950 transition-colors"
+                          >
+                            <td className="px-6 py-4 font-medium text-slate-900 dark:text-slate-100 border-b border-slate-100 dark:border-slate-800">
                               <div className="flex items-center gap-2">
                                 <div
                                   className="w-2 h-2 rounded-full shrink-0"
@@ -2327,16 +2383,16 @@ export default function App() {
                                 {row.name}
                               </div>
                             </td>
-                            <td className="px-6 py-4 text-right text-slate-600 font-mono border-b border-slate-100">
+                            <td className="px-6 py-4 text-right text-slate-600 dark:text-slate-400 font-mono border-b border-slate-100 dark:border-slate-800">
                               ${Math.round(row.actual).toLocaleString()}
                             </td>
                             {showBudgetAverage && (
-                              <td className="px-6 py-4 text-right text-slate-600 font-mono border-b border-slate-100">
+                              <td className="px-6 py-4 text-right text-slate-600 dark:text-slate-400 font-mono border-b border-slate-100 dark:border-slate-800">
                                 ${Math.round(row.monthlyAverage).toLocaleString()}
                               </td>
                             )}
                             <td
-                              className="px-6 py-4 text-right text-slate-600 font-mono border-b border-slate-100 cursor-pointer hover:bg-slate-100 transition-colors group"
+                              className="px-6 py-4 text-right text-slate-600 dark:text-slate-400 font-mono border-b border-slate-100 dark:border-slate-800 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 dark:bg-slate-800 transition-colors group"
                               onClick={() => {
                                 setEditingBudget({
                                   category: row.name,
@@ -2362,10 +2418,10 @@ export default function App() {
                               </div>
                             </td>
                             <td
-                              className={`px-6 py-4 text-right font-mono border-b border-slate-100 ${
+                              className={`px-6 py-4 text-right font-mono border-b border-slate-100 dark:border-slate-800 ${
                                 row.budget > 0
                                   ? isWithinTenDollars
-                                    ? 'text-slate-500'
+                                    ? 'text-slate-500 dark:text-slate-400'
                                     : row.diff > 0
                                       ? 'text-red-600'
                                       : 'text-emerald-600'
@@ -2379,10 +2435,10 @@ export default function App() {
                                     Math.abs(Math.round(row.diff)).toLocaleString()
                                 : '-'}
                             </td>
-                            <td className="px-6 py-4 text-center border-b border-slate-100">
+                            <td className="px-6 py-4 text-center border-b border-slate-100 dark:border-slate-800">
                               {row.budget > 0 ? (
                                 isWithinTenDollars ? (
-                                  <span className="px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-slate-100 text-slate-600">
+                                  <span className="px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
                                     On Budget
                                   </span>
                                 ) : (
@@ -2406,43 +2462,43 @@ export default function App() {
                         );
                       })}
                     </tbody>
-                    <tfoot className="bg-slate-50 font-bold">
+                    <tfoot className="bg-slate-50 dark:bg-slate-950 font-bold">
                       <tr>
-                        <td className="px-6 py-4 text-slate-900 border-t border-slate-200">
+                        <td className="px-6 py-4 text-slate-900 dark:text-slate-100 border-t border-slate-200 dark:border-slate-700">
                           TOTAL
                         </td>
-                        <td className="px-6 py-4 text-right text-slate-900 font-mono border-t border-slate-200">
+                        <td className="px-6 py-4 text-right text-slate-900 dark:text-slate-100 font-mono border-t border-slate-200 dark:border-slate-700">
                           $
                           {Math.round(
-                            analysis.budgetAnalysis.reduce(
+                            expensesBudgetAnalysis.reduce(
                               (sum: number, r: any) => sum + r.actual,
                               0
                             )
                           ).toLocaleString()}
                         </td>
                         {showBudgetAverage && (
-                          <td className="px-6 py-4 text-right text-slate-900 font-mono border-t border-slate-200">
+                          <td className="px-6 py-4 text-right text-slate-900 dark:text-slate-100 font-mono border-t border-slate-200 dark:border-slate-700">
                             $
                             {Math.round(
-                              analysis.budgetAnalysis.reduce(
+                              expensesBudgetAnalysis.reduce(
                                 (sum: number, r: any) => sum + r.monthlyAverage,
                                 0
                               )
                             ).toLocaleString()}
                           </td>
                         )}
-                        <td className="px-6 py-4 text-right text-slate-900 font-mono border-t border-slate-200">
+                        <td className="px-6 py-4 text-right text-slate-900 dark:text-slate-100 font-mono border-t border-slate-200 dark:border-slate-700">
                           $
                           {Math.round(
-                            analysis.budgetAnalysis.reduce(
+                            expensesBudgetAnalysis.reduce(
                               (sum: number, r: any) => sum + r.budget,
                               0
                             )
                           ).toLocaleString()}
                         </td>
                         <td
-                          className={`px-6 py-4 text-right font-mono border-t border-slate-200 ${
-                            analysis.budgetAnalysis.reduce(
+                          className={`px-6 py-4 text-right font-mono border-t border-slate-200 dark:border-slate-700 ${
+                            expensesBudgetAnalysis.reduce(
                               (sum: number, r: any) => sum + r.diff,
                               0
                             ) > 0
@@ -2451,7 +2507,7 @@ export default function App() {
                           }`}
                         >
                           {(() => {
-                            const totalDiff = analysis.budgetAnalysis.reduce(
+                            const totalDiff = expensesBudgetAnalysis.reduce(
                               (sum: number, r: any) => sum + r.diff,
                               0
                             );
@@ -2461,7 +2517,7 @@ export default function App() {
                             );
                           })()}
                         </td>
-                        <td className="px-6 py-4 border-t border-slate-200"></td>
+                        <td className="px-6 py-4 border-t border-slate-200 dark:border-slate-700"></td>
                       </tr>
                     </tfoot>
                   </table>
@@ -2469,15 +2525,15 @@ export default function App() {
               )}
             </div>
 
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+            <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
               <div
-                className="p-6 border-b border-slate-100 flex items-center justify-between cursor-pointer hover:bg-slate-50 transition-colors"
+                className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50 dark:bg-slate-950 transition-colors"
                 onClick={() => setIsBudgetIncomeExpanded(!isBudgetIncomeExpanded)}
               >
                 <div className="flex items-center gap-3">
                   <TrendingUp className="w-5 h-5 text-emerald-500" />
                   <div>
-                    <h3 className="text-lg font-bold text-slate-900">
+                    <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100">
                       Income: Actual vs. Budgeted{' '}
                       {analysis.periodMonths > 1 && `(${analysis.periodMonths} Months)`}
                     </h3>
@@ -2490,7 +2546,7 @@ export default function App() {
                         <div className="text-[10px] uppercase text-slate-400 font-sans font-bold">
                           Actual
                         </div>
-                        <div className="text-slate-900">
+                        <div className="text-slate-900 dark:text-slate-100">
                           $
                           {Math.round(
                             analysis.incomeAnalysis.reduce(
@@ -2505,7 +2561,7 @@ export default function App() {
                           <div className="text-[10px] uppercase text-slate-400 font-sans font-bold">
                             Average
                           </div>
-                          <div className="text-slate-900">
+                          <div className="text-slate-900 dark:text-slate-100">
                             $
                             {Math.round(
                               analysis.incomeAnalysis.reduce(
@@ -2520,7 +2576,7 @@ export default function App() {
                         <div className="text-[10px] uppercase text-slate-400 font-sans font-bold">
                           Budgeted
                         </div>
-                        <div className="text-slate-900">
+                        <div className="text-slate-900 dark:text-slate-100">
                           $
                           {Math.round(
                             analysis.incomeAnalysis.reduce(
@@ -2568,38 +2624,41 @@ export default function App() {
               {isBudgetIncomeExpanded && (
                 <div className="overflow-x-auto max-h-[700px] animate-in slide-in-from-top-2 duration-200">
                   <table className="w-full text-sm text-left border-separate border-spacing-0">
-                    <thead className="text-xs text-slate-500 uppercase bg-slate-50 sticky top-0 z-20">
+                    <thead className="text-xs text-slate-500 dark:text-slate-400 uppercase bg-slate-50 dark:bg-slate-950 sticky top-0 z-20">
                       <tr>
-                        <th className="px-6 py-4 font-semibold border-b border-slate-100 sticky top-0 bg-slate-50 z-10">
+                        <th className="px-6 py-4 font-semibold border-b border-slate-100 dark:border-slate-800 sticky top-0 bg-slate-50 dark:bg-slate-950 z-10">
                           Category
                         </th>
-                        <th className="px-6 py-4 font-semibold text-right border-b border-slate-100 sticky top-0 bg-slate-50 z-10">
+                        <th className="px-6 py-4 font-semibold text-right border-b border-slate-100 dark:border-slate-800 sticky top-0 bg-slate-50 dark:bg-slate-950 z-10">
                           Actual
                         </th>
                         {showBudgetAverage && (
-                          <th className="px-6 py-4 font-semibold text-right border-b border-slate-100 sticky top-0 bg-slate-50 z-10">
+                          <th className="px-6 py-4 font-semibold text-right border-b border-slate-100 dark:border-slate-800 sticky top-0 bg-slate-50 dark:bg-slate-950 z-10">
                             Average
                           </th>
                         )}
-                        <th className="px-6 py-4 font-semibold text-right border-b border-slate-100 sticky top-0 bg-slate-50 z-10">
+                        <th className="px-6 py-4 font-semibold text-right border-b border-slate-100 dark:border-slate-800 sticky top-0 bg-slate-50 dark:bg-slate-950 z-10">
                           Budgeted
                         </th>
-                        <th className="px-6 py-4 font-semibold text-right border-b border-slate-100 sticky top-0 bg-slate-50 z-10">
+                        <th className="px-6 py-4 font-semibold text-right border-b border-slate-100 dark:border-slate-800 sticky top-0 bg-slate-50 dark:bg-slate-950 z-10">
                           Difference
                         </th>
-                        <th className="px-6 py-4 font-semibold text-center border-b border-slate-100 sticky top-0 bg-slate-50 z-10">
+                        <th className="px-6 py-4 font-semibold text-center border-b border-slate-100 dark:border-slate-800 sticky top-0 bg-slate-50 dark:bg-slate-950 z-10">
                           Status
                         </th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100">
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                       {analysis.incomeAnalysis.map((row: any) => {
                         const isWithinTenDollars = row.budget > 0 && Math.abs(row.diff) < 10;
                         const isOverBudget = row.budget > 0 && row.diff >= 10; // Earned more
 
                         return (
-                          <tr key={row.name} className="hover:bg-slate-50 transition-colors">
-                            <td className="px-6 py-4 font-medium text-slate-900 border-b border-slate-100">
+                          <tr
+                            key={row.name}
+                            className="hover:bg-slate-50 dark:hover:bg-slate-800/50 dark:bg-slate-950 transition-colors"
+                          >
+                            <td className="px-6 py-4 font-medium text-slate-900 dark:text-slate-100 border-b border-slate-100 dark:border-slate-800">
                               <div className="flex items-center gap-2">
                                 <div
                                   className="w-2 h-2 rounded-full shrink-0"
@@ -2610,16 +2669,16 @@ export default function App() {
                                 {row.name}
                               </div>
                             </td>
-                            <td className="px-6 py-4 text-right text-slate-600 font-mono border-b border-slate-100">
+                            <td className="px-6 py-4 text-right text-slate-600 dark:text-slate-400 font-mono border-b border-slate-100 dark:border-slate-800">
                               ${Math.round(row.actual).toLocaleString()}
                             </td>
                             {showBudgetAverage && (
-                              <td className="px-6 py-4 text-right text-slate-600 font-mono border-b border-slate-100">
+                              <td className="px-6 py-4 text-right text-slate-600 dark:text-slate-400 font-mono border-b border-slate-100 dark:border-slate-800">
                                 ${Math.round(row.monthlyAverage).toLocaleString()}
                               </td>
                             )}
                             <td
-                              className="px-6 py-4 text-right text-slate-600 font-mono border-b border-slate-100 cursor-pointer hover:bg-slate-100 transition-colors group"
+                              className="px-6 py-4 text-right text-slate-600 dark:text-slate-400 font-mono border-b border-slate-100 dark:border-slate-800 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 dark:bg-slate-800 transition-colors group"
                               onClick={() => {
                                 setEditingBudget({
                                   category: row.name,
@@ -2645,10 +2704,10 @@ export default function App() {
                               </div>
                             </td>
                             <td
-                              className={`px-6 py-4 text-right font-mono border-b border-slate-100 ${
+                              className={`px-6 py-4 text-right font-mono border-b border-slate-100 dark:border-slate-800 ${
                                 row.budget > 0
                                   ? isWithinTenDollars
-                                    ? 'text-slate-500'
+                                    ? 'text-slate-500 dark:text-slate-400'
                                     : row.diff > 0
                                       ? 'text-emerald-600'
                                       : 'text-red-600'
@@ -2662,10 +2721,10 @@ export default function App() {
                                     Math.abs(Math.round(row.diff)).toLocaleString()
                                 : '-'}
                             </td>
-                            <td className="px-6 py-4 text-center border-b border-slate-100">
+                            <td className="px-6 py-4 text-center border-b border-slate-100 dark:border-slate-800">
                               {row.budget > 0 ? (
                                 isWithinTenDollars ? (
-                                  <span className="px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-slate-100 text-slate-600">
+                                  <span className="px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
                                     On Budget
                                   </span>
                                 ) : (
@@ -2689,12 +2748,12 @@ export default function App() {
                         );
                       })}
                     </tbody>
-                    <tfoot className="bg-slate-50 font-bold">
+                    <tfoot className="bg-slate-50 dark:bg-slate-950 font-bold">
                       <tr>
-                        <td className="px-6 py-4 text-slate-900 border-t border-slate-200">
+                        <td className="px-6 py-4 text-slate-900 dark:text-slate-100 border-t border-slate-200 dark:border-slate-700">
                           TOTAL
                         </td>
-                        <td className="px-6 py-4 text-right text-slate-900 font-mono border-t border-slate-200">
+                        <td className="px-6 py-4 text-right text-slate-900 dark:text-slate-100 font-mono border-t border-slate-200 dark:border-slate-700">
                           $
                           {Math.round(
                             analysis.incomeAnalysis.reduce(
@@ -2704,7 +2763,7 @@ export default function App() {
                           ).toLocaleString()}
                         </td>
                         {showBudgetAverage && (
-                          <td className="px-6 py-4 text-right text-slate-900 font-mono border-t border-slate-200">
+                          <td className="px-6 py-4 text-right text-slate-900 dark:text-slate-100 font-mono border-t border-slate-200 dark:border-slate-700">
                             $
                             {Math.round(
                               analysis.incomeAnalysis.reduce(
@@ -2714,7 +2773,7 @@ export default function App() {
                             ).toLocaleString()}
                           </td>
                         )}
-                        <td className="px-6 py-4 text-right text-slate-900 font-mono border-t border-slate-200">
+                        <td className="px-6 py-4 text-right text-slate-900 dark:text-slate-100 font-mono border-t border-slate-200 dark:border-slate-700">
                           $
                           {Math.round(
                             analysis.incomeAnalysis.reduce(
@@ -2724,7 +2783,7 @@ export default function App() {
                           ).toLocaleString()}
                         </td>
                         <td
-                          className={`px-6 py-4 text-right font-mono border-t border-slate-200 ${
+                          className={`px-6 py-4 text-right font-mono border-t border-slate-200 dark:border-slate-700 ${
                             analysis.incomeAnalysis.reduce(
                               (sum: number, r: any) => sum + r.diff,
                               0
@@ -2744,7 +2803,7 @@ export default function App() {
                             );
                           })()}
                         </td>
-                        <td className="px-6 py-4 border-t border-slate-200"></td>
+                        <td className="px-6 py-4 border-t border-slate-200 dark:border-slate-700"></td>
                       </tr>
                     </tfoot>
                   </table>
@@ -2776,20 +2835,22 @@ export default function App() {
             <div className="flex items-center justify-between">
               <button
                 onClick={() => setCurrentView('dashboard')}
-                className="flex items-center gap-2 text-sm font-medium text-slate-500 hover:text-slate-900 transition-colors"
+                className="flex items-center gap-2 text-sm font-medium text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white dark:text-slate-100 transition-colors"
               >
                 <ArrowLeft className="w-4 h-4" />
                 Back to Dashboard
               </button>
-              <h2 className="text-2xl font-bold text-slate-900">Transaction List</h2>
+              <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">
+                Transaction List
+              </h2>
               <div className="w-24"></div> {/* Spacer */}
             </div>
 
             {/* Filters */}
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+            <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700">
               <div className="grid grid-cols-1 md:grid-cols-8 gap-4">
                 <div className="col-span-1 md:col-span-2">
-                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">
+                  <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-2">
                     Search
                   </label>
                   <div className="relative">
@@ -2798,7 +2859,7 @@ export default function App() {
                     </div>
                     <input
                       type="text"
-                      className="bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full pl-9 p-2.5"
+                      className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full pl-9 p-2.5"
                       placeholder="Search description, amount..."
                       value={txSearchText}
                       onChange={(e) => setTxSearchText(e.target.value)}
@@ -2808,7 +2869,7 @@ export default function App() {
                 <div>
                   <label
                     htmlFor="transactions-account-select"
-                    className="block text-xs font-semibold text-slate-500 uppercase mb-2"
+                    className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-2"
                   >
                     Account
                   </label>
@@ -2816,7 +2877,7 @@ export default function App() {
                     id="transactions-account-select"
                     value={selectedAccount}
                     onChange={(e) => setSelectedAccount(e.target.value as any)}
-                    className="w-full bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
+                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
                   >
                     <option value="All">All Accounts</option>
                     <option value="Checking">Checking</option>
@@ -2824,7 +2885,7 @@ export default function App() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">
+                  <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-2">
                     Year
                   </label>
                   <select
@@ -2833,7 +2894,7 @@ export default function App() {
                       setSelectedYear(e.target.value);
                       setSelectedMonth('All Months');
                     }}
-                    className="w-full bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
+                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
                   >
                     <option value="All">All</option>
                     {availableYears.map((year) => (
@@ -2844,13 +2905,13 @@ export default function App() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">
+                  <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-2">
                     Month
                   </label>
                   <select
                     value={selectedMonth}
                     onChange={(e) => setSelectedMonth(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
+                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
                   >
                     <option value="All Months">All</option>
                     {analysis.sortedMonths.map((month) => (
@@ -2861,7 +2922,7 @@ export default function App() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">
+                  <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-2">
                     Category
                   </label>
                   <select
@@ -2870,7 +2931,7 @@ export default function App() {
                       setTxFilterCategory(e.target.value);
                       setTxFilterSubcategory('');
                     }}
-                    className="w-full bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
+                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
                   >
                     <option value="">All</option>
                     {analysis.categories.map((cat: string) => (
@@ -2881,14 +2942,14 @@ export default function App() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">
+                  <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-2">
                     Subcategory
                   </label>
                   <select
                     value={txFilterSubcategory}
                     onChange={(e) => setTxFilterSubcategory(e.target.value)}
                     disabled={!txFilterCategory}
-                    className={`w-full bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 ${
+                    className={`w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 ${
                       !txFilterCategory ? 'opacity-50 cursor-not-allowed' : ''
                     }`}
                   >
@@ -2901,13 +2962,13 @@ export default function App() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">
+                  <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-2">
                     Type
                   </label>
                   <select
                     value={txFilterType}
                     onChange={(e) => setTxFilterType(e.target.value as any)}
-                    className="w-full bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
+                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
                   >
                     <option value="all">All</option>
                     <option value="income">Income Only</option>
@@ -2917,7 +2978,7 @@ export default function App() {
                 <div>
                   <label
                     htmlFor="transactions-matched-select"
-                    className="block text-xs font-semibold text-slate-500 uppercase mb-2"
+                    className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-2"
                   >
                     Matched Status
                   </label>
@@ -2925,7 +2986,7 @@ export default function App() {
                     id="transactions-matched-select"
                     value={txFilterMatched}
                     onChange={(e) => setTxFilterMatched(e.target.value as any)}
-                    className="w-full bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
+                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
                   >
                     <option value="all">All</option>
                     <option value="matched">Matched Only</option>
@@ -2938,9 +2999,9 @@ export default function App() {
                       type="checkbox"
                       checked={showTxTotals}
                       onChange={(e) => setShowTxTotals(e.target.checked)}
-                      className="w-4 h-4 text-blue-600 bg-slate-100 border-slate-300 rounded focus:ring-blue-500 transition-colors"
+                      className="w-4 h-4 text-blue-600 bg-slate-100 dark:bg-slate-800 border-slate-300 rounded focus:ring-blue-500 transition-colors"
                     />
-                    <span className="text-sm font-medium text-slate-600 group-hover:text-slate-900 transition-colors whitespace-nowrap">
+                    <span className="text-sm font-medium text-slate-600 dark:text-slate-400 group-hover:text-slate-900 dark:hover:text-white dark:text-slate-100 transition-colors whitespace-nowrap">
                       Totals
                     </span>
                   </label>
@@ -3170,12 +3231,12 @@ export default function App() {
                 });
 
               return (
-                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
                   <div className="overflow-x-auto max-h-[700px]">
                     <table className="w-full text-sm text-left border-separate border-spacing-0">
-                      <thead className="text-xs text-slate-500 uppercase bg-slate-50 sticky top-0 z-20">
+                      <thead className="text-xs text-slate-500 dark:text-slate-400 uppercase bg-slate-50 dark:bg-slate-950 sticky top-0 z-20">
                         <tr>
-                          <th className="px-4 py-4 font-semibold border-b border-slate-100 bg-slate-50 w-10 text-center">
+                          <th className="px-4 py-4 font-semibold border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 w-10 text-center">
                             <input
                               type="checkbox"
                               checked={
@@ -3191,7 +3252,7 @@ export default function App() {
                                   setSelectedTxIds(new Set());
                                 }
                               }}
-                              className="rounded border-slate-300 bg-white"
+                              className="rounded border-slate-300 bg-white dark:bg-slate-900"
                             />
                           </th>
                           {headers
@@ -3214,7 +3275,7 @@ export default function App() {
                               return (
                                 <th
                                   key={header}
-                                  className={`px-6 py-4 font-semibold border-b border-slate-100 bg-slate-50 cursor-pointer hover:bg-slate-200 transition-colors ${widthClass}`}
+                                  className={`px-6 py-4 font-semibold border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 cursor-pointer hover:bg-slate-200 dark:bg-slate-700 transition-colors ${widthClass}`}
                                   onClick={() => {
                                     setTxSortConfig((current) => ({
                                       key: header,
@@ -3238,11 +3299,11 @@ export default function App() {
                             })}
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-slate-100">
+                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                         {filteredAndSortedTransactions.map((tx: any, idx: number) => (
                           <tr
                             key={idx}
-                            className={`hover:bg-slate-50 transition-colors group ${
+                            className={`hover:bg-slate-50 dark:hover:bg-slate-800/50 dark:bg-slate-950 transition-colors group ${
                               selectedTxIds.has(tx.id)
                                 ? 'bg-blue-50/50'
                                 : tx._category === 'Reconciliation Discrepancy'
@@ -3251,7 +3312,7 @@ export default function App() {
                             }`}
                           >
                             <td
-                              className="px-4 py-4 border-b border-slate-100 text-center"
+                              className="px-4 py-4 border-b border-slate-100 dark:border-slate-800 text-center"
                               onClick={(e) => e.stopPropagation()}
                             >
                               <input
@@ -3263,7 +3324,7 @@ export default function App() {
                                   else next.add(tx.id);
                                   setSelectedTxIds(next);
                                 }}
-                                className="rounded border-slate-300 bg-white"
+                                className="rounded border-slate-300 bg-white dark:bg-slate-900"
                               />
                             </td>
                             {headers
@@ -3296,7 +3357,7 @@ export default function App() {
                                 return (
                                   <td
                                     key={header}
-                                    className={`px-6 py-4 border-b border-slate-100 ${cellClass} ${isCategory || isSubcategory ? 'hover:underline cursor-pointer font-medium' : 'cursor-pointer'}`}
+                                    className={`px-6 py-4 border-b border-slate-100 dark:border-slate-800 ${cellClass} ${isCategory || isSubcategory ? 'hover:underline cursor-pointer font-medium' : 'cursor-pointer'}`}
                                     onClick={(e) => {
                                       if (isCategory || isSubcategory) {
                                         e.stopPropagation();
@@ -3329,7 +3390,7 @@ export default function App() {
                                       <span
                                         className={
                                           tx._isExpense
-                                            ? 'text-slate-900'
+                                            ? 'text-slate-900 dark:text-slate-100'
                                             : 'text-emerald-600 font-bold'
                                         }
                                       >
@@ -3344,7 +3405,7 @@ export default function App() {
                                         className={`px-2 py-1 rounded-full text-xs font-semibold ${
                                           val
                                             ? 'bg-green-100 text-green-800'
-                                            : 'bg-slate-100 text-slate-800'
+                                            : 'bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200'
                                         }`}
                                       >
                                         {val ? 'Matched' : 'Unmatched'}
@@ -3375,7 +3436,7 @@ export default function App() {
                         ))}
                       </tbody>
                       {showTxTotals && (
-                        <tfoot className="bg-slate-50 font-bold border-t-2 border-slate-200 sticky bottom-0 z-20">
+                        <tfoot className="bg-slate-50 dark:bg-slate-950 font-bold border-t-2 border-slate-200 dark:border-slate-700 sticky bottom-0 z-20">
                           <tr>
                             {headers
                               .filter((h) => !/year|month|notes|matched/i.test(h))
@@ -3385,7 +3446,7 @@ export default function App() {
                                   return (
                                     <td
                                       key={header}
-                                      className="px-6 py-4 border-t border-slate-200"
+                                      className="px-6 py-4 border-t border-slate-200 dark:border-slate-700"
                                     >
                                       Total
                                     </td>
@@ -3399,7 +3460,7 @@ export default function App() {
                                   return (
                                     <td
                                       key={header}
-                                      className={`px-6 py-4 text-right font-mono border-t border-slate-200 whitespace-nowrap ${total >= 0 ? 'text-emerald-600' : 'text-slate-900'}`}
+                                      className={`px-6 py-4 text-right font-mono border-t border-slate-200 dark:border-slate-700 whitespace-nowrap ${total >= 0 ? 'text-emerald-600' : 'text-slate-900 dark:text-slate-100'}`}
                                     >
                                       $
                                       {Math.abs(total).toLocaleString(undefined, {
@@ -3412,7 +3473,7 @@ export default function App() {
                                 return (
                                   <td
                                     key={header}
-                                    className="px-6 py-4 border-t border-slate-200"
+                                    className="px-6 py-4 border-t border-slate-200 dark:border-slate-700"
                                   ></td>
                                 );
                               })}
@@ -3448,35 +3509,35 @@ export default function App() {
       {/* Budget Modal */}
       {isBudgetModalOpen && editingBudget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="p-6 border-b border-slate-100">
-              <h3 className="text-lg font-bold text-slate-900">Edit Budget</h3>
-              <p className="text-sm text-slate-500 mt-1">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-700 w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="p-6 border-b border-slate-100 dark:border-slate-800">
+              <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100">Edit Budget</h3>
+              <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
                 Update monthly budget for {editingBudget.category}
               </p>
             </div>
             <div className="p-6 space-y-6">
               <div className="grid grid-cols-2 gap-4">
-                <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
+                <div className="bg-slate-50 dark:bg-slate-950 p-3 rounded-xl border border-slate-100 dark:border-slate-800">
                   <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
                     Monthly Average
                   </label>
-                  <div className="text-lg font-mono font-bold text-slate-700">
+                  <div className="text-lg font-mono font-bold text-slate-700 dark:text-slate-300">
                     ${Math.round(editingBudget.unscaledAverage).toLocaleString()}
                   </div>
                 </div>
-                <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
+                <div className="bg-slate-50 dark:bg-slate-950 p-3 rounded-xl border border-slate-100 dark:border-slate-800">
                   <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
                     Monthly Budget
                   </label>
-                  <div className="text-lg font-mono font-bold text-slate-700">
+                  <div className="text-lg font-mono font-bold text-slate-700 dark:text-slate-300">
                     ${Math.round(editingBudget.monthlyBudget).toLocaleString()}
                   </div>
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">
+                <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-2">
                   New Monthly Budget
                 </label>
                 <div className="relative">
@@ -3487,7 +3548,7 @@ export default function App() {
                     type="number"
                     value={newBudgetValue}
                     onChange={(e) => setNewBudgetValue(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block pl-7 p-2.5 font-mono"
+                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block pl-7 p-2.5 font-mono"
                     placeholder="0"
                   />
                 </div>
@@ -3498,16 +3559,16 @@ export default function App() {
                   const rounded = Math.round(editingBudget.unscaledAverage / 10) * 10;
                   setNewBudgetValue(rounded.toString());
                 }}
-                className="w-full py-2 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold uppercase tracking-wider rounded-lg transition-colors flex items-center justify-center gap-2"
+                className="w-full py-2 px-4 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold uppercase tracking-wider rounded-lg transition-colors flex items-center justify-center gap-2"
               >
                 <RefreshCw className="w-3 h-3" />
                 Set to Monthly Average (Rounded to $10)
               </button>
             </div>
-            <div className="p-6 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-3">
+            <div className="p-6 bg-slate-50 dark:bg-slate-950 border-t border-slate-100 dark:border-slate-800 flex items-center justify-end gap-3">
               <button
                 onClick={() => setIsBudgetModalOpen(false)}
-                className="px-4 py-2 text-sm font-bold text-slate-500 hover:text-slate-700 transition-colors uppercase tracking-wider"
+                className="px-4 py-2 text-sm font-bold text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:text-slate-300 transition-colors uppercase tracking-wider"
               >
                 Cancel
               </button>
@@ -3525,45 +3586,49 @@ export default function App() {
       {/* Transaction Edit Modal */}
       {isTxModalOpen && editingTx && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="p-6 border-b border-slate-100 flex items-center justify-between">
-              <h3 className="text-xl font-bold text-slate-900">Edit Transaction</h3>
+          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+              <h3 className="text-xl font-bold text-slate-900 dark:text-slate-100">
+                Edit Transaction
+              </h3>
               <button
                 onClick={() => setIsTxModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600 transition-colors"
+                className="text-slate-400 hover:text-slate-600 dark:text-slate-400 transition-colors"
               >
                 <X className="w-6 h-6" />
               </button>
             </div>
             <div className="p-6 space-y-6">
               <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-2">
+                <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
                   Effective Date
                 </label>
                 <input
                   type="date"
                   value={editTxDate}
                   onChange={(e) => setEditTxDate(e.target.value)}
-                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all font-mono text-slate-900"
+                  className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all font-mono text-slate-900 dark:text-slate-100"
                 />
               </div>
 
               {editingTx?.Date && (
                 <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-2">
+                  <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
                     Posted Date (Read Only)
                   </label>
                   <input
                     type="text"
                     value={format(new Date(editingTx.Date), 'MM/dd/yyyy')}
                     disabled
-                    className="w-full px-4 py-3 bg-slate-100 border border-slate-200 rounded-xl text-slate-500 font-mono"
+                    className="w-full px-4 py-3 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-500 dark:text-slate-400 font-mono"
                   />
                 </div>
               )}
 
               <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-2">Amount</label>
+                <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
+                  Amount
+                </label>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-mono">
                     $
@@ -3579,13 +3644,15 @@ export default function App() {
                         setEditTxAmount(val.toFixed(2));
                       }
                     }}
-                    className="w-full pl-8 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all font-mono"
+                    className="w-full pl-8 pr-4 py-3 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all font-mono"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-2">Balance</label>
+                <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
+                  Balance
+                </label>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-mono">
                     $
@@ -3603,21 +3670,23 @@ export default function App() {
                         setEditTxBalance(val.toFixed(2));
                       }
                     }}
-                    className="w-full pl-8 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all font-mono"
+                    className="w-full pl-8 pr-4 py-3 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all font-mono"
                     placeholder="Optional"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-2">Category</label>
+                <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
+                  Category
+                </label>
                 <select
                   value={editTxCategory}
                   onChange={(e) => {
                     setEditTxCategory(e.target.value);
                     setEditTxSubcategory('');
                   }}
-                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                  className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
                 >
                   <option value="">Select Category</option>
                   {Object.keys(taxonomy)
@@ -3631,13 +3700,13 @@ export default function App() {
               </div>
 
               <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-2">
+                <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
                   Subcategory
                 </label>
                 <select
                   value={editTxSubcategory}
                   onChange={(e) => setEditTxSubcategory(e.target.value)}
-                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                  className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
                   disabled={!editTxCategory}
                 >
                   <option value="">None</option>
@@ -3656,17 +3725,17 @@ export default function App() {
                   id="edit-tx-matched"
                   checked={editTxMatched}
                   onChange={(e) => setEditTxMatched(e.target.checked)}
-                  className="w-4 h-4 text-blue-600 bg-slate-50 border-slate-200 rounded focus:ring-blue-500"
+                  className="w-4 h-4 text-blue-600 bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-700 rounded focus:ring-blue-500"
                 />
                 <label
                   htmlFor="edit-tx-matched"
-                  className="text-sm font-semibold text-slate-700 cursor-pointer"
+                  className="text-sm font-semibold text-slate-700 dark:text-slate-300 cursor-pointer"
                 >
                   Matched to Recurring Profile
                 </label>
               </div>
             </div>
-            <div className="p-6 bg-slate-50 flex gap-3">
+            <div className="p-6 bg-slate-50 dark:bg-slate-950 flex gap-3">
               <button
                 onClick={() => {
                   if (
@@ -3684,7 +3753,7 @@ export default function App() {
               </button>
               <button
                 onClick={() => setIsTxModalOpen(false)}
-                className="flex-1 px-4 py-3 border border-slate-200 text-slate-600 font-bold rounded-xl hover:bg-white transition-all"
+                className="flex-1 px-4 py-3 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 font-bold rounded-xl hover:bg-white dark:bg-slate-900 transition-all"
               >
                 Cancel
               </button>

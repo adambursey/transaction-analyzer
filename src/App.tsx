@@ -20,7 +20,6 @@ import {
   TrendingDown,
   DollarSign,
   PieChart as PieChartIcon,
-  BarChart3,
   Activity,
   Settings,
   ChevronDown,
@@ -165,7 +164,32 @@ export default function App() {
     const saved = localStorage.getItem('isBudgetIncomeExpanded');
     return saved !== null ? saved === 'true' : true;
   });
-  const [showBudgetAverage, setShowBudgetAverage] = useState(false);
+  const [budgetColumns, setBudgetColumns] = useState(() => {
+    const defaultCols = {
+      actual: true,
+      average: false,
+      budgeted: true,
+      upcoming: true,
+      difference: true,
+      available: true,
+      status: true,
+      hideEmptyRows: true,
+    };
+    const saved = localStorage.getItem('budgetColumns');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        return { ...defaultCols, ...parsed };
+      } catch {
+        // ignore parse errors
+      }
+    }
+    return defaultCols;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('budgetColumns', JSON.stringify(budgetColumns));
+  }, [budgetColumns]);
   const [editingBudget, setEditingBudget] = useState<{
     category: string;
     actual: number;
@@ -891,6 +915,72 @@ export default function App() {
     // Calculate period-specific budget analysis
     const periodMonths = selectedMonth === 'All Months' ? monthsSet.size : 1;
 
+    // Calculate upcoming instances for the current month
+    const today = new Date();
+    const currentYearNum = today.getFullYear();
+    const currentMonthNum = today.getMonth();
+    const todayDate = today.getDate();
+
+    const isCurrentMonthSelected = selectedMonth === format(today, 'MMM yyyy');
+    const upcomingByCategory = new Map<string, number>();
+
+    if (isCurrentMonthSelected) {
+      const unmatchedList = getUnmatchedRecurringInstances(
+        parsedDataUnfiltered,
+        recurringProfiles,
+        currentYearNum,
+        currentMonthNum,
+        todayDate
+      );
+
+      unmatchedList.forEach((instance: any) => {
+        let cat = instance.category || instance.Category;
+        let sub = instance.subcategory || instance.Subcategory;
+
+        if (!cat || !sub) {
+          const examples = (instance.exampleTransactionIds || [])
+            .map((id: string) => parsedDataUnfiltered.find((t: any) => t.id === id))
+            .filter(Boolean);
+
+          for (const ex of examples) {
+            if (!cat && (ex.Category || ex.category)) {
+              cat = ex.Category || ex.category;
+            }
+            if (!sub && (ex.Subcategory || ex.subcategory)) {
+              sub = ex.Subcategory || ex.subcategory;
+            }
+            if (cat && sub) break;
+          }
+        }
+
+        if ((!cat || !sub) && instance.description) {
+          const similarTxs = parsedDataUnfiltered.filter(
+            (tx: any) =>
+              (tx.Description || tx.description) &&
+              instance.description &&
+              (tx.Description || tx.description)
+                .toUpperCase()
+                .includes(instance.description.toUpperCase())
+          );
+          for (const tx of similarTxs) {
+            if (!cat && (tx.Category || tx.category)) {
+              cat = tx.Category || tx.category;
+            }
+            if (!sub && (tx.Subcategory || tx.subcategory)) {
+              sub = tx.Subcategory || tx.subcategory;
+            }
+            if (cat && sub) break;
+          }
+        }
+
+        cat = cat || 'Uncategorized';
+        const finalKey = cat.toLowerCase() === 'income' ? sub || 'Other Income' : cat;
+
+        const amt = Math.abs(instance.amountAverage || 0);
+        upcomingByCategory.set(finalKey, (upcomingByCategory.get(finalKey) || 0) + amt);
+      });
+    }
+
     const budgetAnalysis = Array.from(allCategoryNames)
       .filter((name) => {
         if (!name || name === 'undefined' || name === 'null' || name === '') return false;
@@ -924,6 +1014,8 @@ export default function App() {
         const periodBudgetValue = monthlyBudgetValue * periodMonths;
         const trueMonthlyAverage = (globalCategoryTotals[name] || 0) / totalMonthsInDataset;
         const scaledAverage = trueMonthlyAverage * periodMonths;
+        const upcoming = isCurrentMonthSelected ? upcomingByCategory.get(name) || 0 : 0;
+        const available = periodBudgetValue > 0 ? periodBudgetValue - actual - upcoming : 0;
 
         return {
           name,
@@ -933,6 +1025,8 @@ export default function App() {
           budget: periodBudgetValue,
           monthlyBudget: monthlyBudgetValue,
           diff: actual - periodBudgetValue,
+          upcoming,
+          available,
         };
       })
       .sort((a, b) => b.actual - a.actual);
@@ -983,6 +1077,7 @@ export default function App() {
           (globalIncomeSubcategoryTotals[name] || 0) / totalMonthsInDataset;
         const scaledAverage = trueMonthlyAverage * periodMonths;
 
+        const upcoming = upcomingByCategory.get(name) || 0;
         return {
           name,
           actual: actual,
@@ -990,7 +1085,9 @@ export default function App() {
           unscaledAverage: trueMonthlyAverage,
           budget: periodBudgetValue,
           monthlyBudget: monthlyBudgetValue,
+          upcoming: upcoming,
           diff: actual - periodBudgetValue,
+          available: periodBudgetValue - actual - upcoming,
         };
       })
       .sort((a, b) => b.actual - a.actual);
@@ -2165,27 +2262,30 @@ export default function App() {
         )}
 
         {analysis && currentView === 'budget' && (
-          <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            {/* Filter Bar */}
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={() => setCurrentView('dashboard')}
-                  className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 dark:bg-slate-800 rounded-lg transition-colors text-slate-500 dark:text-slate-400"
-                >
-                  <ArrowLeft className="w-5 h-5" />
-                </button>
-                <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">
-                  Budget Analysis
-                </h2>
-              </div>
-              <div className="flex items-center gap-4">
-                <div className="flex items-center gap-2">
+          <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <div className="flex items-center justify-between">
+              <button
+                onClick={() => setCurrentView('dashboard')}
+                className="flex items-center gap-2 text-sm font-medium text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white dark:text-slate-100 transition-colors"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                Back to Dashboard
+              </button>
+              <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">
+                Budget Analysis
+              </h2>
+              <div className="w-24"></div> {/* Spacer */}
+            </div>
+
+            {/* Filters */}
+            <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700">
+              <div className="grid grid-cols-1 md:grid-cols-8 gap-4 mb-4">
+                <div>
                   <label
                     htmlFor="year-select-budget"
-                    className="text-sm font-medium text-slate-700 dark:text-slate-300"
+                    className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-2"
                   >
-                    Year:
+                    Year
                   </label>
                   <select
                     id="year-select-budget"
@@ -2194,9 +2294,9 @@ export default function App() {
                       setSelectedYear(e.target.value);
                       setSelectedMonth('All Months');
                     }}
-                    className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2 transition-all hover:bg-white dark:bg-slate-900"
+                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 transition-all hover:bg-white dark:bg-slate-900"
                   >
-                    <option value="All">All</option>
+                    <option value="All">All Years</option>
                     {availableYears.map((year) => (
                       <option key={year} value={year}>
                         {year}
@@ -2204,20 +2304,20 @@ export default function App() {
                     ))}
                   </select>
                 </div>
-                <div className="flex items-center gap-2">
+                <div>
                   <label
                     htmlFor="month-select-budget"
-                    className="text-sm font-medium text-slate-700 dark:text-slate-300"
+                    className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-2"
                   >
-                    Month:
+                    Month
                   </label>
                   <select
                     id="month-select-budget"
                     value={selectedMonth}
                     onChange={(e) => setSelectedMonth(e.target.value)}
-                    className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2 transition-all hover:bg-white dark:bg-slate-900"
+                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 transition-all hover:bg-white dark:bg-slate-900"
                   >
-                    <option value="All Months">All</option>
+                    <option value="All Months">All Months</option>
                     {analysis.sortedMonths.map((month) => (
                       <option key={month} value={month}>
                         {month.split(' ')[0]}
@@ -2225,17 +2325,97 @@ export default function App() {
                     ))}
                   </select>
                 </div>
-                <button
-                  onClick={() => setShowBudgetAverage(!showBudgetAverage)}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-all text-xs font-bold uppercase tracking-wider ${
-                    showBudgetAverage
-                      ? 'bg-slate-900 border-slate-900 text-white shadow-sm'
-                      : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50 dark:bg-slate-950'
-                  }`}
-                >
-                  <BarChart3 className="w-3.5 h-3.5" />
-                  {showBudgetAverage ? 'Hide Average' : 'Show Average'}
-                </button>
+              </div>
+              <div className="flex flex-wrap items-center gap-3 text-xs pt-4 border-t border-slate-100 dark:border-slate-800">
+                <label className="flex items-center gap-1.5 px-2 py-1 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800 rounded">
+                  <input
+                    type="checkbox"
+                    checked={budgetColumns.hideEmptyRows}
+                    onChange={(e) =>
+                      setBudgetColumns({ ...budgetColumns, hideEmptyRows: e.target.checked })
+                    }
+                    className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  Hide empty rows
+                </label>
+                <div className="w-px h-4 bg-slate-200 dark:bg-slate-700 mx-2"></div>
+                <label className="flex items-center gap-1.5 px-2 py-1 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800 rounded">
+                  <input
+                    type="checkbox"
+                    checked={budgetColumns.actual}
+                    onChange={(e) =>
+                      setBudgetColumns({ ...budgetColumns, actual: e.target.checked })
+                    }
+                    className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  Actual
+                </label>
+                <label className="flex items-center gap-1.5 px-2 py-1 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800 rounded">
+                  <input
+                    type="checkbox"
+                    checked={budgetColumns.average}
+                    onChange={(e) =>
+                      setBudgetColumns({ ...budgetColumns, average: e.target.checked })
+                    }
+                    className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  Average
+                </label>
+                <label className="flex items-center gap-1.5 px-2 py-1 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800 rounded">
+                  <input
+                    type="checkbox"
+                    checked={budgetColumns.budgeted}
+                    onChange={(e) =>
+                      setBudgetColumns({ ...budgetColumns, budgeted: e.target.checked })
+                    }
+                    className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  Budgeted
+                </label>
+                <label className="flex items-center gap-1.5 px-2 py-1 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800 rounded">
+                  <input
+                    type="checkbox"
+                    checked={budgetColumns.upcoming}
+                    onChange={(e) =>
+                      setBudgetColumns({ ...budgetColumns, upcoming: e.target.checked })
+                    }
+                    className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  Upcoming
+                </label>
+                <label className="flex items-center gap-1.5 px-2 py-1 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800 rounded">
+                  <input
+                    type="checkbox"
+                    checked={budgetColumns.difference}
+                    onChange={(e) =>
+                      setBudgetColumns({ ...budgetColumns, difference: e.target.checked })
+                    }
+                    className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  Current Remaining
+                </label>
+                <label className="flex items-center gap-1.5 px-2 py-1 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800 rounded">
+                  <input
+                    type="checkbox"
+                    checked={budgetColumns.available}
+                    onChange={(e) =>
+                      setBudgetColumns({ ...budgetColumns, available: e.target.checked })
+                    }
+                    className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  Projected Remaining
+                </label>
+                <label className="flex items-center gap-1.5 px-2 py-1 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800 rounded">
+                  <input
+                    type="checkbox"
+                    checked={budgetColumns.status}
+                    onChange={(e) =>
+                      setBudgetColumns({ ...budgetColumns, status: e.target.checked })
+                    }
+                    className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  Status
+                </label>
               </div>
             </div>
 
@@ -2270,7 +2450,7 @@ export default function App() {
                           ).toLocaleString()}
                         </div>
                       </div>
-                      {showBudgetAverage && (
+                      {budgetColumns.average && (
                         <div className="text-right">
                           <div className="text-[10px] uppercase text-slate-400 font-sans font-bold">
                             Average
@@ -2343,140 +2523,198 @@ export default function App() {
                         <th className="px-6 py-4 font-semibold border-b border-slate-100 dark:border-slate-800 sticky top-0 bg-slate-50 dark:bg-slate-950 z-10">
                           Category
                         </th>
-                        <th className="px-6 py-4 font-semibold text-right border-b border-slate-100 dark:border-slate-800 sticky top-0 bg-slate-50 dark:bg-slate-950 z-10">
-                          Actual
-                        </th>
-                        {showBudgetAverage && (
+                        {budgetColumns.actual && (
+                          <th className="px-6 py-4 font-semibold text-right border-b border-slate-100 dark:border-slate-800 sticky top-0 bg-slate-50 dark:bg-slate-950 z-10">
+                            Actual
+                          </th>
+                        )}
+                        {budgetColumns.average && (
                           <th className="px-6 py-4 font-semibold text-right border-b border-slate-100 dark:border-slate-800 sticky top-0 bg-slate-50 dark:bg-slate-950 z-10">
                             Average
                           </th>
                         )}
-                        <th className="px-6 py-4 font-semibold text-right border-b border-slate-100 dark:border-slate-800 sticky top-0 bg-slate-50 dark:bg-slate-950 z-10">
-                          Budgeted
-                        </th>
-                        <th className="px-6 py-4 font-semibold text-right border-b border-slate-100 dark:border-slate-800 sticky top-0 bg-slate-50 dark:bg-slate-950 z-10">
-                          Difference
-                        </th>
-                        <th className="px-6 py-4 font-semibold text-center border-b border-slate-100 dark:border-slate-800 sticky top-0 bg-slate-50 dark:bg-slate-950 z-10">
-                          Status
-                        </th>
+                        {budgetColumns.budgeted && (
+                          <th className="px-6 py-4 font-semibold text-right border-b border-slate-100 dark:border-slate-800 sticky top-0 bg-slate-50 dark:bg-slate-950 z-10">
+                            Budgeted
+                          </th>
+                        )}
+                        {budgetColumns.upcoming && (
+                          <th className="px-6 py-4 font-semibold text-right border-b border-slate-100 dark:border-slate-800 sticky top-0 bg-slate-50 dark:bg-slate-950 z-10">
+                            Upcoming
+                          </th>
+                        )}
+                        {budgetColumns.difference && (
+                          <th className="px-6 py-4 font-semibold text-right border-b border-slate-100 dark:border-slate-800 sticky top-0 bg-slate-50 dark:bg-slate-950 z-10">
+                            Current Remaining
+                          </th>
+                        )}
+                        {budgetColumns.available && (
+                          <th className="px-6 py-4 font-semibold text-right border-b border-slate-100 dark:border-slate-800 sticky top-0 bg-slate-50 dark:bg-slate-950 z-10">
+                            Projected Remaining
+                          </th>
+                        )}
+                        {budgetColumns.status && (
+                          <th className="px-6 py-4 font-semibold text-center border-b border-slate-100 dark:border-slate-800 sticky top-0 bg-slate-50 dark:bg-slate-950 z-10">
+                            Status
+                          </th>
+                        )}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                      {expensesBudgetAnalysis.map((row: any) => {
-                        const isWithinTenDollars = row.budget > 0 && Math.abs(row.diff) < 10;
-                        const isOverBudget = row.budget > 0 && row.diff >= 10;
+                      {expensesBudgetAnalysis
+                        .filter((row: any) => {
+                          if (budgetColumns.hideEmptyRows) {
+                            return Math.abs(row.actual) > 0 || row.budget > 0;
+                          }
+                          return true;
+                        })
+                        .map((row: any) => {
+                          const isWithinTenDollars = row.budget > 0 && Math.abs(row.diff) < 10;
+                          const isOverBudget = row.budget > 0 && row.diff >= 10;
 
-                        return (
-                          <tr
-                            key={row.name}
-                            className="hover:bg-slate-50 dark:hover:bg-slate-800/50 dark:bg-slate-950 transition-colors"
-                          >
-                            <td className="px-6 py-4 font-medium text-slate-900 dark:text-slate-100 border-b border-slate-100 dark:border-slate-800">
-                              <div className="flex items-center gap-2">
-                                <div
-                                  className="w-2 h-2 rounded-full shrink-0"
-                                  style={{
-                                    backgroundColor: getCategoryColor(row.name) || '#cbd5e1',
-                                  }}
-                                />
-                                {row.name}
-                              </div>
-                            </td>
-                            <td className="px-6 py-4 text-right text-slate-600 dark:text-slate-400 font-mono border-b border-slate-100 dark:border-slate-800">
-                              ${Math.round(row.actual).toLocaleString()}
-                            </td>
-                            {showBudgetAverage && (
-                              <td className="px-6 py-4 text-right text-slate-600 dark:text-slate-400 font-mono border-b border-slate-100 dark:border-slate-800">
-                                ${Math.round(row.monthlyAverage).toLocaleString()}
+                          return (
+                            <tr
+                              key={row.name}
+                              className="hover:bg-slate-50 dark:hover:bg-slate-800/50 dark:bg-slate-950 transition-colors"
+                            >
+                              <td className="px-6 py-4 font-medium text-slate-900 dark:text-slate-100 border-b border-slate-100 dark:border-slate-800">
+                                <div className="flex items-center gap-2">
+                                  <div
+                                    className="w-2 h-2 rounded-full shrink-0"
+                                    style={{
+                                      backgroundColor: getCategoryColor(row.name) || '#cbd5e1',
+                                    }}
+                                  />
+                                  {row.name}
+                                </div>
                               </td>
-                            )}
-                            <td
-                              className="px-6 py-4 text-right text-slate-600 dark:text-slate-400 font-mono border-b border-slate-100 dark:border-slate-800 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 dark:bg-slate-800 transition-colors group"
-                              onClick={() => {
-                                setEditingBudget({
-                                  category: row.name,
-                                  actual: row.actual,
-                                  average: row.monthlyAverage,
-                                  unscaledAverage: row.unscaledAverage,
-                                  current: row.budget,
-                                  monthlyBudget: row.monthlyBudget,
-                                });
-                                setNewBudgetValue(
-                                  row.monthlyBudget > 0 ? row.monthlyBudget.toString() : '0'
-                                );
-                                setIsBudgetModalOpen(true);
-                              }}
-                            >
-                              <div className="flex items-center justify-end relative">
-                                {row.budget > 0 ? (
-                                  `$${Math.round(row.budget).toLocaleString()}`
-                                ) : (
-                                  <span className="text-slate-300 italic text-xs">Not set</span>
-                                )}
-                                <Settings className="w-3 h-3 text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity absolute -right-5" />
-                              </div>
-                            </td>
-                            <td
-                              className={`px-6 py-4 text-right font-mono border-b border-slate-100 dark:border-slate-800 ${
-                                row.budget > 0
-                                  ? isWithinTenDollars
-                                    ? 'text-slate-500 dark:text-slate-400'
-                                    : row.diff > 0
-                                      ? 'text-red-600'
-                                      : 'text-emerald-600'
-                                  : 'text-slate-400'
-                              }`}
-                            >
-                              {row.budget > 0
-                                ? isWithinTenDollars
-                                  ? '$' + Math.abs(Math.round(row.diff)).toLocaleString()
-                                  : (row.diff > 0 ? '+$' : row.diff < 0 ? '-$' : '$') +
-                                    Math.abs(Math.round(row.diff)).toLocaleString()
-                                : '-'}
-                            </td>
-                            <td className="px-6 py-4 text-center border-b border-slate-100 dark:border-slate-800">
-                              {row.budget > 0 ? (
-                                isWithinTenDollars ? (
-                                  <span className="px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
-                                    On Budget
-                                  </span>
-                                ) : (
-                                  <span
-                                    className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                                      isOverBudget
-                                        ? 'bg-red-100 text-red-700'
-                                        : 'bg-emerald-100 text-emerald-700'
-                                    }`}
-                                  >
-                                    {isOverBudget ? 'Over' : 'Under'}
-                                  </span>
-                                )
-                              ) : (
-                                <span className="text-slate-300 text-[10px] font-bold uppercase tracking-wider">
-                                  N/A
-                                </span>
+                              {budgetColumns.actual && (
+                                <td className="px-6 py-4 text-right text-slate-600 dark:text-slate-400 font-mono border-b border-slate-100 dark:border-slate-800">
+                                  ${Math.round(row.actual).toLocaleString()}
+                                </td>
                               )}
-                            </td>
-                          </tr>
-                        );
-                      })}
+                              {budgetColumns.average && (
+                                <td className="px-6 py-4 text-right text-slate-600 dark:text-slate-400 font-mono border-b border-slate-100 dark:border-slate-800">
+                                  ${Math.round(row.monthlyAverage).toLocaleString()}
+                                </td>
+                              )}
+                              {budgetColumns.budgeted && (
+                                <td
+                                  className="px-6 py-4 text-right text-slate-600 dark:text-slate-400 font-mono border-b border-slate-100 dark:border-slate-800 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 dark:bg-slate-800 transition-colors group"
+                                  onClick={() => {
+                                    setEditingBudget({
+                                      category: row.name,
+                                      actual: row.actual,
+                                      average: row.monthlyAverage,
+                                      unscaledAverage: row.unscaledAverage,
+                                      current: row.budget,
+                                      monthlyBudget: row.monthlyBudget,
+                                    });
+                                    setNewBudgetValue(
+                                      row.monthlyBudget > 0 ? row.monthlyBudget.toString() : '0'
+                                    );
+                                    setIsBudgetModalOpen(true);
+                                  }}
+                                >
+                                  <div className="flex items-center justify-end relative">
+                                    {row.budget > 0 ? (
+                                      `$${Math.round(row.budget).toLocaleString()}`
+                                    ) : (
+                                      <span className="text-slate-300 italic text-xs">Not set</span>
+                                    )}
+                                    <Settings className="w-3 h-3 text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity absolute -right-5" />
+                                  </div>
+                                </td>
+                              )}
+                              {budgetColumns.upcoming && (
+                                <td className="px-6 py-4 text-right text-slate-600 dark:text-slate-400 font-mono border-b border-slate-100 dark:border-slate-800">
+                                  {row.upcoming > 0
+                                    ? `$${Math.round(row.upcoming).toLocaleString()}`
+                                    : '-'}
+                                </td>
+                              )}
+                              {budgetColumns.difference && (
+                                <td
+                                  className={`px-6 py-4 text-right font-mono border-b border-slate-100 dark:border-slate-800 ${
+                                    row.budget > 0
+                                      ? isWithinTenDollars
+                                        ? 'text-slate-500 dark:text-slate-400'
+                                        : row.diff > 0
+                                          ? 'text-red-600'
+                                          : 'text-emerald-600'
+                                      : 'text-slate-400'
+                                  }`}
+                                >
+                                  {row.budget > 0
+                                    ? isWithinTenDollars
+                                      ? '$' + Math.abs(Math.round(row.diff)).toLocaleString()
+                                      : (row.diff > 0 ? '+$' : row.diff < 0 ? '-$' : '$') +
+                                        Math.abs(Math.round(row.diff)).toLocaleString()
+                                    : '-'}
+                                </td>
+                              )}
+                              {budgetColumns.available && (
+                                <td
+                                  className={`px-6 py-4 text-right font-mono border-b border-slate-100 dark:border-slate-800 ${
+                                    row.budget > 0
+                                      ? Math.round(row.available) >= 0
+                                        ? 'text-emerald-600'
+                                        : 'text-red-600'
+                                      : 'text-slate-400'
+                                  }`}
+                                >
+                                  {row.budget > 0
+                                    ? (Math.round(row.available) < 0 ? '-$' : '$') +
+                                      Math.abs(Math.round(row.available)).toLocaleString()
+                                    : '-'}
+                                </td>
+                              )}
+                              {budgetColumns.status && (
+                                <td className="px-6 py-4 text-center border-b border-slate-100 dark:border-slate-800">
+                                  {row.budget > 0 ? (
+                                    isWithinTenDollars ? (
+                                      <span className="px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                                        On Budget
+                                      </span>
+                                    ) : (
+                                      <span
+                                        className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                                          isOverBudget
+                                            ? 'bg-red-100 text-red-700'
+                                            : 'bg-emerald-100 text-emerald-700'
+                                        }`}
+                                      >
+                                        {isOverBudget ? 'Over' : 'Under'}
+                                      </span>
+                                    )
+                                  ) : (
+                                    <span className="text-slate-300 text-[10px] font-bold uppercase tracking-wider">
+                                      N/A
+                                    </span>
+                                  )}
+                                </td>
+                              )}
+                            </tr>
+                          );
+                        })}
                     </tbody>
                     <tfoot className="bg-slate-50 dark:bg-slate-950 font-bold">
                       <tr>
                         <td className="px-6 py-4 text-slate-900 dark:text-slate-100 border-t border-slate-200 dark:border-slate-700">
                           TOTAL
                         </td>
-                        <td className="px-6 py-4 text-right text-slate-900 dark:text-slate-100 font-mono border-t border-slate-200 dark:border-slate-700">
-                          $
-                          {Math.round(
-                            expensesBudgetAnalysis.reduce(
-                              (sum: number, r: any) => sum + r.actual,
-                              0
-                            )
-                          ).toLocaleString()}
-                        </td>
-                        {showBudgetAverage && (
+                        {budgetColumns.actual && (
+                          <td className="px-6 py-4 text-right text-slate-900 dark:text-slate-100 font-mono border-t border-slate-200 dark:border-slate-700">
+                            $
+                            {Math.round(
+                              expensesBudgetAnalysis.reduce(
+                                (sum: number, r: any) => sum + r.actual,
+                                0
+                              )
+                            ).toLocaleString()}
+                          </td>
+                        )}
+                        {budgetColumns.average && (
                           <td className="px-6 py-4 text-right text-slate-900 dark:text-slate-100 font-mono border-t border-slate-200 dark:border-slate-700">
                             $
                             {Math.round(
@@ -2487,37 +2725,79 @@ export default function App() {
                             ).toLocaleString()}
                           </td>
                         )}
-                        <td className="px-6 py-4 text-right text-slate-900 dark:text-slate-100 font-mono border-t border-slate-200 dark:border-slate-700">
-                          $
-                          {Math.round(
-                            expensesBudgetAnalysis.reduce(
-                              (sum: number, r: any) => sum + r.budget,
-                              0
-                            )
-                          ).toLocaleString()}
-                        </td>
-                        <td
-                          className={`px-6 py-4 text-right font-mono border-t border-slate-200 dark:border-slate-700 ${
-                            expensesBudgetAnalysis.reduce(
-                              (sum: number, r: any) => sum + r.diff,
-                              0
-                            ) > 0
-                              ? 'text-red-600'
-                              : 'text-emerald-600'
-                          }`}
-                        >
-                          {(() => {
-                            const totalDiff = expensesBudgetAnalysis.reduce(
-                              (sum: number, r: any) => sum + r.diff,
-                              0
-                            );
-                            return (
-                              (totalDiff > 0 ? '+$' : totalDiff < 0 ? '-$' : '$') +
-                              Math.abs(Math.round(totalDiff)).toLocaleString()
-                            );
-                          })()}
-                        </td>
-                        <td className="px-6 py-4 border-t border-slate-200 dark:border-slate-700"></td>
+                        {budgetColumns.budgeted && (
+                          <td className="px-6 py-4 text-right text-slate-900 dark:text-slate-100 font-mono border-t border-slate-200 dark:border-slate-700">
+                            $
+                            {Math.round(
+                              expensesBudgetAnalysis.reduce(
+                                (sum: number, r: any) => sum + r.budget,
+                                0
+                              )
+                            ).toLocaleString()}
+                          </td>
+                        )}
+                        {budgetColumns.upcoming && (
+                          <td className="px-6 py-4 text-right text-slate-900 dark:text-slate-100 font-mono border-t border-slate-200 dark:border-slate-700">
+                            $
+                            {Math.round(
+                              expensesBudgetAnalysis.reduce(
+                                (sum: number, r: any) => sum + r.upcoming,
+                                0
+                              )
+                            ).toLocaleString()}
+                          </td>
+                        )}
+                        {budgetColumns.difference && (
+                          <td
+                            className={`px-6 py-4 text-right font-mono border-t border-slate-200 dark:border-slate-700 ${
+                              expensesBudgetAnalysis.reduce(
+                                (sum: number, r: any) => sum + r.diff,
+                                0
+                              ) > 0
+                                ? 'text-red-600'
+                                : 'text-emerald-600'
+                            }`}
+                          >
+                            {(() => {
+                              const totalDiff = expensesBudgetAnalysis.reduce(
+                                (sum: number, r: any) => sum + r.diff,
+                                0
+                              );
+                              return (
+                                (totalDiff > 0 ? '+$' : totalDiff < 0 ? '-$' : '$') +
+                                Math.abs(Math.round(totalDiff)).toLocaleString()
+                              );
+                            })()}
+                          </td>
+                        )}
+                        {budgetColumns.available && (
+                          <td
+                            className={`px-6 py-4 text-right font-mono border-t border-slate-200 dark:border-slate-700 ${
+                              Math.round(
+                                expensesBudgetAnalysis.reduce(
+                                  (sum: number, r: any) => sum + r.available,
+                                  0
+                                )
+                              ) >= 0
+                                ? 'text-emerald-600'
+                                : 'text-red-600'
+                            }`}
+                          >
+                            {(() => {
+                              const totalAvailable = expensesBudgetAnalysis.reduce(
+                                (sum: number, r: any) => sum + r.available,
+                                0
+                              );
+                              return (
+                                (Math.round(totalAvailable) < 0 ? '-$' : '$') +
+                                Math.abs(Math.round(totalAvailable)).toLocaleString()
+                              );
+                            })()}
+                          </td>
+                        )}
+                        {budgetColumns.status && (
+                          <td className="px-6 py-4 border-t border-slate-200 dark:border-slate-700"></td>
+                        )}
                       </tr>
                     </tfoot>
                   </table>
@@ -2556,7 +2836,7 @@ export default function App() {
                           ).toLocaleString()}
                         </div>
                       </div>
-                      {showBudgetAverage && (
+                      {budgetColumns.average && (
                         <div className="text-right">
                           <div className="text-[10px] uppercase text-slate-400 font-sans font-bold">
                             Average
@@ -2629,140 +2909,179 @@ export default function App() {
                         <th className="px-6 py-4 font-semibold border-b border-slate-100 dark:border-slate-800 sticky top-0 bg-slate-50 dark:bg-slate-950 z-10">
                           Category
                         </th>
-                        <th className="px-6 py-4 font-semibold text-right border-b border-slate-100 dark:border-slate-800 sticky top-0 bg-slate-50 dark:bg-slate-950 z-10">
-                          Actual
-                        </th>
-                        {showBudgetAverage && (
+                        {budgetColumns.actual && (
+                          <th className="px-6 py-4 font-semibold text-right border-b border-slate-100 dark:border-slate-800 sticky top-0 bg-slate-50 dark:bg-slate-950 z-10">
+                            Actual
+                          </th>
+                        )}
+                        {budgetColumns.average && (
                           <th className="px-6 py-4 font-semibold text-right border-b border-slate-100 dark:border-slate-800 sticky top-0 bg-slate-50 dark:bg-slate-950 z-10">
                             Average
                           </th>
                         )}
-                        <th className="px-6 py-4 font-semibold text-right border-b border-slate-100 dark:border-slate-800 sticky top-0 bg-slate-50 dark:bg-slate-950 z-10">
-                          Budgeted
-                        </th>
-                        <th className="px-6 py-4 font-semibold text-right border-b border-slate-100 dark:border-slate-800 sticky top-0 bg-slate-50 dark:bg-slate-950 z-10">
-                          Difference
-                        </th>
-                        <th className="px-6 py-4 font-semibold text-center border-b border-slate-100 dark:border-slate-800 sticky top-0 bg-slate-50 dark:bg-slate-950 z-10">
-                          Status
-                        </th>
+                        {budgetColumns.budgeted && (
+                          <th className="px-6 py-4 font-semibold text-right border-b border-slate-100 dark:border-slate-800 sticky top-0 bg-slate-50 dark:bg-slate-950 z-10">
+                            Budgeted
+                          </th>
+                        )}
+                        {budgetColumns.upcoming && (
+                          <th className="px-6 py-4 font-semibold text-right border-b border-slate-100 dark:border-slate-800 sticky top-0 bg-slate-50 dark:bg-slate-950 z-10">
+                            Upcoming
+                          </th>
+                        )}
+                        {budgetColumns.difference && (
+                          <th className="px-6 py-4 font-semibold text-right border-b border-slate-100 dark:border-slate-800 sticky top-0 bg-slate-50 dark:bg-slate-950 z-10">
+                            Current Remaining
+                          </th>
+                        )}
+
+                        {budgetColumns.status && (
+                          <th className="px-6 py-4 font-semibold text-center border-b border-slate-100 dark:border-slate-800 sticky top-0 bg-slate-50 dark:bg-slate-950 z-10">
+                            Status
+                          </th>
+                        )}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                      {analysis.incomeAnalysis.map((row: any) => {
-                        const isWithinTenDollars = row.budget > 0 && Math.abs(row.diff) < 10;
-                        const isOverBudget = row.budget > 0 && row.diff >= 10; // Earned more
+                      {analysis.incomeAnalysis
+                        .filter((row: any) => {
+                          if (budgetColumns.hideEmptyRows) {
+                            return Math.abs(row.actual) > 0 || row.budget > 0;
+                          }
+                          return true;
+                        })
+                        .map((row: any) => {
+                          const isWithinTenDollars = row.budget > 0 && Math.abs(row.diff) < 10;
+                          const isOverBudget = row.budget > 0 && row.diff >= 10; // Earned more
 
-                        return (
-                          <tr
-                            key={row.name}
-                            className="hover:bg-slate-50 dark:hover:bg-slate-800/50 dark:bg-slate-950 transition-colors"
-                          >
-                            <td className="px-6 py-4 font-medium text-slate-900 dark:text-slate-100 border-b border-slate-100 dark:border-slate-800">
-                              <div className="flex items-center gap-2">
-                                <div
-                                  className="w-2 h-2 rounded-full shrink-0"
-                                  style={{
-                                    backgroundColor: getCategoryColor(row.name) || '#cbd5e1',
-                                  }}
-                                />
-                                {row.name}
-                              </div>
-                            </td>
-                            <td className="px-6 py-4 text-right text-slate-600 dark:text-slate-400 font-mono border-b border-slate-100 dark:border-slate-800">
-                              ${Math.round(row.actual).toLocaleString()}
-                            </td>
-                            {showBudgetAverage && (
-                              <td className="px-6 py-4 text-right text-slate-600 dark:text-slate-400 font-mono border-b border-slate-100 dark:border-slate-800">
-                                ${Math.round(row.monthlyAverage).toLocaleString()}
+                          return (
+                            <tr
+                              key={row.name}
+                              className="hover:bg-slate-50 dark:hover:bg-slate-800/50 dark:bg-slate-950 transition-colors"
+                            >
+                              <td className="px-6 py-4 font-medium text-slate-900 dark:text-slate-100 border-b border-slate-100 dark:border-slate-800">
+                                <div className="flex items-center gap-2">
+                                  <div
+                                    className="w-2 h-2 rounded-full shrink-0"
+                                    style={{
+                                      backgroundColor: getCategoryColor(row.name) || '#cbd5e1',
+                                    }}
+                                  />
+                                  {row.name}
+                                </div>
                               </td>
-                            )}
-                            <td
-                              className="px-6 py-4 text-right text-slate-600 dark:text-slate-400 font-mono border-b border-slate-100 dark:border-slate-800 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 dark:bg-slate-800 transition-colors group"
-                              onClick={() => {
-                                setEditingBudget({
-                                  category: row.name,
-                                  actual: row.actual,
-                                  average: row.monthlyAverage,
-                                  unscaledAverage: row.unscaledAverage,
-                                  current: row.budget,
-                                  monthlyBudget: row.monthlyBudget,
-                                });
-                                setNewBudgetValue(
-                                  row.monthlyBudget > 0 ? row.monthlyBudget.toString() : '0'
-                                );
-                                setIsBudgetModalOpen(true);
-                              }}
-                            >
-                              <div className="flex items-center justify-end relative">
-                                {row.budget > 0 ? (
-                                  `$${Math.round(row.budget).toLocaleString()}`
-                                ) : (
-                                  <span className="text-slate-300 italic text-xs">Not set</span>
-                                )}
-                                <Settings className="w-3 h-3 text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity absolute -right-5" />
-                              </div>
-                            </td>
-                            <td
-                              className={`px-6 py-4 text-right font-mono border-b border-slate-100 dark:border-slate-800 ${
-                                row.budget > 0
-                                  ? isWithinTenDollars
-                                    ? 'text-slate-500 dark:text-slate-400'
-                                    : row.diff > 0
-                                      ? 'text-emerald-600'
-                                      : 'text-red-600'
-                                  : 'text-slate-400'
-                              }`}
-                            >
-                              {row.budget > 0
-                                ? isWithinTenDollars
-                                  ? '$' + Math.abs(Math.round(row.diff)).toLocaleString()
-                                  : (row.diff > 0 ? '+$' : row.diff < 0 ? '-$' : '$') +
-                                    Math.abs(Math.round(row.diff)).toLocaleString()
-                                : '-'}
-                            </td>
-                            <td className="px-6 py-4 text-center border-b border-slate-100 dark:border-slate-800">
-                              {row.budget > 0 ? (
-                                isWithinTenDollars ? (
-                                  <span className="px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
-                                    On Budget
-                                  </span>
-                                ) : (
-                                  <span
-                                    className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                                      isOverBudget
-                                        ? 'bg-emerald-100 text-emerald-700'
-                                        : 'bg-red-100 text-red-700'
-                                    }`}
-                                  >
-                                    {isOverBudget ? 'Over' : 'Under'}
-                                  </span>
-                                )
-                              ) : (
-                                <span className="text-slate-300 text-[10px] font-bold uppercase tracking-wider">
-                                  N/A
-                                </span>
+                              {budgetColumns.actual && (
+                                <td className="px-6 py-4 text-right text-slate-600 dark:text-slate-400 font-mono border-b border-slate-100 dark:border-slate-800">
+                                  ${Math.round(row.actual).toLocaleString()}
+                                </td>
                               )}
-                            </td>
-                          </tr>
-                        );
-                      })}
+                              {budgetColumns.average && (
+                                <td className="px-6 py-4 text-right text-slate-600 dark:text-slate-400 font-mono border-b border-slate-100 dark:border-slate-800">
+                                  ${Math.round(row.monthlyAverage).toLocaleString()}
+                                </td>
+                              )}
+                              {budgetColumns.budgeted && (
+                                <td
+                                  className="px-6 py-4 text-right text-slate-600 dark:text-slate-400 font-mono border-b border-slate-100 dark:border-slate-800 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 dark:bg-slate-800 transition-colors group"
+                                  onClick={() => {
+                                    setEditingBudget({
+                                      category: row.name,
+                                      actual: row.actual,
+                                      average: row.monthlyAverage,
+                                      unscaledAverage: row.unscaledAverage,
+                                      current: row.budget,
+                                      monthlyBudget: row.monthlyBudget,
+                                    });
+                                    setNewBudgetValue(
+                                      row.monthlyBudget > 0 ? row.monthlyBudget.toString() : '0'
+                                    );
+                                    setIsBudgetModalOpen(true);
+                                  }}
+                                >
+                                  <div className="flex items-center justify-end relative">
+                                    {row.budget > 0 ? (
+                                      `$${Math.round(row.budget).toLocaleString()}`
+                                    ) : (
+                                      <span className="text-slate-300 italic text-xs">Not set</span>
+                                    )}
+                                    <Settings className="w-3 h-3 text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity absolute -right-5" />
+                                  </div>
+                                </td>
+                              )}
+                              {budgetColumns.upcoming && (
+                                <td className="px-6 py-4 text-right text-slate-600 dark:text-slate-400 font-mono border-b border-slate-100 dark:border-slate-800">
+                                  {row.upcoming > 0
+                                    ? `$${Math.round(row.upcoming).toLocaleString()}`
+                                    : '-'}
+                                </td>
+                              )}
+                              {budgetColumns.difference && (
+                                <td
+                                  className={`px-6 py-4 text-right font-mono border-b border-slate-100 dark:border-slate-800 ${
+                                    row.budget > 0
+                                      ? isWithinTenDollars
+                                        ? 'text-slate-500 dark:text-slate-400'
+                                        : row.diff > 0
+                                          ? 'text-emerald-600'
+                                          : 'text-red-600'
+                                      : 'text-slate-400'
+                                  }`}
+                                >
+                                  {row.budget > 0
+                                    ? isWithinTenDollars
+                                      ? '$' + Math.abs(Math.round(row.diff)).toLocaleString()
+                                      : (row.diff > 0 ? '+$' : row.diff < 0 ? '-$' : '$') +
+                                        Math.abs(Math.round(row.diff)).toLocaleString()
+                                    : '-'}
+                                </td>
+                              )}
+
+                              {budgetColumns.status && (
+                                <td className="px-6 py-4 text-center border-b border-slate-100 dark:border-slate-800">
+                                  {row.budget > 0 ? (
+                                    isWithinTenDollars ? (
+                                      <span className="px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                                        On Budget
+                                      </span>
+                                    ) : (
+                                      <span
+                                        className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                                          isOverBudget
+                                            ? 'bg-emerald-100 text-emerald-700'
+                                            : 'bg-red-100 text-red-700'
+                                        }`}
+                                      >
+                                        {isOverBudget ? 'Over' : 'Under'}
+                                      </span>
+                                    )
+                                  ) : (
+                                    <span className="text-slate-300 text-[10px] font-bold uppercase tracking-wider">
+                                      N/A
+                                    </span>
+                                  )}
+                                </td>
+                              )}
+                            </tr>
+                          );
+                        })}
                     </tbody>
                     <tfoot className="bg-slate-50 dark:bg-slate-950 font-bold">
                       <tr>
                         <td className="px-6 py-4 text-slate-900 dark:text-slate-100 border-t border-slate-200 dark:border-slate-700">
                           TOTAL
                         </td>
-                        <td className="px-6 py-4 text-right text-slate-900 dark:text-slate-100 font-mono border-t border-slate-200 dark:border-slate-700">
-                          $
-                          {Math.round(
-                            analysis.incomeAnalysis.reduce(
-                              (sum: number, r: any) => sum + r.actual,
-                              0
-                            )
-                          ).toLocaleString()}
-                        </td>
-                        {showBudgetAverage && (
+                        {budgetColumns.actual && (
+                          <td className="px-6 py-4 text-right text-slate-900 dark:text-slate-100 font-mono border-t border-slate-200 dark:border-slate-700">
+                            $
+                            {Math.round(
+                              analysis.incomeAnalysis.reduce(
+                                (sum: number, r: any) => sum + r.actual,
+                                0
+                              )
+                            ).toLocaleString()}
+                          </td>
+                        )}
+                        {budgetColumns.average && (
                           <td className="px-6 py-4 text-right text-slate-900 dark:text-slate-100 font-mono border-t border-slate-200 dark:border-slate-700">
                             $
                             {Math.round(
@@ -2773,37 +3092,60 @@ export default function App() {
                             ).toLocaleString()}
                           </td>
                         )}
-                        <td className="px-6 py-4 text-right text-slate-900 dark:text-slate-100 font-mono border-t border-slate-200 dark:border-slate-700">
-                          $
-                          {Math.round(
-                            analysis.incomeAnalysis.reduce(
-                              (sum: number, r: any) => sum + r.budget,
-                              0
-                            )
-                          ).toLocaleString()}
-                        </td>
-                        <td
-                          className={`px-6 py-4 text-right font-mono border-t border-slate-200 dark:border-slate-700 ${
-                            analysis.incomeAnalysis.reduce(
-                              (sum: number, r: any) => sum + r.diff,
-                              0
-                            ) > 0
-                              ? 'text-emerald-600'
-                              : 'text-red-600'
-                          }`}
-                        >
-                          {(() => {
-                            const totalDiff = analysis.incomeAnalysis.reduce(
-                              (sum: number, r: any) => sum + r.diff,
-                              0
-                            );
-                            return (
-                              (totalDiff > 0 ? '+$' : totalDiff < 0 ? '-$' : '$') +
-                              Math.abs(Math.round(totalDiff)).toLocaleString()
-                            );
-                          })()}
-                        </td>
-                        <td className="px-6 py-4 border-t border-slate-200 dark:border-slate-700"></td>
+                        {budgetColumns.budgeted && (
+                          <td className="px-6 py-4 text-right text-slate-900 dark:text-slate-100 font-mono border-t border-slate-200 dark:border-slate-700">
+                            $
+                            {Math.round(
+                              analysis.incomeAnalysis.reduce(
+                                (sum: number, r: any) => sum + r.budget,
+                                0
+                              )
+                            ).toLocaleString()}
+                          </td>
+                        )}
+                        {budgetColumns.upcoming && (
+                          <td className="px-6 py-4 text-right text-slate-900 dark:text-slate-100 font-mono border-t border-slate-200 dark:border-slate-700">
+                            $
+                            {Math.round(
+                              analysis.incomeAnalysis.reduce(
+                                (sum: number, r: any) => sum + (r.upcoming || 0),
+                                0
+                              )
+                            ).toLocaleString()}
+                          </td>
+                        )}
+                        {budgetColumns.difference && (
+                          <td
+                            className={`px-6 py-4 text-right font-mono border-t border-slate-200 dark:border-slate-700 ${
+                              Math.round(
+                                analysis.incomeAnalysis.reduce(
+                                  (sum: number, r: any) => sum + r.diff,
+                                  0
+                                )
+                              ) >= 0
+                                ? 'text-emerald-600'
+                                : 'text-red-600'
+                            }`}
+                          >
+                            {(() => {
+                              const totalDiff = analysis.incomeAnalysis.reduce(
+                                (sum: number, r: any) => sum + r.diff,
+                                0
+                              );
+                              return (
+                                (Math.round(totalDiff) < 0
+                                  ? '-$'
+                                  : Math.round(totalDiff) > 0
+                                    ? '+$'
+                                    : '$') + Math.abs(Math.round(totalDiff)).toLocaleString()
+                              );
+                            })()}
+                          </td>
+                        )}
+
+                        {budgetColumns.status && (
+                          <td className="px-6 py-4 border-t border-slate-200 dark:border-slate-700"></td>
+                        )}
                       </tr>
                     </tfoot>
                   </table>

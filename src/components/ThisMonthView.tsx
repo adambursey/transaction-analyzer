@@ -401,12 +401,6 @@ export function ThisMonthView({
       return isNaN(d.getTime()) ? new Date() : d;
     };
 
-    const allRecurringTxs = [...occurredTransactions, ...mappedUpcomingTransactions];
-
-    const sortedRecurring = [...allRecurringTxs].sort((a, b) => {
-      return getTxDateObj(a).getTime() - getTxDateObj(b).getTime();
-    });
-
     // We build the data points from Day 1 to numDays
     const isCurrentMonth = now.getFullYear() === currentYear && now.getMonth() === currentMonth;
 
@@ -435,27 +429,31 @@ export function ThisMonthView({
         runningActual = dailyActualMap[d];
       }
 
-      // Update runningProjected: apply all recurring transactions that fall on this day
-      const recurringOnDay = sortedRecurring.filter((tx) => {
-        const txDate = getTxDateObj(tx);
-        return txDate.getDate() === d;
-      });
+      if (d <= maxActualDay) {
+        runningProjected = runningActual;
+      } else {
+        // After maxActualDay, apply ONLY the unmatched upcoming transactions
+        const recurringOnDay = mappedUpcomingTransactions.filter((tx) => {
+          const txDate = getTxDateObj(tx);
+          return txDate.getDate() === d;
+        });
 
-      for (const tx of recurringOnDay) {
-        const amt =
-          tx._parsedAmount !== undefined
-            ? Math.abs(tx._parsedAmount)
-            : Math.abs(tx.Amount || tx.amount || 0);
-        const isExpense =
-          tx._isExpense !== undefined
-            ? tx._isExpense
-            : tx.Amount !== undefined
-              ? tx.Amount < 0
-              : tx.amount !== undefined
-                ? tx.amount < 0
-                : true;
-        const signedAmt = isExpense ? -amt : amt;
-        runningProjected = Number((runningProjected + signedAmt).toFixed(2));
+        for (const tx of recurringOnDay) {
+          const amt =
+            tx._parsedAmount !== undefined
+              ? Math.abs(tx._parsedAmount)
+              : Math.abs(tx.Amount || tx.amount || 0);
+          const isExpense =
+            tx._isExpense !== undefined
+              ? tx._isExpense
+              : tx.Amount !== undefined
+                ? tx.Amount < 0
+                : tx.amount !== undefined
+                  ? tx.amount < 0
+                  : true;
+          const signedAmt = isExpense ? -amt : amt;
+          runningProjected = Number((runningProjected + signedAmt).toFixed(2));
+        }
       }
 
       dataPoints.push({
@@ -463,7 +461,7 @@ export function ThisMonthView({
         dayLabel: dayLabel,
         day: d,
         actualBalance: d <= maxActualDay ? Number(runningActual.toFixed(2)) : undefined,
-        projectedBalance: Number(runningProjected.toFixed(2)),
+        projectedBalance: d >= maxActualDay ? Number(runningProjected.toFixed(2)) : undefined,
       });
     }
 
@@ -841,30 +839,20 @@ export function ThisMonthView({
           </div>
         </div>
 
-        {(() => {
-          const isGrowth = projectedBalance > currentBalance;
-          const IconComponent = isGrowth ? TrendingUp : TrendingDown;
-          const iconBgClass = isGrowth ? 'bg-emerald-100' : 'bg-rose-100';
-          const iconTextClass = isGrowth ? 'text-emerald-600' : 'text-rose-600';
-          return (
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
-              <div className="flex items-center gap-4">
-                <div
-                  className={`w-12 h-12 ${iconBgClass} rounded-full flex items-center justify-center shrink-0`}
-                >
-                  <IconComponent className={`w-6 h-6 ${iconTextClass}`} />
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-slate-500">Projected End of Month</p>
-                  <p className="text-2xl font-bold text-slate-900 whitespace-nowrap">
-                    {projectedBalance < 0 ? '-' : ''}
-                    {formatCurrency(projectedBalance)}
-                  </p>
-                </div>
-              </div>
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 bg-emerald-100 rounded-full flex items-center justify-center shrink-0">
+              <DollarSign className="w-6 h-6 text-emerald-600" />
             </div>
-          );
-        })()}
+            <div>
+              <p className="text-sm font-medium text-slate-500">Projected End of Month</p>
+              <p className="text-2xl font-bold text-slate-900 whitespace-nowrap">
+                {projectedBalance < 0 ? '-' : ''}
+                {formatCurrency(projectedBalance)}
+              </p>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Unmatched Transactions List */}
@@ -1177,22 +1165,6 @@ export function ThisMonthView({
                   {dailyCashFlowData.projectedEndingBalance < 0 ? '-' : ''}
                   {formatCurrency(dailyCashFlowData.projectedEndingBalance)}
                 </p>
-              </div>
-              <div>
-                <p className="text-xs text-slate-500 font-medium">Month-to-Date Variance</p>
-                <div className="flex items-center gap-1 mt-0.5">
-                  <p
-                    className={`text-base font-bold font-mono ${dailyCashFlowData.varianceToday >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}
-                  >
-                    {dailyCashFlowData.varianceToday >= 0 ? '+' : '-'}
-                    {formatCurrency(dailyCashFlowData.varianceToday)}
-                  </p>
-                  <span
-                    className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${dailyCashFlowData.varianceToday >= 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}
-                  >
-                    {dailyCashFlowData.varianceToday >= 0 ? 'Ahead' : 'Behind'}
-                  </span>
-                </div>
               </div>
             </div>
 

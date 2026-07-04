@@ -420,6 +420,7 @@ export async function createApp() {
       // 1. Fetch existing transactions to build deduplication set and exact match dictionary
       const snapshot = await transactionsCollection.get();
       const existingSignatures = new Set<string>();
+      const existingSignatureRefs = new Map<string, any[]>();
       let knownMapping: Record<string, { Category: string; Subcategory: string }> = {};
 
       if (useSavedMapping) {
@@ -435,6 +436,11 @@ export async function createApp() {
         const data = doc.data();
         const sig = generateSignature(data);
         existingSignatures.add(sig);
+
+        if (!existingSignatureRefs.has(sig)) {
+          existingSignatureRefs.set(sig, []);
+        }
+        existingSignatureRefs.get(sig)!.push(doc.ref);
 
         // Map Account+Date+Amount to document ID and description for potential duplicate checking
         const parts = sig.split('|');
@@ -462,12 +468,54 @@ export async function createApp() {
       });
 
       // 2. Deduplicate incoming transactions by comparing generated signatures against the database
-      const uniqueIncoming = deduplicateTransactions(parsedTransactions, existingSignatures);
+      const uniqueIncoming: any[] = [];
+      const exactDuplicatesToUpdate: { tx: any; existingDocRef: any }[] = [];
+      const signatureUsageCount = new Map<string, number>();
+
+      for (const tx of parsedTransactions) {
+        const signature = generateSignature(tx);
+        const existingDocs = existingSignatureRefs.get(signature) || [];
+        const usedCount = signatureUsageCount.get(signature) || 0;
+
+        if (usedCount < existingDocs.length) {
+          // Exact duplicate, update the Date timestamp (and Balance) to ensure correct timeline
+          exactDuplicatesToUpdate.push({ tx, existingDocRef: existingDocs[usedCount] });
+          signatureUsageCount.set(signature, usedCount + 1);
+        } else {
+          // Check if we should add this as a new transaction
+          if (!existingSignatures.has(signature)) {
+            existingSignatures.add(signature);
+            uniqueIncoming.push(tx);
+          }
+        }
+      }
+
+      // Update existing exact duplicates with their new intra-day timestamps
+      if (exactDuplicatesToUpdate.length > 0) {
+        let updateBatch = firestore.batch();
+        let updateOpCount = 0;
+        for (const item of exactDuplicatesToUpdate) {
+          const updateData: any = { Date: item.tx.Date };
+          if (item.tx.Balance !== undefined && item.tx.Balance !== null) {
+            updateData.Balance = item.tx.Balance;
+          }
+          updateBatch.update(item.existingDocRef, updateData);
+          updateOpCount++;
+          if (updateOpCount >= 400) {
+            await updateBatch.commit();
+            updateBatch = firestore.batch();
+            updateOpCount = 0;
+          }
+        }
+        if (updateOpCount > 0) {
+          await updateBatch.commit();
+        }
+      }
 
       if (uniqueIncoming.length === 0) {
         res.json({
           success: true,
-          message: 'No new transactions to import. All were duplicates.',
+          message: `No new transactions to import. Updated timestamps for ${exactDuplicatesToUpdate.length} existing transactions.`,
           importedCount: 0,
           skippedCount: parsedTransactions.length,
         });
@@ -657,7 +705,7 @@ ${JSON.stringify(uniqueFuzzyDescs)}
       const skippedCount = parsedTransactions.length - uniqueIncoming.length;
       const responsePayload: any = {
         success: true,
-        message: `Imported ${allToInsert.length} transactions. ${exactMatches.length} auto-categorized, ${finalFuzzyMatches.length} pending review. Skipped ${skippedCount} duplicates.`,
+        message: `Imported ${allToInsert.length} transactions. ${exactMatches.length} auto-categorized, ${finalFuzzyMatches.length} pending review. Updated ${exactDuplicatesToUpdate.length} timestamps.`,
         importedCount: allToInsert.length,
         skippedCount: skippedCount,
       };
@@ -2007,9 +2055,10 @@ ${JSON.stringify(uniqueDescs)}
 
         if (tx.Balance !== undefined && tx.Balance !== null) {
           const sigParts = generateSignature(tx).split('|');
-          if (sigParts.length >= 3) {
-            const key = `${sigParts[0]}|${sigParts[2]}`;
+          if (sigParts.length >= 4) {
+            const key = `${sigParts[0]}|${sigParts[1]}|${sigParts[3]}`;
             const candidates = dbDateAmountMap.get(key) || [];
+            if (candidates.length === 0) console.log(`No candidates for key: ${key}`);
 
             for (const candidate of candidates) {
               const matchResult = areTransactionsTheSame(tx, candidate.data);

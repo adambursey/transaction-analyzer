@@ -1,3 +1,11 @@
+beforeAll(() => {
+  jest.useFakeTimers({ advanceTimers: true });
+  jest.setSystemTime(new Date('2026-05-24T12:00:00Z'));
+});
+afterAll(() => {
+  jest.useRealTimers();
+});
+
 import React from 'react';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';

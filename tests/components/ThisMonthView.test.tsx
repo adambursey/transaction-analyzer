@@ -1085,8 +1085,8 @@ describe('ThisMonthView Component', () => {
     expect(dataRaw).toBeTruthy();
     const dailyData = JSON.parse(dataRaw!);
 
-    // Should contain exactly 31 data points (one for each day of May)
-    expect(dailyData.length).toBe(31);
+    // Should contain exactly 32 data points (Day 0 + one for each day of May)
+    expect(dailyData.length).toBe(32);
 
     // Let's assert on the computed math:
     // startingBalance back-calculated from currentBalance (5000) on today (May 24)
@@ -1097,45 +1097,45 @@ describe('ThisMonthView Component', () => {
     // Sum is -161.49, so startingBalance = 5000 - (-161.49) = 5161.49
 
     // Day 1 (May 1)
-    expect(dailyData[0].day).toBe(1);
-    expect(dailyData[0].actualBalance).toBeCloseTo(5161.49, 2);
-    expect(dailyData[0].projectedBalance).toBeUndefined();
-
-    // Day 2 (May 2) - Whole Foods (-120.50) occurs
-    expect(dailyData[1].day).toBe(2);
-    expect(dailyData[1].actualBalance).toBeCloseTo(5161.49 - 120.5, 2); // 5040.99
+    expect(dailyData[1].day).toBe(1);
+    expect(dailyData[1].actualBalance).toBeCloseTo(5161.49, 2);
     expect(dailyData[1].projectedBalance).toBeUndefined();
 
-    // Day 3 & 4 (May 3 & 4) - Holds flat
-    expect(dailyData[2].actualBalance).toBeCloseTo(5040.99, 2);
+    // Day 2 (May 2) - Whole Foods (-120.50) occurs
+    expect(dailyData[2].day).toBe(2);
+    expect(dailyData[2].actualBalance).toBeCloseTo(5161.49 - 120.5, 2); // 5040.99
     expect(dailyData[2].projectedBalance).toBeUndefined();
 
+    // Day 3 & 4 (May 3 & 4) - Holds flat
+    expect(dailyData[3].actualBalance).toBeCloseTo(5040.99, 2);
+    expect(dailyData[3].projectedBalance).toBeUndefined();
+
     // Day 5 (May 5) - Uber Ride (-25.00) occurs in actual ledger
-    expect(dailyData[4].day).toBe(5);
-    expect(dailyData[4].actualBalance).toBeCloseTo(5040.99 - 25.0, 2); // 5015.99
-    expect(dailyData[4].projectedBalance).toBeUndefined();
+    expect(dailyData[5].day).toBe(5);
+    expect(dailyData[5].actualBalance).toBeCloseTo(5040.99 - 25.0, 2); // 5015.99
+    expect(dailyData[5].projectedBalance).toBeUndefined();
 
     // Day 10 (May 10) - Netflix (-15.99) occurs
-    expect(dailyData[9].day).toBe(10);
-    expect(dailyData[9].actualBalance).toBeCloseTo(5015.99 - 15.99, 2); // 5000.00
-    expect(dailyData[9].projectedBalance).toBeUndefined();
+    expect(dailyData[10].day).toBe(10);
+    expect(dailyData[10].actualBalance).toBeCloseTo(5015.99 - 15.99, 2); // 5000.00
+    expect(dailyData[10].projectedBalance).toBeUndefined();
 
     // Max actual day is today (May 24)
     // Between Day 10 and Day 24, it holds flat at 5000.00
-    expect(dailyData[14].projectedBalance).toBeUndefined();
+    expect(dailyData[15].projectedBalance).toBeUndefined();
 
     // Day 24 is maxActualDay. The projected balance starts here!
-    expect(dailyData[23].actualBalance).toBeCloseTo(5000.0, 2);
-    expect(dailyData[23].projectedBalance).toBeCloseTo(5000.0, 2);
+    expect(dailyData[24].actualBalance).toBeCloseTo(5000.0, 2);
+    expect(dailyData[24].projectedBalance).toBeCloseTo(5000.0, 2);
 
     // After maxActualDay, we apply unmatched upcoming transactions.
     // The rent payment of -100 was on May 15, which is overdue, so it gets applied on maxActualDay + 1 (May 25)
     // Overdue transactions are now correctly bumped to the current day and applied.
     // So the balance on May 25 should reflect the -100 impact of the overdue transaction.
-    expect(dailyData[24].projectedBalance).toBeCloseTo(4900.0, 2);
-    expect(dailyData[30].projectedBalance).toBeCloseTo(4900.0, 2);
+    expect(dailyData[25].projectedBalance).toBeCloseTo(4900.0, 2);
+    expect(dailyData[31].projectedBalance).toBeCloseTo(4900.0, 2);
     // Day 25 (May 25) - Future day, actual balance should be undefined/null (so it's not plotted)
-    expect(dailyData[24].actualBalance).toBeUndefined();
+    expect(dailyData[25].actualBalance).toBeUndefined();
 
     // Clean up global mock override
     (global as any).mockUnmatchedOverride = null;
@@ -1219,16 +1219,19 @@ describe('ThisMonthView Component', () => {
     const dataRaw = chart.getAttribute('data-chart-data');
     const dailyData = JSON.parse(dataRaw!);
 
-    // Day 1: starting balance is 5000 - (-120.5) = 5120.50
+    // Day 0 is the starting point
     expect(dailyData[0].actualBalance).toBeCloseTo(5120.5, 2);
-    expect(dailyData[0].projectedBalance).toBeUndefined();
+
+    // Day 1: starting balance is 5000 - (-120.5) = 5120.50
+    expect(dailyData[1].actualBalance).toBeCloseTo(5120.5, 2);
+    expect(dailyData[1].projectedBalance).toBeUndefined();
 
     // Day 2 (May 2): Whole Foods (-120.50) occurs, so actual balance must go DOWN back to 5000.00
     // If the bug is present, it will treat it as positive and go up to 5120.50 + 120.5 = 5241.00.
-    expect(dailyData[1].actualBalance).toBeCloseTo(5000.0, 2);
-    expect(dailyData[1].projectedBalance).toBeUndefined();
+    expect(dailyData[2].actualBalance).toBeCloseTo(5000.0, 2);
+    expect(dailyData[2].projectedBalance).toBeUndefined();
 
     // Check that projected balance accurately inherits this value on maxActualDay (Day 24)
-    expect(dailyData[23].projectedBalance).toBeCloseTo(5000.0, 2);
+    expect(dailyData[24].projectedBalance).toBeCloseTo(5000.0, 2);
   });
 });

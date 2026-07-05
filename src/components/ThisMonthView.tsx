@@ -97,13 +97,32 @@ export function ThisMonthView({
     return saved !== null ? saved === 'true' : true;
   });
   const [includeRemainingBudget, setIncludeRemainingBudget] = useState(() => {
-    const saved = localStorage.getItem('includeRemainingBudget');
-    return saved !== null ? saved === 'true' : true;
+    const saved = localStorage.getItem('ta_includeRemainingBudget');
+    return saved !== null ? JSON.parse(saved) : true;
   });
 
+  const [showBudgetedLine, setShowBudgetedLine] = useState(() => {
+    const saved = localStorage.getItem('ta_showBudgetedLine');
+    return saved !== null ? JSON.parse(saved) : true;
+  });
+
+  // Persist chart expansion and option states to localStorage
   useEffect(() => {
-    localStorage.setItem('includeRemainingBudget', String(includeRemainingBudget));
-  }, [includeRemainingBudget]);
+    localStorage.setItem('ta_remainingExpanded', JSON.stringify(remainingExpanded));
+    localStorage.setItem('ta_matchedExpanded', JSON.stringify(matchedExpanded));
+    localStorage.setItem('ta_occurredExpanded', JSON.stringify(occurredExpanded));
+    localStorage.setItem('ta_projectionExpanded', JSON.stringify(projectionExpanded));
+    localStorage.setItem('ta_includeRemainingBudget', JSON.stringify(includeRemainingBudget));
+    localStorage.setItem('ta_showBudgetedLine', JSON.stringify(showBudgetedLine));
+  }, [
+    remainingExpanded,
+    matchedExpanded,
+    occurredExpanded,
+    projectionExpanded,
+    includeRemainingBudget,
+    showBudgetedLine,
+  ]);
+
   const [matchedResults, setMatchedResults] = useState<MatchingResult[]>([]);
   const [recurringProfiles, setRecurringProfiles] = useState<any[]>([]);
   const [savingMap, setSavingMap] = useState<Record<string, boolean>>({});
@@ -438,6 +457,57 @@ export function ThisMonthView({
       0
     );
 
+    const totalBudget = expensesAnalysis.reduce((sum: number, r: any) => sum + (r.budget || 0), 0);
+
+    // We want the budgeted line to reflect ALL expected recurring transactions for the current month,
+    // EXCEPT those that already occurred prior to the start of the month (early posting).
+    // If they occurred early, they are already baked into the startingBalance.
+    const preMonthTransactions = transactions.filter((t) => {
+      const txDate = t.Date?.toDate ? t.Date.toDate() : new Date(t.Date || t.date);
+      return (
+        txDate.getFullYear() < currentYear ||
+        (txDate.getFullYear() === currentYear && txDate.getMonth() < currentMonth)
+      );
+    });
+
+    const allRecurringThisMonth = getUnmatchedRecurringInstances(
+      preMonthTransactions,
+      recurringProfiles,
+      currentYear,
+      currentMonth,
+      31
+    );
+
+    const mappedAllRecurring = allRecurringThisMonth.map((rt: any) => {
+      let dateVal: Date;
+      if (rt._projectedDate) {
+        dateVal =
+          rt._projectedDate instanceof Date ? rt._projectedDate : new Date(rt._projectedDate);
+      } else {
+        const expectedDay = parseInt(rt.projectedOccurrence, 10);
+        dateVal =
+          isNaN(expectedDay) || expectedDay === 99
+            ? new Date(currentYear, currentMonth, 28)
+            : new Date(currentYear, currentMonth, expectedDay);
+      }
+      const parsedAmount = Math.abs(rt.amountAverage || 0);
+      const isExpense = rt.amountAverage !== undefined ? rt.amountAverage < 0 : true;
+
+      return {
+        _date: dateVal,
+        _parsedAmount: parsedAmount,
+        _isExpense: isExpense,
+      };
+    });
+
+    const totalRecurringExpenses = mappedAllRecurring
+      .filter((tx) => tx._isExpense)
+      .reduce((sum, tx) => sum + tx._parsedAmount, 0);
+
+    const nonRecurringBudget = totalBudget - totalRecurringExpenses;
+    const dailyBudgetedExpense =
+      includeRemainingBudget && isCurrentMonth ? nonRecurringBudget / numDays : 0;
+
     const remainingDaysInMonth = Math.max(1, numDays - activeActualDay + 1);
     const dailyBudgetExpense =
       includeRemainingBudget && isCurrentMonth
@@ -447,6 +517,19 @@ export function ThisMonthView({
     const dataPoints = [];
     let runningActual = startingBalance;
     let runningProjected = startingBalance;
+    let runningBudgeted = startingBalance;
+
+    // Push Day 0 (Start of month) to anchor all lines to the same exact starting point
+    const prevMonthDate = new Date(currentYear, currentMonth, 0);
+    const dateStr0 = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-00`;
+    dataPoints.push({
+      date: dateStr0,
+      dayLabel: format(prevMonthDate, 'MMM d'),
+      day: 0,
+      actualBalance: Number(startingBalance.toFixed(2)),
+      projectedBalance: maxActualDay === 0 ? Number(startingBalance.toFixed(2)) : undefined,
+      budgetedBalance: Number(startingBalance.toFixed(2)),
+    });
 
     for (let d = 1; d <= numDays; d++) {
       const dateStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
@@ -493,12 +576,21 @@ export function ThisMonthView({
         runningProjected = Number((runningProjected - dailyBudgetExpense).toFixed(2));
       }
 
+      // Budgeted trace calculation (completely independent of actuals)
+      runningBudgeted -= dailyBudgetedExpense;
+      const allRecurringOnDay = mappedAllRecurring.filter((tx) => tx._date.getDate() === d);
+      for (const tx of allRecurringOnDay) {
+        const signedAmt = tx._isExpense ? -tx._parsedAmount : tx._parsedAmount;
+        runningBudgeted += signedAmt;
+      }
+
       dataPoints.push({
         date: dateStr,
         dayLabel: dayLabel,
         day: d,
         actualBalance: d <= maxActualDay ? Number(runningActual.toFixed(2)) : undefined,
         projectedBalance: d >= maxActualDay ? Number(runningProjected.toFixed(2)) : undefined,
+        budgetedBalance: Number(runningBudgeted.toFixed(2)),
       });
     }
 
@@ -533,6 +625,7 @@ export function ThisMonthView({
     defaultAnalysis,
     currentBalance,
     includeRemainingBudget,
+    recurringProfiles,
   ]);
 
   useEffect(() => {
@@ -829,6 +922,7 @@ export function ThisMonthView({
 
   const currentMonthName = format(new Date(), 'MMMM');
   const currentYear = new Date().getFullYear();
+  const currentMonth = new Date().getMonth();
 
   if (loading) {
     return (
@@ -1244,6 +1338,16 @@ export function ThisMonthView({
               <p className="text-sm text-slate-500 dark:text-slate-400">
                 Daily actual vs. projected cash flow for the month of {currentMonthName}
               </p>
+
+              <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400 cursor-pointer bg-slate-100 dark:bg-slate-800/50 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors">
+                <input
+                  type="checkbox"
+                  checked={showBudgetedLine}
+                  onChange={(e) => setShowBudgetedLine(e.target.checked)}
+                  className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 bg-white dark:bg-slate-900 dark:border-slate-600 cursor-pointer"
+                />
+                Show budgeted baseline
+              </label>
             </div>
 
             {/* KPI Metrics Subheader */}
@@ -1305,7 +1409,13 @@ export function ThisMonthView({
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                     <XAxis
                       dataKey="day"
-                      tickFormatter={(val) => `${currentMonthName.substring(0, 3)} ${val}`}
+                      tickFormatter={(val) => {
+                        if (val === 0) {
+                          const prevMonthDate = new Date(currentYear, currentMonth, 0);
+                          return format(prevMonthDate, 'MMM d');
+                        }
+                        return `${currentMonthName.substring(0, 3)} ${val}`;
+                      }}
                       tick={{ fill: '#64748b', fontSize: 11 }}
                       tickMargin={10}
                       minTickGap={20}
@@ -1339,6 +1449,9 @@ export function ThisMonthView({
                           const pt = payload[0].payload;
                           const hasActual =
                             pt.actualBalance !== undefined && pt.actualBalance !== null;
+                          const currentBal = hasActual ? pt.actualBalance : pt.projectedBalance;
+                          const variance = currentBal - pt.budgetedBalance;
+
                           return (
                             <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-lg text-sm text-slate-600 dark:text-slate-400 font-sans">
                               <p className="font-semibold text-slate-800 dark:text-slate-200 mb-2 border-b border-slate-100 dark:border-slate-800 pb-1.5">
@@ -1368,6 +1481,38 @@ export function ThisMonthView({
                                     </span>
                                   </div>
                                 )}
+                                {showBudgetedLine && (
+                                  <>
+                                    <div className="flex items-center justify-between gap-6">
+                                      <span className="flex items-center gap-1.5">
+                                        <span className="w-2.5 h-2.5 rounded-full bg-slate-400 block" />
+                                        Budgeted Balance:
+                                      </span>
+                                      <span className="font-mono font-bold text-slate-800 dark:text-slate-200">
+                                        {pt.budgetedBalance < 0 ? '-' : ''}
+                                        {formatCurrency(pt.budgetedBalance)}
+                                      </span>
+                                    </div>
+                                    <div className="flex items-center justify-between gap-6 pt-1.5 border-t border-slate-100 dark:border-slate-800 mt-1.5">
+                                      <span className="flex items-center gap-1.5 font-medium">
+                                        Difference from budget:
+                                      </span>
+                                      <span
+                                        className={`font-mono font-bold ${
+                                          variance > 0
+                                            ? 'text-emerald-600 dark:text-emerald-400'
+                                            : variance < 0
+                                              ? 'text-rose-600 dark:text-rose-400'
+                                              : 'text-slate-800 dark:text-slate-200'
+                                        }`}
+                                      >
+                                        {variance > 0 ? '+' : ''}
+                                        {variance < 0 ? '-' : ''}
+                                        {formatCurrency(variance)}
+                                      </span>
+                                    </div>
+                                  </>
+                                )}
                               </div>
                             </div>
                           );
@@ -1392,12 +1537,25 @@ export function ThisMonthView({
                     <Line
                       type="monotone"
                       dataKey="projectedBalance"
-                      stroke="#6366f1"
+                      stroke="#818cf8"
                       strokeWidth={3}
-                      strokeDasharray="5 5"
+                      strokeDasharray="6 4"
                       dot={false}
-                      activeDot={{ r: 5, fill: '#6366f1', stroke: '#fff', strokeWidth: 1.5 }}
+                      activeDot={{ r: 6, strokeWidth: 0, fill: '#818cf8' }}
+                      connectNulls
                     />
+                    {showBudgetedLine && (
+                      <Line
+                        type="monotone"
+                        dataKey="budgetedBalance"
+                        stroke="#94a3b8"
+                        strokeWidth={2}
+                        strokeDasharray="4 4"
+                        dot={false}
+                        activeDot={{ r: 5, fill: '#94a3b8', stroke: '#fff', strokeWidth: 1.5 }}
+                        connectNulls
+                      />
+                    )}
                   </LineChart>
                 </ResponsiveContainer>
               ) : (

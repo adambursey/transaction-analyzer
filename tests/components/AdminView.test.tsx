@@ -46,6 +46,10 @@ describe('AdminView Component', () => {
           transactionCount: 15,
           savedAt: new Date().toISOString(),
         }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ backups: [] }),
       });
 
     render(<AdminView transactions={[{ id: 'u1', _category: 'Uncategorized' }]} />);
@@ -53,6 +57,8 @@ describe('AdminView Component', () => {
     await waitFor(() => {
       expect(screen.getByText('Admin Controls')).toBeInTheDocument();
     });
+
+    await userEvent.click(screen.getByText('Maintenance Actions'));
 
     expect(screen.getByText('5')).toBeInTheDocument(); // Duplicate count
     expect(screen.getByText('Test Archive TX')).toBeInTheDocument();
@@ -64,14 +70,18 @@ describe('AdminView Component', () => {
       .mockResolvedValueOnce({ ok: true, json: async () => ({ imports: [] }) })
       .mockResolvedValueOnce({ ok: true, json: async () => ({ count: 2 }) }) // Initial load
       .mockResolvedValueOnce({ ok: true, json: async () => ({ exists: false }) }) // Mapping status
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ backups: [] }) }) // Backups
       .mockResolvedValueOnce({ ok: true, json: async () => ({ deletedCount: 2 }) }) // Deduplicate action
       .mockResolvedValueOnce({ ok: true, json: async () => ({ transactions: [] }) }) // Reload
       .mockResolvedValueOnce({ ok: true, json: async () => ({ imports: [] }) })
       .mockResolvedValueOnce({ ok: true, json: async () => ({ count: 0 }) })
-      .mockResolvedValueOnce({ ok: true, json: async () => ({ exists: false }) });
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ exists: false }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ backups: [] }) });
 
     render(<AdminView />);
     await waitFor(() => expect(screen.getByText('Admin Controls')).toBeInTheDocument());
+
+    await userEvent.click(screen.getByText('Maintenance Actions'));
 
     const dedupeBtn = screen.getByText('Archive Duplicates');
     await userEvent.click(dedupeBtn);
@@ -89,9 +99,9 @@ describe('AdminView Component', () => {
       expect(window.alert).toHaveBeenCalledWith(expect.stringContaining('Moved 2 duplicate'));
     });
 
-    // Wait for the subsequent fetchData to complete (4 initial + 1 action + 4 reload)
+    // Wait for the subsequent fetchData to complete (5 initial + 1 action + 5 reload)
     await waitFor(() => {
-      expect(global.fetch).toHaveBeenCalledTimes(9);
+      expect(global.fetch).toHaveBeenCalledTimes(11);
     });
   });
 
@@ -101,6 +111,7 @@ describe('AdminView Component', () => {
       .mockResolvedValueOnce({ ok: true, json: async () => ({ imports: [] }) })
       .mockResolvedValueOnce({ ok: true, json: async () => ({ count: 0 }) }) // Initial load
       .mockResolvedValueOnce({ ok: true, json: async () => ({ exists: false }) }) // Mapping status
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ backups: [] }) }) // Backups
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({ success: true, updatedBalances: 1, discrepanciesGenerated: 1 }),
@@ -108,10 +119,13 @@ describe('AdminView Component', () => {
       .mockResolvedValueOnce({ ok: true, json: async () => ({ transactions: [] }) }) // Reload
       .mockResolvedValueOnce({ ok: true, json: async () => ({ imports: [] }) })
       .mockResolvedValueOnce({ ok: true, json: async () => ({ count: 0 }) })
-      .mockResolvedValueOnce({ ok: true, json: async () => ({ exists: false }) });
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ exists: false }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ backups: [] }) });
 
     render(<AdminView />);
     await waitFor(() => expect(screen.getByText('Admin Controls')).toBeInTheDocument());
+
+    await userEvent.click(screen.getByText('Maintenance Actions'));
 
     const fileInput = screen.getByLabelText(/Upload Backfill CSV/i);
     const file = new File(
@@ -144,9 +158,9 @@ describe('AdminView Component', () => {
       );
     });
 
-    // Wait for the subsequent fetchData to complete (4 initial + 1 action + 4 reload)
+    // Wait for the subsequent fetchData to complete (5 initial + 1 action + 5 reload)
     await waitFor(() => {
-      expect(global.fetch).toHaveBeenCalledTimes(9);
+      expect(global.fetch).toHaveBeenCalledTimes(11);
     });
   });
 });

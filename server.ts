@@ -2408,7 +2408,7 @@ ${JSON.stringify(uniqueDescs)}
         .map((f) => {
           return {
             name: f.name,
-            size: parseInt(f.metadata.size || '0', 10),
+            size: parseInt(String(f.metadata.size || '0'), 10),
             updated: f.metadata.updated || null,
           };
         })

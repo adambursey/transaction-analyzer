@@ -147,7 +147,8 @@ describe('ThisMonthView Component', () => {
     render(<ThisMonthView transactions={mockTransactions} currentBalance={5000} />);
 
     await waitFor(() => {
-      expect(screen.getByText('$6,500.00')).toBeInTheDocument();
+      const elements = screen.getAllByText('$6,500.00');
+      expect(elements.length).toBeGreaterThan(0);
     });
   });
 
@@ -1129,10 +1130,10 @@ describe('ThisMonthView Component', () => {
 
     // After maxActualDay, we apply unmatched upcoming transactions.
     // The rent payment of -100 was on May 15, which is overdue, so it gets applied on maxActualDay + 1 (May 25)
-    // Wait! As currently coded in ThisMonthView.tsx, overdue transactions are SKIPPED.
-    // So the balance on May 25 remains 5000! Let's assert that to match current behavior.
-    expect(dailyData[24].projectedBalance).toBeCloseTo(5000.0, 2);
-    expect(dailyData[30].projectedBalance).toBeCloseTo(5000.0, 2);
+    // Overdue transactions are now correctly bumped to the current day and applied.
+    // So the balance on May 25 should reflect the -100 impact of the overdue transaction.
+    expect(dailyData[24].projectedBalance).toBeCloseTo(4900.0, 2);
+    expect(dailyData[30].projectedBalance).toBeCloseTo(4900.0, 2);
     // Day 25 (May 25) - Future day, actual balance should be undefined/null (so it's not plotted)
     expect(dailyData[24].actualBalance).toBeUndefined();
 

@@ -3841,6 +3841,7 @@ export default function App() {
             transactions={analysis?.allTransactionsUnfiltered || []}
             currentBalance={analysis?.currentBalance || 0}
             onRefresh={fetchSheetData}
+            onBack={() => setCurrentView('dashboard')}
             analysis={analysis}
             taxonomy={taxonomy}
             availableYears={availableYears}

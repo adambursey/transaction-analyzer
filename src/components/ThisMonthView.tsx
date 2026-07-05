@@ -19,6 +19,7 @@ import {
   AlertCircle,
   DollarSign,
   Tag,
+  ArrowLeft,
 } from 'lucide-react';
 import { runMatchingEngine, MatchingResult } from '../utils/matchingLogic';
 import { getUnmatchedRecurringInstances } from '../utils/projectionLogic';
@@ -52,6 +53,8 @@ interface ThisMonthViewProps {
   availableYears?: string[];
   /** Expected headers list for sheets table cells mapping */
   headers?: string[];
+  /** Callback triggered when back button is pressed */
+  onBack?: () => void;
 }
 
 /**
@@ -71,6 +74,7 @@ export function ThisMonthView({
   taxonomy,
   availableYears,
   headers,
+  onBack,
 }: ThisMonthViewProps) {
   const [loading, setLoading] = useState(true);
   const [unmatched, setUnmatched] = useState<any[]>([]);
@@ -92,6 +96,14 @@ export function ThisMonthView({
     const saved = localStorage.getItem('projectionExpanded');
     return saved !== null ? saved === 'true' : true;
   });
+  const [includeRemainingBudget, setIncludeRemainingBudget] = useState(() => {
+    const saved = localStorage.getItem('includeRemainingBudget');
+    return saved !== null ? saved === 'true' : true;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('includeRemainingBudget', String(includeRemainingBudget));
+  }, [includeRemainingBudget]);
   const [matchedResults, setMatchedResults] = useState<MatchingResult[]>([]);
   const [recurringProfiles, setRecurringProfiles] = useState<any[]>([]);
   const [savingMap, setSavingMap] = useState<Record<string, boolean>>({});
@@ -416,6 +428,22 @@ export function ThisMonthView({
       }
     }
 
+    const activeActualDay = isCurrentMonth ? now.getDate() : maxActualDay;
+
+    const expensesAnalysis = (defaultAnalysis.budgetAnalysis || []).filter(
+      (r: any) => r.name !== 'Reconciliation Adjustment' && r.name !== 'Reconciliation Discrepancy'
+    );
+    const totalRemainingBudget = expensesAnalysis.reduce(
+      (sum: number, r: any) => sum + (r.available || 0),
+      0
+    );
+
+    const remainingDaysInMonth = Math.max(1, numDays - activeActualDay + 1);
+    const dailyBudgetExpense =
+      includeRemainingBudget && isCurrentMonth
+        ? Math.abs(totalRemainingBudget) / remainingDaysInMonth
+        : 0;
+
     const dataPoints = [];
     let runningActual = startingBalance;
     let runningProjected = startingBalance;
@@ -435,7 +463,14 @@ export function ThisMonthView({
         // After maxActualDay, apply ONLY the unmatched upcoming transactions
         const recurringOnDay = mappedUpcomingTransactions.filter((tx) => {
           const txDate = getTxDateObj(tx);
-          return txDate.getDate() === d;
+          let targetDay = txDate.getDate();
+
+          // If the target day is in the past, bump it to the next valid projection day
+          if (isCurrentMonth && targetDay < maxActualDay + 1) {
+            targetDay = maxActualDay + 1;
+          }
+
+          return targetDay === d;
         });
 
         for (const tx of recurringOnDay) {
@@ -454,6 +489,8 @@ export function ThisMonthView({
           const signedAmt = isExpense ? -amt : amt;
           runningProjected = Number((runningProjected + signedAmt).toFixed(2));
         }
+
+        runningProjected = Number((runningProjected - dailyBudgetExpense).toFixed(2));
       }
 
       dataPoints.push({
@@ -473,7 +510,6 @@ export function ThisMonthView({
     const projectedEnding = runningProjected;
 
     // Variance today (or up to maxActualDay if in past month)
-    const activeActualDay = isCurrentMonth ? now.getDate() : maxActualDay;
     const actualTodayVal =
       dataPoints.find((p) => p.day === activeActualDay)?.actualBalance ?? latestActual;
     const projectedTodayVal =
@@ -488,6 +524,7 @@ export function ThisMonthView({
       varianceToday,
       maxActualDay,
       isCurrentMonth,
+      totalRemainingBudget,
     };
   }, [
     transactions,
@@ -495,6 +532,7 @@ export function ThisMonthView({
     mappedUpcomingTransactions,
     defaultAnalysis,
     currentBalance,
+    includeRemainingBudget,
   ]);
 
   useEffect(() => {
@@ -805,15 +843,42 @@ export function ThisMonthView({
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <button
+          onClick={() => {
+            if (onBack) onBack();
+          }}
+          className="flex items-center gap-2 text-sm font-medium text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white dark:text-slate-100 transition-colors"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          Back to Dashboard
+        </button>
+        <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">
+          {format(new Date(), 'MMMM')}
+        </h2>
+        <div>
+          <label className="flex items-center gap-2 text-sm font-medium text-slate-600 dark:text-slate-300 cursor-pointer hover:text-slate-900 dark:hover:text-slate-100 transition-colors">
+            <input
+              type="checkbox"
+              checked={includeRemainingBudget}
+              onChange={(e) => setIncludeRemainingBudget(e.target.checked)}
+              className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-700"
+            />
+            Include remaining budget
+          </label>
+        </div>
+      </div>
+
       {/* Hero Stats Section */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
           <div className="flex items-center gap-4">
             <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center shrink-0">
               <Wallet className="w-6 h-6 text-blue-600" />
             </div>
             <div>
-              <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
+              <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
                 Current Balance
               </p>
               <p className="text-2xl font-bold text-slate-900 dark:text-slate-100 whitespace-nowrap">
@@ -830,7 +895,7 @@ export function ThisMonthView({
               <Clock className="w-6 h-6 text-amber-600" />
             </div>
             <div>
-              <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
+              <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
                 {unmatched.length} Upcoming Transactions
               </p>
               <p className="text-2xl font-bold text-slate-900 dark:text-slate-100 whitespace-nowrap">
@@ -843,16 +908,39 @@ export function ThisMonthView({
 
         <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
           <div className="flex items-center gap-4">
+            <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center shrink-0">
+              <Tag className="w-6 h-6 text-purple-600" />
+            </div>
+            <div>
+              <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                Remaining Budget
+              </p>
+              <p
+                className={`text-2xl font-bold whitespace-nowrap ${
+                  dailyCashFlowData.totalRemainingBudget < 0
+                    ? 'text-red-600 dark:text-red-400'
+                    : 'text-emerald-600 dark:text-emerald-400'
+                }`}
+              >
+                {dailyCashFlowData.totalRemainingBudget < 0 ? '-' : ''}
+                {formatCurrency(dailyCashFlowData.totalRemainingBudget)}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
+          <div className="flex items-center gap-4">
             <div className="w-12 h-12 bg-emerald-100 rounded-full flex items-center justify-center shrink-0">
               <DollarSign className="w-6 h-6 text-emerald-600" />
             </div>
             <div>
-              <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
+              <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
                 Projected End of Month
               </p>
               <p className="text-2xl font-bold text-slate-900 dark:text-slate-100 whitespace-nowrap">
-                {projectedBalance < 0 ? '-' : ''}
-                {formatCurrency(projectedBalance)}
+                {dailyCashFlowData.projectedEndingBalance < 0 ? '-' : ''}
+                {formatCurrency(dailyCashFlowData.projectedEndingBalance)}
               </p>
             </div>
           </div>
@@ -1140,9 +1228,6 @@ export function ThisMonthView({
             <h3 className="text-xl font-bold text-slate-800 dark:text-slate-200">
               Cash Flow Projection
             </h3>
-            <span className="bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-sm font-semibold">
-              Projection
-            </span>
           </div>
           <div className="text-slate-400">
             {projectionExpanded ? (
@@ -1155,9 +1240,11 @@ export function ThisMonthView({
 
         {projectionExpanded && (
           <div className="p-6">
-            <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">
-              Daily actual vs. projected cash flow for the month of {currentMonthName}
-            </p>
+            <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4 mb-6">
+              <p className="text-sm text-slate-500 dark:text-slate-400">
+                Daily actual vs. projected cash flow for the month of {currentMonthName}
+              </p>
+            </div>
 
             {/* KPI Metrics Subheader */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6 bg-slate-50 dark:bg-slate-950 p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
@@ -1165,27 +1252,44 @@ export function ThisMonthView({
                 <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
                   Starting Balance
                 </p>
-                <p className="text-base font-bold text-slate-800 dark:text-slate-200 font-mono mt-0.5">
+                <p
+                  className={`text-base font-bold font-mono mt-0.5 ${dailyCashFlowData.startingBalance < 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}
+                >
                   {dailyCashFlowData.startingBalance < 0 ? '-' : ''}
-                  {formatCurrency(dailyCashFlowData.startingBalance)}
+                  {formatCurrency(Math.abs(dailyCashFlowData.startingBalance))}
                 </p>
               </div>
               <div>
                 <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
                   Current Balance
                 </p>
-                <p className="text-base font-bold text-slate-800 dark:text-slate-200 font-mono mt-0.5">
+                <p
+                  className={`text-base font-bold font-mono mt-0.5 ${dailyCashFlowData.currentActualBalance < 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}
+                >
                   {dailyCashFlowData.currentActualBalance < 0 ? '-' : ''}
-                  {formatCurrency(dailyCashFlowData.currentActualBalance)}
+                  {formatCurrency(Math.abs(dailyCashFlowData.currentActualBalance))}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+                  Remaining Budget
+                </p>
+                <p
+                  className={`text-base font-bold font-mono mt-0.5 ${dailyCashFlowData.totalRemainingBudget < 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}
+                >
+                  {dailyCashFlowData.totalRemainingBudget < 0 ? '-' : ''}
+                  {formatCurrency(Math.abs(dailyCashFlowData.totalRemainingBudget))}
                 </p>
               </div>
               <div>
                 <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
                   Projected Ending
                 </p>
-                <p className="text-base font-bold text-slate-800 dark:text-slate-200 font-mono mt-0.5">
+                <p
+                  className={`text-base font-bold font-mono mt-0.5 ${dailyCashFlowData.projectedEndingBalance < 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}
+                >
                   {dailyCashFlowData.projectedEndingBalance < 0 ? '-' : ''}
-                  {formatCurrency(dailyCashFlowData.projectedEndingBalance)}
+                  {formatCurrency(Math.abs(dailyCashFlowData.projectedEndingBalance))}
                 </p>
               </div>
             </div>
@@ -1235,16 +1339,13 @@ export function ThisMonthView({
                           const pt = payload[0].payload;
                           const hasActual =
                             pt.actualBalance !== undefined && pt.actualBalance !== null;
-                          const variance = hasActual
-                            ? Number((pt.actualBalance - pt.projectedBalance).toFixed(2))
-                            : 0;
                           return (
                             <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-lg text-sm text-slate-600 dark:text-slate-400 font-sans">
                               <p className="font-semibold text-slate-800 dark:text-slate-200 mb-2 border-b border-slate-100 dark:border-slate-800 pb-1.5">
                                 {pt.dayLabel}, {currentYear}
                               </p>
                               <div className="space-y-1.5">
-                                {hasActual && (
+                                {hasActual ? (
                                   <div className="flex items-center justify-between gap-6">
                                     <span className="flex items-center gap-1.5">
                                       <span className="w-2.5 h-2.5 rounded-full bg-blue-600 block" />
@@ -1255,30 +1356,15 @@ export function ThisMonthView({
                                       {formatCurrency(pt.actualBalance)}
                                     </span>
                                   </div>
-                                )}
-                                <div className="flex items-center justify-between gap-6">
-                                  <span className="flex items-center gap-1.5">
-                                    <span className="w-2.5 h-2.5 rounded-full bg-indigo-500 block" />
-                                    Projected Balance:
-                                  </span>
-                                  <span className="font-mono font-bold text-slate-800 dark:text-slate-200">
-                                    {pt.projectedBalance < 0 ? '-' : ''}
-                                    {formatCurrency(pt.projectedBalance)}
-                                  </span>
-                                </div>
-                                {hasActual && (
-                                  <div className="flex items-center justify-between gap-6 pt-1.5 border-t border-slate-100 dark:border-slate-800">
-                                    <span className="text-slate-500 dark:text-slate-400 font-medium">
-                                      Variance:
+                                ) : (
+                                  <div className="flex items-center justify-between gap-6">
+                                    <span className="flex items-center gap-1.5">
+                                      <span className="w-2.5 h-2.5 rounded-full bg-indigo-500 block" />
+                                      Projected Balance:
                                     </span>
-                                    <span
-                                      className={`font-mono font-bold ${variance >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}
-                                    >
-                                      {variance >= 0 ? '+' : '-'}
-                                      {formatCurrency(variance)}
-                                      <span className="text-[10px] ml-1 px-1 py-0.5 rounded bg-slate-50 dark:bg-slate-950 uppercase font-semibold">
-                                        {variance >= 0 ? 'Ahead' : 'Behind'}
-                                      </span>
+                                    <span className="font-mono font-bold text-slate-800 dark:text-slate-200">
+                                      {pt.projectedBalance < 0 ? '-' : ''}
+                                      {formatCurrency(pt.projectedBalance)}
                                     </span>
                                   </div>
                                 )}

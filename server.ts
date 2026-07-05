@@ -11,6 +11,7 @@ import { google } from 'googleapis';
 import path from 'path';
 import dotenv from 'dotenv';
 import { Firestore, FieldValue, Timestamp } from '@google-cloud/firestore';
+import { Storage } from '@google-cloud/storage';
 import { GoogleGenAI } from '@google/genai';
 import {
   deduplicateTransactions,
@@ -2389,6 +2390,152 @@ ${JSON.stringify(uniqueDescs)}
       console.error('[Server] Error migrating dates:', error);
       sendEvent(`Error: ${error.message}`);
       res.end();
+    }
+  });
+
+  // -------------------------------------------------------------
+  // GCS Backup & Restore Endpoints
+  // -------------------------------------------------------------
+  const storage = new Storage();
+  const GCS_BACKUP_BUCKET = process.env.GCS_BACKUP_BUCKET || 'tx-analyzer-1777844550-backup';
+
+  app.get('/api/admin/backups', async (req, res) => {
+    try {
+      const bucket = storage.bucket(GCS_BACKUP_BUCKET);
+      const [files] = await bucket.getFiles({ prefix: 'backup-' });
+      const backups = files
+        .filter((f) => f.name.endsWith('.json'))
+        .map((f) => {
+          return {
+            name: f.name,
+            size: parseInt(f.metadata.size || '0', 10),
+            updated: f.metadata.updated || null,
+          };
+        })
+        .sort((a, b) => (new Date(b.updated || 0) as any) - (new Date(a.updated || 0) as any));
+
+      res.json({ success: true, backups });
+    } catch (err: any) {
+      console.error('[Server] Error fetching backups:', err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/admin/backups/create', async (req, res) => {
+    try {
+      const firestore = new Firestore({
+        projectId: process.env.GOOGLE_CLOUD_PROJECT || 'tx-analyzer-1777844550',
+      });
+      const collectionsToBackup = [
+        'transactions',
+        'recurring_transactions',
+        'imports',
+        'budgets',
+        'taxonomy',
+        'admin',
+      ];
+
+      const backupData: Record<string, any[]> = {};
+
+      for (const colName of collectionsToBackup) {
+        const snapshot = await firestore.collection(colName).get();
+        backupData[colName] = snapshot.docs.map((doc) => ({ id: doc.id, data: doc.data() }));
+      }
+
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const filename = `backup-${timestamp}.json`;
+
+      const bucket = storage.bucket(GCS_BACKUP_BUCKET);
+      const file = bucket.file(filename);
+
+      await file.save(JSON.stringify(backupData, null, 2), {
+        contentType: 'application/json',
+      });
+
+      res.json({ success: true, filename });
+    } catch (err: any) {
+      console.error('[Server] Error creating backup:', err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/admin/backups/restore', async (req, res) => {
+    const { filename } = req.body;
+    if (!filename) return res.status(400).json({ error: 'Filename is required' });
+
+    try {
+      const bucket = storage.bucket(GCS_BACKUP_BUCKET);
+      const file = bucket.file(filename);
+      const [exists] = await file.exists();
+      if (!exists) return res.status(404).json({ error: 'Backup file not found' });
+
+      const [contents] = await file.download();
+      const backupData = JSON.parse(contents.toString('utf8'));
+
+      const firestore = new Firestore({
+        projectId: process.env.GOOGLE_CLOUD_PROJECT || 'tx-analyzer-1777844550',
+      });
+
+      // Helper to recursively restore Timestamps
+      const convertTimestamps = (obj: any): any => {
+        if (!obj) return obj;
+        if (typeof obj !== 'object') return obj;
+        if (Array.isArray(obj)) return obj.map(convertTimestamps);
+
+        if (obj._seconds !== undefined && obj._nanoseconds !== undefined) {
+          return new Timestamp(obj._seconds, obj._nanoseconds);
+        }
+
+        const newObj: any = {};
+        for (const [k, v] of Object.entries(obj)) {
+          newObj[k] = convertTimestamps(v);
+        }
+        return newObj;
+      };
+
+      const collectionsToRestore = Object.keys(backupData);
+
+      for (const colName of collectionsToRestore) {
+        const items = backupData[colName];
+        const colRef = firestore.collection(colName);
+
+        // 1. Wipe existing
+        const existingDocs = await colRef.get();
+        let batch = firestore.batch();
+        let count = 0;
+
+        for (const doc of existingDocs.docs) {
+          batch.delete(doc.ref);
+          count++;
+          if (count >= 400) {
+            await batch.commit();
+            batch = firestore.batch();
+            count = 0;
+          }
+        }
+        if (count > 0) await batch.commit();
+
+        // 2. Restore new
+        batch = firestore.batch();
+        count = 0;
+        for (const item of items) {
+          const docRef = colRef.doc(item.id);
+          const data = convertTimestamps(item.data);
+          batch.set(docRef, data);
+          count++;
+          if (count >= 400) {
+            await batch.commit();
+            batch = firestore.batch();
+            count = 0;
+          }
+        }
+        if (count > 0) await batch.commit();
+      }
+
+      res.json({ success: true, restoredCollections: collectionsToRestore });
+    } catch (err: any) {
+      console.error('[Server] Error restoring backup:', err);
+      res.status(500).json({ error: err.message });
     }
   });
 

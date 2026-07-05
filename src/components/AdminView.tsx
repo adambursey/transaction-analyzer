@@ -1,5 +1,17 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Loader2, RefreshCw, ArchiveRestore, Archive, Upload, ArrowRightLeft } from 'lucide-react';
+import {
+  Loader2,
+  RefreshCw,
+  ArchiveRestore,
+  Archive,
+  Upload,
+  ArrowRightLeft,
+  DatabaseBackup,
+  DownloadCloud,
+  ChevronDown,
+  ChevronUp,
+  Wrench,
+} from 'lucide-react';
 import { format } from 'date-fns';
 import Papa from 'papaparse';
 import { stringSimilarity } from '../utils/importLogic';
@@ -45,6 +57,11 @@ export function AdminView({
 
   const [isBackfilling, setIsBackfilling] = useState(false);
   const [backfillFile, setBackfillFile] = useState<File | null>(null);
+
+  const [backups, setBackups] = useState<any[]>([]);
+  const [isBackingUp, setIsBackingUp] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(false);
+  const [isMaintenanceExpanded, setIsMaintenanceExpanded] = useState(false);
 
   const uncategorizedTxs = transactions.filter(
     (t) => !t._category || t._category === 'Uncategorized'
@@ -112,19 +129,22 @@ export function AdminView({
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [txRes, importsRes, dupRes, mappingRes] = await Promise.all([
+      const [txRes, importsRes, dupRes, mappingRes, backupsRes] = await Promise.all([
         fetch(`/api/admin/archived-transactions?account=${selectedAccount}`),
         fetch(`/api/admin/all-imports`),
         fetch(`/api/admin/duplicate-stats?account=${selectedAccount}`),
         fetch('/api/admin/saved-mapping-status'),
+        fetch('/api/admin/backups'),
       ]);
       const txData = await txRes.json();
       const importsData = await importsRes.json();
       const dupData = await dupRes.json();
       const mappingData = await mappingRes.json();
+      const backupsData = await backupsRes.json();
 
       setArchivedTxs(txData.transactions || []);
       setAllImports(importsData.imports || []);
+      setBackups(backupsData.backups || []);
       setDuplicateCount(dupData.count || 0);
       if (mappingData.exists) {
         setSavedMappingStatus({
@@ -141,6 +161,50 @@ export function AdminView({
       setLoading(false);
     }
   }, [selectedAccount]);
+
+  const handleCreateBackup = async () => {
+    if (!window.confirm('Are you sure you want to create a full database snapshot?')) return;
+    setIsBackingUp(true);
+    try {
+      const res = await fetch('/api/admin/backups/create', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to create backup');
+      alert(`Backup created successfully: ${data.filename}`);
+      fetchData();
+    } catch (err: any) {
+      alert('Error creating backup: ' + err.message);
+    } finally {
+      setIsBackingUp(false);
+    }
+  };
+
+  const handleRestoreBackup = async (filename: string) => {
+    if (
+      !window.confirm(
+        `WARNING: This will WIPE the current database and replace it with '${filename}'. Are you absolutely sure you want to proceed?`
+      )
+    )
+      return;
+    if (!window.confirm('FINAL WARNING: This cannot be undone. Type OK to continue.')) return;
+
+    setIsRestoring(true);
+    try {
+      const res = await fetch('/api/admin/backups/restore', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to restore backup');
+      alert('Backup restored successfully!');
+      onDataChanged?.();
+      fetchData();
+    } catch (err: any) {
+      alert('Error restoring backup: ' + err.message);
+    } finally {
+      setIsRestoring(false);
+    }
+  };
 
   const handleSaveMapping = async () => {
     setIsSavingMapping(true);
@@ -459,203 +523,293 @@ export function AdminView({
         </div>
       </div>
 
-      <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 p-6 mb-8">
-        <h3 className="font-bold text-slate-800 dark:text-slate-200 mb-4 text-lg">
-          Maintenance Actions
-        </h3>
-        <div className="space-y-4">
-          <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-950 border border-slate-100 dark:border-slate-800 rounded-xl">
-            <div className="flex-1 mr-8">
-              <h4 className="font-semibold text-slate-700 dark:text-slate-300">
-                Reclassify Uncategorized Transactions
-              </h4>
-              <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-                Found{' '}
-                <strong className="text-slate-700 dark:text-slate-300">{uncategorizedCount}</strong>{' '}
-                transactions currently missing a category. Running this will use AI to automatically
-                classify them based on your history and place them in the Review Queue.
-              </p>
-              {reclassifyProgress && (
-                <div className="mt-3">
-                  <div className="flex justify-between text-xs text-slate-500 dark:text-slate-400 mb-1">
-                    <span>Classifying...</span>
-                    <span>
-                      {reclassifyProgress.processed} / {reclassifyProgress.total}
-                    </span>
-                  </div>
-                  <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2 overflow-hidden">
-                    <div
-                      className="bg-blue-600 h-2 transition-all duration-300"
-                      style={{
-                        width: `${Math.round((reclassifyProgress.processed / reclassifyProgress.total) * 100)}%`,
-                      }}
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
-            <button
-              onClick={handleReclassify}
-              disabled={isReclassifying || uncategorizedCount === 0}
-              className="shrink-0 flex items-center gap-2 px-4 py-2 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
-            >
-              {isReclassifying ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <RefreshCw className="w-4 h-4" />
-              )}
-              {isReclassifying ? 'Classifying...' : 'Run AI Classification'}
-            </button>
-          </div>
-
-          <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-950 border border-slate-100 dark:border-slate-800 rounded-xl">
-            <div className="flex-1 mr-8">
-              <h4 className="font-semibold text-slate-700 dark:text-slate-300">
-                Deduplicate Database
-              </h4>
-              <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-                Found <strong className="text-orange-600">{duplicateCount}</strong> duplicate
-                transactions in your database. Running this will move redundant copies to the
-                Archive below while preserving your categorized ones.
-              </p>
-            </div>
-            <button
-              onClick={handleDeduplicate}
-              disabled={isDeduplicating || duplicateCount === 0}
-              className="shrink-0 flex items-center gap-2 px-4 py-2 bg-orange-500 text-white font-semibold rounded-lg hover:bg-orange-600 disabled:opacity-50 transition-colors"
-            >
-              {isDeduplicating ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Archive className="w-4 h-4" />
-              )}
-              {isDeduplicating ? 'Archiving...' : 'Archive Duplicates'}
-            </button>
-          </div>
-
-          <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-950 border border-slate-100 dark:border-slate-800 rounded-xl">
-            <div className="flex-1 mr-8">
-              <h4 className="font-semibold text-slate-700 dark:text-slate-300">
-                Scan for Potential Duplicates
-              </h4>
-              <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-                Scans existing active transactions for date and amount collisions (with differing
-                descriptions). Flags them for your review in the queue above.
-              </p>
-            </div>
-            <button
-              onClick={handleScanPotentialDuplicates}
-              disabled={isScanningDupes}
-              className="shrink-0 flex items-center gap-2 px-4 py-2 bg-orange-100 text-orange-800 font-semibold rounded-lg hover:bg-orange-200 disabled:opacity-50 transition-colors"
-            >
-              {isScanningDupes ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <RefreshCw className="w-4 h-4" />
-              )}
-              {isScanningDupes ? 'Scanning...' : 'Scan Database'}
-            </button>
-          </div>
-
-          <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-950 border border-slate-100 dark:border-slate-800 rounded-xl">
-            <div className="flex-1 mr-8">
-              <h4 className="font-semibold text-slate-700 dark:text-slate-300">
-                Match Internal Transfers
-              </h4>
-              <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-                Scans all Checking and Savings transactions for internal transfers based on date,
-                amount, and description. Matched transactions will be linked and removed from net
-                cash flow calculations.
-              </p>
-            </div>
-            <button
-              onClick={handleMatchTransfers}
-              disabled={isMatchingTransfers}
-              className="shrink-0 flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
-            >
-              {isMatchingTransfers ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <ArrowRightLeft className="w-4 h-4" />
-              )}
-              {isMatchingTransfers ? 'Matching...' : 'Match Transfers'}
-            </button>
-          </div>
-
-          <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-950 border border-slate-100 dark:border-slate-800 rounded-xl">
-            <div className="flex-1 mr-8">
-              <h4 className="font-semibold text-slate-700 dark:text-slate-300">
-                Save Classification Dictionary
-              </h4>
-              <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-                Save the current relationship between descriptions and categories/subcategories.
-                {savedMappingStatus.exists && (
-                  <span className="block mt-2 text-emerald-600 font-medium">
-                    Current dictionary saved on{' '}
-                    {savedMappingStatus.date
-                      ? new Date(savedMappingStatus.date).toLocaleDateString()
-                      : 'Unknown'}{' '}
-                    ({savedMappingStatus.count} transactions used).
-                  </span>
-                )}
-              </p>
-            </div>
-            <button
-              onClick={handleSaveMapping}
-              disabled={isSavingMapping}
-              className="shrink-0 flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white font-semibold rounded-lg hover:bg-emerald-700 disabled:opacity-50 transition-colors"
-            >
-              {isSavingMapping ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <ArchiveRestore className="w-4 h-4" />
-              )}
-              {isSavingMapping ? 'Saving...' : 'Save Dictionary'}
-            </button>
-          </div>
-
-          <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-950 border border-slate-100 dark:border-slate-800 rounded-xl">
-            <div className="flex-1 mr-8">
-              <h4 className="font-semibold text-slate-700 dark:text-slate-300">
-                Database Reconciliation & Backfill
-              </h4>
-              <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 mb-3">
-                Upload a CSV bank export to backfill historical balances and automatically generate
-                System Reconciliation Discrepancies for any detected mathematical gaps.
-              </p>
-              <input
-                type="file"
-                accept=".csv"
-                id="backfill-upload"
-                className="hidden"
-                onChange={(e) => setBackfillFile(e.target.files?.[0] || null)}
-              />
-              <label
-                htmlFor="backfill-upload"
-                className="inline-flex items-center gap-2 px-3 py-1.5 bg-white dark:bg-slate-900 border border-slate-300 text-slate-700 dark:text-slate-300 text-sm font-medium rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800/50 dark:bg-slate-950 cursor-pointer transition-colors"
-                aria-label="Upload Backfill CSV"
-              >
-                <Upload className="w-4 h-4" />
-                {backfillFile ? backfillFile.name : 'Select CSV File'}
-              </label>
-            </div>
-            <button
-              onClick={handleBackfill}
-              disabled={isBackfilling || !backfillFile}
-              className="shrink-0 flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
-            >
-              {isBackfilling ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <RefreshCw className="w-4 h-4" />
-              )}
-              {isBackfilling ? 'Processing...' : 'Process Backfill'}
-            </button>
-          </div>
+      <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden mb-8">
+        <div
+          className={`p-6 flex items-center justify-between cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50 dark:bg-slate-950 transition-colors ${isMaintenanceExpanded ? 'border-b border-slate-100 dark:border-slate-800' : ''}`}
+          onClick={() => setIsMaintenanceExpanded(!isMaintenanceExpanded)}
+        >
+          <h3 className="font-bold text-slate-800 dark:text-slate-200 text-lg flex items-center gap-2">
+            <Wrench className="w-5 h-5 text-slate-400" />
+            Maintenance Actions
+          </h3>
+          {isMaintenanceExpanded ? (
+            <ChevronUp className="w-5 h-5 text-slate-400" />
+          ) : (
+            <ChevronDown className="w-5 h-5 text-slate-400" />
+          )}
         </div>
+        {isMaintenanceExpanded && (
+          <div className="p-6 space-y-4">
+            <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-950 border border-slate-100 dark:border-slate-800 rounded-xl">
+              <div className="flex-1 mr-8">
+                <h4 className="font-semibold text-slate-700 dark:text-slate-300">
+                  Reclassify Uncategorized Transactions
+                </h4>
+                <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                  Found{' '}
+                  <strong className="text-slate-700 dark:text-slate-300">
+                    {uncategorizedCount}
+                  </strong>{' '}
+                  transactions currently missing a category. Running this will use AI to
+                  automatically classify them based on your history and place them in the Review
+                  Queue.
+                </p>
+                {reclassifyProgress && (
+                  <div className="mt-3">
+                    <div className="flex justify-between text-xs text-slate-500 dark:text-slate-400 mb-1">
+                      <span>Classifying...</span>
+                      <span>
+                        {reclassifyProgress.processed} / {reclassifyProgress.total}
+                      </span>
+                    </div>
+                    <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2 overflow-hidden">
+                      <div
+                        className="bg-blue-600 h-2 transition-all duration-300"
+                        style={{
+                          width: `${Math.round((reclassifyProgress.processed / reclassifyProgress.total) * 100)}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+              <button
+                onClick={handleReclassify}
+                disabled={isReclassifying || uncategorizedCount === 0}
+                className="shrink-0 flex items-center gap-2 px-4 py-2 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+              >
+                {isReclassifying ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="w-4 h-4" />
+                )}
+                {isReclassifying ? 'Classifying...' : 'Run AI Classification'}
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-950 border border-slate-100 dark:border-slate-800 rounded-xl">
+              <div className="flex-1 mr-8">
+                <h4 className="font-semibold text-slate-700 dark:text-slate-300">
+                  Deduplicate Database
+                </h4>
+                <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                  Found <strong className="text-orange-600">{duplicateCount}</strong> duplicate
+                  transactions in your database. Running this will move redundant copies to the
+                  Archive below while preserving your categorized ones.
+                </p>
+              </div>
+              <button
+                onClick={handleDeduplicate}
+                disabled={isDeduplicating || duplicateCount === 0}
+                className="shrink-0 flex items-center gap-2 px-4 py-2 bg-orange-500 text-white font-semibold rounded-lg hover:bg-orange-600 disabled:opacity-50 transition-colors"
+              >
+                {isDeduplicating ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Archive className="w-4 h-4" />
+                )}
+                {isDeduplicating ? 'Archiving...' : 'Archive Duplicates'}
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-950 border border-slate-100 dark:border-slate-800 rounded-xl">
+              <div className="flex-1 mr-8">
+                <h4 className="font-semibold text-slate-700 dark:text-slate-300">
+                  Scan for Potential Duplicates
+                </h4>
+                <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                  Scans existing active transactions for date and amount collisions (with differing
+                  descriptions). Flags them for your review in the queue above.
+                </p>
+              </div>
+              <button
+                onClick={handleScanPotentialDuplicates}
+                disabled={isScanningDupes}
+                className="shrink-0 flex items-center gap-2 px-4 py-2 bg-orange-100 text-orange-800 font-semibold rounded-lg hover:bg-orange-200 disabled:opacity-50 transition-colors"
+              >
+                {isScanningDupes ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="w-4 h-4" />
+                )}
+                {isScanningDupes ? 'Scanning...' : 'Scan Database'}
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-950 border border-slate-100 dark:border-slate-800 rounded-xl">
+              <div className="flex-1 mr-8">
+                <h4 className="font-semibold text-slate-700 dark:text-slate-300">
+                  Match Internal Transfers
+                </h4>
+                <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                  Scans all Checking and Savings transactions for internal transfers based on date,
+                  amount, and description. Matched transactions will be linked and removed from net
+                  cash flow calculations.
+                </p>
+              </div>
+              <button
+                onClick={handleMatchTransfers}
+                disabled={isMatchingTransfers}
+                className="shrink-0 flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+              >
+                {isMatchingTransfers ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <ArrowRightLeft className="w-4 h-4" />
+                )}
+                {isMatchingTransfers ? 'Matching...' : 'Match Transfers'}
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-950 border border-slate-100 dark:border-slate-800 rounded-xl">
+              <div className="flex-1 mr-8">
+                <h4 className="font-semibold text-slate-700 dark:text-slate-300">
+                  Save Classification Dictionary
+                </h4>
+                <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                  Save the current relationship between descriptions and categories/subcategories.
+                  {savedMappingStatus.exists && (
+                    <span className="block mt-2 text-emerald-600 font-medium">
+                      Current dictionary saved on{' '}
+                      {savedMappingStatus.date
+                        ? new Date(savedMappingStatus.date).toLocaleDateString()
+                        : 'Unknown'}{' '}
+                      ({savedMappingStatus.count} transactions used).
+                    </span>
+                  )}
+                </p>
+              </div>
+              <button
+                onClick={handleSaveMapping}
+                disabled={isSavingMapping}
+                className="shrink-0 flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white font-semibold rounded-lg hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+              >
+                {isSavingMapping ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <ArchiveRestore className="w-4 h-4" />
+                )}
+                {isSavingMapping ? 'Saving...' : 'Save Dictionary'}
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-950 border border-slate-100 dark:border-slate-800 rounded-xl">
+              <div className="flex-1 mr-8">
+                <h4 className="font-semibold text-slate-700 dark:text-slate-300">
+                  Database Reconciliation & Backfill
+                </h4>
+                <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 mb-3">
+                  Upload a CSV bank export to backfill historical balances and automatically
+                  generate System Reconciliation Discrepancies for any detected mathematical gaps.
+                </p>
+                <input
+                  type="file"
+                  accept=".csv"
+                  id="backfill-upload"
+                  className="hidden"
+                  onChange={(e) => setBackfillFile(e.target.files?.[0] || null)}
+                />
+                <label
+                  htmlFor="backfill-upload"
+                  className="inline-flex items-center gap-2 px-3 py-1.5 bg-white dark:bg-slate-900 border border-slate-300 text-slate-700 dark:text-slate-300 text-sm font-medium rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800/50 dark:bg-slate-950 cursor-pointer transition-colors"
+                  aria-label="Upload Backfill CSV"
+                >
+                  <Upload className="w-4 h-4" />
+                  {backfillFile ? backfillFile.name : 'Select CSV File'}
+                </label>
+              </div>
+              <button
+                onClick={handleBackfill}
+                disabled={isBackfilling || !backfillFile}
+                className="shrink-0 flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+              >
+                {isBackfilling ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="w-4 h-4" />
+                )}
+                {isBackfilling ? 'Processing...' : 'Process Backfill'}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
+        {/* Backups Section */}
+        <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 p-6 mb-8">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h3 className="font-bold text-slate-800 dark:text-slate-200 text-lg">
+                Database Backups
+              </h3>
+              <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                Create and restore snapshots of your entire database to/from Google Cloud Storage.
+              </p>
+            </div>
+            <button
+              onClick={handleCreateBackup}
+              disabled={isBackingUp || isRestoring}
+              className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+            >
+              {isBackingUp ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <DatabaseBackup className="w-4 h-4" />
+              )}
+              {isBackingUp ? 'Creating Backup...' : 'Create Backup'}
+            </button>
+          </div>
+
+          {backups.length === 0 ? (
+            <div className="text-center py-8 text-slate-500 dark:text-slate-400">
+              No backups found in Google Cloud Storage.
+            </div>
+          ) : (
+            <div className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
+              <table className="w-full text-sm text-left">
+                <thead className="bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                  <tr>
+                    <th className="px-4 py-3 font-semibold">Filename</th>
+                    <th className="px-4 py-3 font-semibold">Date Created</th>
+                    <th className="px-4 py-3 font-semibold">Size</th>
+                    <th className="px-4 py-3 font-semibold text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {backups.map((b) => (
+                    <tr key={b.name} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                      <td className="px-4 py-3 text-slate-900 dark:text-slate-100 font-medium">
+                        {b.name}
+                      </td>
+                      <td className="px-4 py-3 text-slate-500 dark:text-slate-400">
+                        {b.updated ? new Date(b.updated).toLocaleString() : 'Unknown'}
+                      </td>
+                      <td className="px-4 py-3 text-slate-500 dark:text-slate-400">
+                        {(b.size / 1024 / 1024).toFixed(2)} MB
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <button
+                          onClick={() => handleRestoreBackup(b.name)}
+                          disabled={isRestoring || isBackingUp}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-rose-600 bg-rose-50 hover:bg-rose-100 dark:bg-rose-500/10 dark:hover:bg-rose-500/20 dark:text-rose-400 rounded-md transition-colors disabled:opacity-50"
+                        >
+                          {isRestoring ? (
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                          ) : (
+                            <DownloadCloud className="w-3 h-3" />
+                          )}
+                          Restore
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
         {/* Archived Transactions */}
         <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden flex flex-col h-[600px]">
           <div className="p-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 flex items-center justify-between">

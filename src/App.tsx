@@ -1739,7 +1739,7 @@ export default function App() {
             </div>
 
             {/* Charts */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="mb-8">
               {/* Category Breakdown */}
               <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
                 <div
@@ -1761,15 +1761,15 @@ export default function App() {
                     className="p-6 flex flex-col md:flex-row items-start justify-center gap-8 animate-in slide-in-from-top-2 duration-200"
                     onMouseLeave={() => setHoveredCategory(null)}
                   >
-                    <div className="h-64 w-full md:w-1/2">
+                    <div className="h-96 w-full md:w-1/2">
                       <ResponsiveContainer width="100%" height="100%">
                         <PieChart>
                           <Pie
                             data={analysis.categoryChartData}
                             cx="50%"
                             cy="50%"
-                            innerRadius={60}
-                            outerRadius={100}
+                            innerRadius={120}
+                            outerRadius={160}
                             paddingAngle={2}
                             dataKey="value"
                             nameKey="name"
@@ -1844,97 +1844,6 @@ export default function App() {
                     </div>
                   </div>
                 )}
-              </div>
-
-              {/* Balance History Chart */}
-              <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
-                <div className="p-6 flex items-center justify-between border-b border-slate-100 dark:border-slate-800">
-                  <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-                    <Activity className="w-5 h-5 text-slate-400" />
-                    Account Balance History
-                  </h3>
-                </div>
-                <div className="p-6 h-64 w-full">
-                  {analysis.balanceHistory.length > 0 ? (
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart
-                        data={analysis.balanceHistory}
-                        margin={{ top: 5, right: 20, bottom: 5, left: 0 }}
-                      >
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                        <XAxis
-                          dataKey="date"
-                          tickFormatter={(val) =>
-                            new Date(val).toLocaleDateString(undefined, {
-                              month: 'short',
-                              day: 'numeric',
-                            })
-                          }
-                          tick={{ fill: '#64748b', fontSize: 12 }}
-                          tickMargin={10}
-                          minTickGap={30}
-                        />
-                        <YAxis
-                          tickFormatter={(val) => `$${val.toLocaleString()}`}
-                          tick={{ fill: '#64748b', fontSize: 12 }}
-                          axisLine={false}
-                          tickLine={false}
-                        />
-                        <Tooltip
-                          formatter={(value: number, name: string) => {
-                            const labelName =
-                              name === 'actualBalance'
-                                ? 'Balance'
-                                : name === 'projectedBalance'
-                                  ? 'Projected Balance'
-                                  : 'Balance';
-                            const valStr = `$${value.toLocaleString(undefined, {
-                              minimumFractionDigits: 2,
-                              maximumFractionDigits: 2,
-                            })}`;
-                            return [valStr, labelName];
-                          }}
-                          labelFormatter={(label) => {
-                            const d = new Date(label + 'T12:00:00');
-                            return isNaN(d.getTime())
-                              ? label
-                              : d.toLocaleDateString(undefined, {
-                                  year: 'numeric',
-                                  month: 'long',
-                                  day: 'numeric',
-                                });
-                          }}
-                          contentStyle={{
-                            borderRadius: '8px',
-                            border: 'none',
-                            boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)',
-                          }}
-                        />
-                        <Line
-                          type="monotone"
-                          dataKey="actualBalance"
-                          stroke="#2563eb"
-                          strokeWidth={3}
-                          dot={false}
-                          activeDot={{ r: 6, fill: '#2563eb', stroke: '#fff', strokeWidth: 2 }}
-                        />
-                        <Line
-                          type="monotone"
-                          dataKey="projectedBalance"
-                          stroke="#3b82f6"
-                          strokeWidth={3}
-                          strokeDasharray="5 5"
-                          dot={false}
-                          activeDot={{ r: 6, fill: '#3b82f6', stroke: '#fff', strokeWidth: 2 }}
-                        />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  ) : (
-                    <div className="flex items-center justify-center h-full text-slate-400">
-                      No balance data available
-                    </div>
-                  )}
-                </div>
               </div>
             </div>
 
